@@ -6,7 +6,7 @@ from src.core.logger import setup_logging
 # Setup logging
 setup_logging()
 
-app = FastAPI(title="LiveKit AI Backend")
+app = FastAPI(title="LiveKit AI Backend",version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
