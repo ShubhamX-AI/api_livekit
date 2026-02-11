@@ -28,7 +28,6 @@ class Assistant(Document):
     assistant_tts_voice_id: str
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
-    assistant_welcome_message: Optional[str] = None
     assistant_created_at: datetime = Field(default_factory=datetime.utcnow)
     assistant_updated_at: datetime = Field(default_factory=datetime.utcnow)
     assistant_created_by_email: EmailStr
