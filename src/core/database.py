@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from src.core.config import settings
-from src.core.models.db_schemas import APIKey
+from src.core.models.db_schemas import APIKey, Assistant
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,8 @@ class Database:
             await init_beanie(
                 database=cls.client[settings.DATABASE_NAME],
                 document_models=[
-                    APIKey
+                    APIKey,
+                    Assistant
                 ]
             )
             logger.info(f"Beanie initialized with database: {settings.DATABASE_NAME}")
