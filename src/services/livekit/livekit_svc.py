@@ -1,6 +1,5 @@
 import uuid
 import json
-import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from livekit.api import (
@@ -49,7 +48,6 @@ class LiveKitService:
 
             # Create room
             room = await lkapi.room.create_room(CreateRoomRequest(name=unique_room_name))
-            logger.info(f"Room created: {room.name}")
             return room.name
             
     
@@ -89,6 +87,7 @@ class LiveKitService:
 
     # Create Outbound trunk
     async def create_sip_outbound_trunk(
+        self,
         trunk_name: str,
         trunk_address: str,
         trunk_numbers: list,
@@ -96,7 +95,7 @@ class LiveKitService:
         trunk_auth_password: str
     ):
         
-        async with get_livekit_api() as lkapi:
+        async with self.get_livekit_api() as lkapi:
             trunk_info = SIPOutboundTrunkInfo(
                 name=trunk_name,
                 address=trunk_address,
@@ -108,5 +107,4 @@ class LiveKitService:
             request = CreateSIPOutboundTrunkRequest(trunk=trunk_info)
             trunk = await lkapi.sip.create_sip_outbound_trunk(request)
             
-            logger.info(f"Successfully created trunk: {trunk_name}")
         return trunk

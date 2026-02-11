@@ -5,6 +5,7 @@ from src.core.db.db_schemas import OutboundSIP, APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 from src.services.livekit.livekit_svc import LiveKitService
+from google.protobuf.json_format import MessageToDict
 import uuid
 
 router = APIRouter()
@@ -22,7 +23,7 @@ async def create_outbound_trunk(request: CreateOutboundTrunk, current_user: APIK
         
         # Creating outbout trunk
         try:
-            trunk = livekit_services.create_sip_outbound_trunk(
+            trunk = await livekit_services.create_sip_outbound_trunk(
                 trunk_name=request.trunk_name,
                 trunk_address=request.trunk_address,
                 trunk_numbers=request.trunk_numbers,
@@ -33,20 +34,23 @@ async def create_outbound_trunk(request: CreateOutboundTrunk, current_user: APIK
             logger.error(f"Failed to create outbound trunk: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create outbound trunk in livekit: {str(e)}")
 
+        # Turning the response into dictionary
+        trunk_dict = MessageToDict(trunk)
+        trunk_id = trunk_dict["sipTrunkId"]
+
         logger.info(f"Inserting outbound trunk into database")
         outbound_trunk = OutboundSIP(
-            trunk_id=trunk.id, 
+            trunk_id=trunk_id, 
             trunk_name=request.trunk_name, 
             trunk_created_by_email=current_user.user_email, 
             trunk_updated_by_email=current_user.user_email)
         await outbound_trunk.insert()
     except Exception as e:
-        logger.error(f"Failed to create outbound trunk: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create outbound trunk in database: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to insert outbound trunk into database: {str(e)}") 
     
     logger.info(f"Outbound trunk created successfully")
     return apiResponse(
         success=True,
         message="Outbound trunk created successfully, Store the trunk id securely.",
-        data={"trunk_id": trunk.id}
+        data={"trunk_id": trunk_id}
     )

@@ -26,7 +26,7 @@ async def create_assistant(request: CreateAssistant, current_user: APIKey = Depe
         new_assistant = Assistant(
             assistant_id=assistant_id,
             assistant_created_by_email=current_user.user_email,
-            assistant_updated_by_email=current_user.user_email
+            assistant_updated_by_email=current_user.user_email,
             **assistant_data
         )
         await new_assistant.insert()

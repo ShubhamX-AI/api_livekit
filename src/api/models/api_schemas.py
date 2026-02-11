@@ -51,10 +51,10 @@ class CreateAssistant(BaseModel):
 # For Outbound Trunk creation
 class CreateOutboundTrunk(BaseModel):
     trunk_name: str = Field(..., min_length=1, max_length=20, description="Trunk name (cannot be empty)")
-    trunk_address: str = Field(..., min_length=1, max_length=20, description="Trunk address (cannot be empty)")
-    trunk_numbers: List[str] = Field(..., min_length=1, max_length=20, description="Trunk numbers (cannot be empty)")
-    trunk_auth_username: str = Field(..., min_length=1, max_length=20, description="Trunk auth username (cannot be empty)")
-    trunk_auth_password: str = Field(..., min_length=1, max_length=20, description="Trunk auth password (cannot be empty)")
+    trunk_address: str = Field(..., min_length=1, max_length=50, description="Trunk address (cannot be empty)")
+    trunk_numbers: List[str] = Field(..., description="Trunk numbers (cannot be empty)")
+    trunk_auth_username: str = Field(..., min_length=1, max_length=50, description="Trunk auth username (cannot be empty)")
+    trunk_auth_password: str = Field(..., min_length=1, max_length=50, description="Trunk auth password (cannot be empty)")
     trunk_type: Literal["exotel", "twilio"] = Field(..., description="Trunk type (cannot be empty) Currently present only from twilio")
 
     class Config:
