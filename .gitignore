@@ -13,3 +13,4 @@ wheels/
 transcripts/
 output-recordings/
 call-end-reports
+.ruff_cache
