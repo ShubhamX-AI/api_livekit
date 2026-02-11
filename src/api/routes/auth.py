@@ -1,12 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from src.api.models.api_schemas import CreateApiKeyRequest
 from src.api.models.response_models import apiResponse
 from src.core.models.db_schemas import APIKey
+from src.api.dependencies import get_current_user
 import secrets
 
 router = APIRouter()
 
-@router.post("/create-api-key")
+# Create api key
+@router.post("/create-key")
 async def create_api_key(request: CreateApiKeyRequest):
     # check if user already exists
     existing_user = await APIKey.find_one(APIKey.user_email == request.user_email)
@@ -27,4 +29,19 @@ async def create_api_key(request: CreateApiKeyRequest):
         success=True,
         message="API key created successfully, Store it securely",
         data={"api_key": api_key,"user_name": request.user_name,"org_name": request.org_name,"user_email": request.user_email}
+    )
+
+
+# Check key details
+@router.get("/check-key")
+async def check_api_key(current_user: APIKey = Depends(get_current_user)):
+    return apiResponse(
+        success=True,
+        message="API key is valid",
+        data={
+            "user_name": current_user.user_name,
+            "org_name": current_user.org_name,
+            "user_email": current_user.user_email,
+            "created_at": current_user.created_at
+        }
     )

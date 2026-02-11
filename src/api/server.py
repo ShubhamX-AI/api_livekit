@@ -54,11 +54,10 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(auth.router, prefix="/auth")
-app.include_router(health.router)
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(health.router, tags=["Health"])
 
 if __name__ == "__main__":
     import uvicorn
     from src.core.config import settings
-    uvicorn.run(app, host="0.0.0.0", port=settings.PORT)
-
+    uvicorn.run("src.api.server:app", host="0.0.0.0", port=int(settings.PORT), reload=True)
