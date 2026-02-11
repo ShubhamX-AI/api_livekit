@@ -7,7 +7,12 @@ class Settings:
     """Application settings"""
     def __init__(self):
         self.PORT = int(os.getenv("PORT", "8000"))
-        self.DATABASE_URL = os.getenv("DATABASE_URL", "mongodb://localhost:27017")
+        
+        # MongoDB settings
+        self.MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://admin:secretpassword@localhost:27017")
+        self.DATABASE_NAME = os.getenv("DATABASE_NAME", "livekit_db")
+        
+        # Email settings
         self.SMTP_HOST = os.getenv("SMTP_HOST", "smtp.sendgrid.net")
         self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
         self.SMTP_USER = os.getenv("SMTP_USER", "apikey")
