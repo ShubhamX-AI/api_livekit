@@ -40,7 +40,7 @@ async def entrypoint(ctx: JobContext):
     # Retrieve agent ID from room name
     # Assumption: room name format is "{assistant_id}-{unique_suffix}" or just "{assistant_id}"
     room_name = ctx.room.name
-    assistant_id = room_name.split("-")[0]
+    assistant_id = room_name.split("_",1)[0]
     logger.info(f"Agent session starting | room: {room_name} | identifier: {assistant_id}")
 
     # Fetch assistant from DB
@@ -196,6 +196,6 @@ if __name__ == "__main__":
             ws_url=settings.LIVEKIT_URL,
             job_memory_warn_mb=1024,
             entrypoint_fnc=entrypoint,
-            agent_name="api_livekit",
+            agent_name="api-agent",
         )
     )

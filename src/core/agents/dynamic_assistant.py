@@ -6,7 +6,6 @@ class DynamicAssistant(Agent):
     This replaces the hardcoded agent classes.
     """
     def __init__(self, room , start_instruction: str, instructions: str):
-        super().__init__()
+        super().__init__(instructions=instructions)
         self.room = room
         self.start_instruction = start_instruction
-        self.instructions = instructions

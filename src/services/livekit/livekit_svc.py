@@ -40,11 +40,11 @@ class LiveKitService:
 
 
     # Create livekit room 
-    async def create_room(self, agent: str) -> str:
+    async def create_room(self, assistant_id: str) -> str:
         async with self.get_livekit_api() as lkapi:
             
             # Create a unique room name with agent name
-            unique_room_name = f"{agent}_{uuid.uuid4().hex[:8]}"
+            unique_room_name = f"{assistant_id}_{uuid.uuid4().hex[:8]}"
 
             # Create room
             room = await lkapi.room.create_room(CreateRoomRequest(name=unique_room_name))
@@ -62,28 +62,7 @@ class LiveKitService:
                     agent_name="api-agent",
                 )
             )
-
-
-    def get_token(self, identity: str, name: str, agent: str, room: Optional[str] = None, email: Optional[str] = None) -> str:
-        metadata = {
-            "agent": agent,
-            "user_email": email
-        }
-        
-        token = (
-            lk_api.AccessToken(self.api_key, self.api_secret)
-            .with_identity(identity)
-            .with_name(name)
-            .with_metadata(json.dumps(metadata))
-            .with_grants(
-                lk_api.VideoGrants(
-                    room_join=True,
-                    room=room,
-                )
-            )
-        )
-        return token.to_jwt()
-
+            return agent_dispatch
 
     # Create Outbound trunk
     async def create_sip_outbound_trunk(
@@ -108,3 +87,19 @@ class LiveKitService:
             trunk = await lkapi.sip.create_sip_outbound_trunk(request)
             
         return trunk
+        
+
+    # Create SIP participant
+    async def create_sip_participant(self, room_name: str, to_number: str, trunk_id: str, participant_identity:str ,participant_metadata: dict):
+        async with self.get_livekit_api() as lkapi:
+            participant = await lkapi.sip.create_sip_participant(
+                CreateSIPParticipantRequest(
+                    room_name=room_name,
+                    sip_trunk_id=trunk_id,
+                    sip_call_to=to_number,
+                    participant_identity=participant_identity,
+                    participant_metadata=participant_metadata,
+                    krisp_enabled=True
+                )
+            )
+            return participant

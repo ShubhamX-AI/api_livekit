@@ -91,6 +91,7 @@ def setup_logging():
     # Set levels for third-party libraries to reduce noise
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+    logging.getLogger("pymongo").setLevel(logging.WARNING)
     
     return logger
 
