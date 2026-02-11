@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from src.api.models.api_schemas import CreateApiKeyRequest
 from src.api.models.response_models import apiResponse
 from src.core.models.db_schemas import APIKey
-import uuid
+import secrets
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ async def create_api_key(request: CreateApiKeyRequest):
         raise HTTPException(status_code=400, detail="User with this email already exists")
     
     # generate api key
-    api_key = "lvk_vyom_" + str(uuid.uuid4())
+    api_key = "lvk_" + secrets.token_urlsafe(32)
 
     try:
         # create new user
