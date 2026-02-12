@@ -29,6 +29,7 @@ class CreateAssistant(BaseModel):
     assistant_tts_model: Literal["cartesia", "elevenlabs"] = Field(..., description="TTS Provider")
     assistant_tts_voice_id: str = Field(..., min_length=1, max_length=50, description="TTS Voice ID")
     assistant_start_instruction: Optional[str] = Field(None, max_length=100, description="Assistant's start instruction")
+    assistant_end_call_url: Optional[str] = Field(None, max_length=100, description="Assistant's end call url")
     
     class Config:
         # Strip whitespace from string fields
@@ -41,7 +42,8 @@ class CreateAssistant(BaseModel):
                 "assistant_prompt": "You are a helpful assistant.",
                 "assistant_tts_model": "cartesia",
                 "assistant_tts_voice_id": "Cartesia Voice ID",
-                "assistant_start_instruction": "Start instruction"
+                "assistant_start_instruction": "Start instruction",
+                "assistant_end_call_url": "End call url. This is the place where sever will sen dthe detial at the end of the call"
             }
         }
 
