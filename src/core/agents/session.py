@@ -192,7 +192,7 @@ async def entrypoint(ctx: JobContext):
     def on_participant_disconnected(participant):
         logger.info(f"Participant disconnected: {participant.identity}")
         # Calculate end time and update record
-        asyncio.create_task(livekit_services.end_call(room_name=ctx.room.name))
+        asyncio.create_task(livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id))
         logger.info(f"Agent session ended for room: {ctx.room.name}")
 
 

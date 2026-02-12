@@ -1,5 +1,6 @@
 import uuid
 import json
+import httpx
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -12,7 +13,7 @@ from livekit.protocol.sip import (
 )
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
-from src.core.db.db_schemas import CallRecord
+from src.core.db.db_schemas import CallRecord, Assistant
 
 setup_logging()
 
@@ -146,7 +147,8 @@ class LiveKitService:
             )
             await call_record.insert()
 
-    async def end_call(self, room_name: str):
+    # Update And send Details at the end of the call
+    async def end_call(self, room_name: str, assistant_id: str):
         """Update the call record with the end time"""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
@@ -157,6 +159,27 @@ class LiveKitService:
             ).total_seconds() / 60
             await call_record.save()
             logger.info(f"Call record ended for room: {room_name}")
+
+        # Get End call url from assistant
+        assistant = await Assistant.find_one(
+            Assistant.assistant_id == assistant_id,
+            Assistant.assistant_end_call_url != None,
+            Assistant.assistant_end_call_url != ""
+        )
+        
+        if assistant and call_record:
+            end_call_url = assistant.assistant_end_call_url
+            # Serialize the Call record safely (handles ObjectId, datetime)
+            payload = json.loads(call_record.model_dump_json())
+            print(payload)
+            # Send the Call record to the end call url
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(end_call_url, json=payload)
+                logger.info(f"Call details sent to end call url: {end_call_url}")
+            except Exception as e:
+                logger.error(f"Failed to send call details to webhook: {e}")
+
 
     async def start_room_recording(self, room_name: str) -> Optional[str]:
         """Start recording the room using LiveKit Egress"""

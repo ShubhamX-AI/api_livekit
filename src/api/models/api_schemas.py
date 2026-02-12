@@ -24,12 +24,12 @@ class CreateApiKey(BaseModel):
 # For Assistant creation
 class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=50, description="Assistant's name (cannot be empty)")
-    assistant_description: Optional[str] = Field(None, max_length=50, description="Assistant's description (optional)")
+    assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
     assistant_tts_model: Literal["cartesia", "elevenlabs"] = Field(..., description="TTS Provider")
-    assistant_tts_voice_id: str = Field(..., min_length=1, max_length=50, description="TTS Voice ID")
-    assistant_start_instruction: Optional[str] = Field(None, max_length=100, description="Assistant's start instruction")
-    assistant_end_call_url: Optional[str] = Field(None, max_length=100, description="Assistant's end call url")
+    assistant_tts_voice_id: str = Field(..., min_length=1, max_length=100, description="TTS Voice ID")
+    assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
+    assistant_end_call_url: Optional[str] = Field(None, max_length=200, description="Assistant's end call url")
     
     class Config:
         # Strip whitespace from string fields
