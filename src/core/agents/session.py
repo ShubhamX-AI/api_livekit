@@ -135,6 +135,7 @@ async def entrypoint(ctx: JobContext):
     elif assistant.assistant_tts_model == "sarvam":
         tts = sarvam.TTS(
             model="bulbul:v3",
+            target_language_code="bn-IN",
             speaker=assistant.assistant_tts_speaker,
             api_key=settings.SARVAM_API_KEY,
         )
