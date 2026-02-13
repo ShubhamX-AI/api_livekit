@@ -26,16 +26,20 @@ app = FastAPI(title="LiveKit AI Backend", version="1.0.0", lifespan=lifespan)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    import traceback
+    from fastapi.encoders import jsonable_encoder
     error_msg = str(exc)
     # Log detailed error
     logger.error(f"Validation Error: {error_msg}")
+    
+    # Clean up errors to ensure they are JSON serializable
+    errors = jsonable_encoder(exc.errors())
+    
     return JSONResponse(
         status_code=422,
         content=apiResponse(
             success=False,
             message=f"Validation Error: {error_msg}",
-            data={"errors": exc.errors()}
+            data={"errors": errors}
         ).model_dump()
     )
 

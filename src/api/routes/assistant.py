@@ -20,6 +20,8 @@ async def create_assistant(request: CreateAssistant, current_user: APIKey = Depe
     
     # Convert Pydantic model to dict
     assistant_data = request.model_dump()
+
+
     
     try:
         logger.info(f"Inserting assistant into database")

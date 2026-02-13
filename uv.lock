@@ -162,7 +162,7 @@ dependencies = [
     { name = "boto3" },
     { name = "fastapi", extra = ["standard"] },
     { name = "gunicorn" },
-    { name = "livekit-agents", extra = ["cartesia", "openai", "turn-detector"] },
+    { name = "livekit-agents", extra = ["cartesia", "openai", "sarvam", "turn-detector"] },
     { name = "motor" },
     { name = "python-dotenv" },
 ]
@@ -173,7 +173,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.34.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.128.6" },
     { name = "gunicorn", specifier = ">=25.0.3" },
-    { name = "livekit-agents", extras = ["cartesia", "openai", "turn-detector"], specifier = "~=1.3" },
+    { name = "livekit-agents", extras = ["cartesia", "openai", "sarvam", "turn-detector"], specifier = "~=1.3" },
     { name = "motor", specifier = ">=3.3.2" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
@@ -1089,6 +1089,9 @@ images = [
 openai = [
     { name = "livekit-plugins-openai" },
 ]
+sarvam = [
+    { name = "livekit-plugins-sarvam" },
+]
 turn-detector = [
     { name = "livekit-plugins-turn-detector" },
 ]
@@ -1159,6 +1162,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4a/f9/31cd4666aabfbad43b0be08e0923fbe952f99783dca853e029572405a578/livekit_plugins_openai-1.4.1.tar.gz", hash = "sha256:7a54440628f3936ea8e0b3ec3315efa10cbb6cadc67820eaf9523050a51a7c53", size = 49058, upload-time = "2026-02-06T21:38:25.39Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/70/fa/328fefc69e473917b391c10be76bcbc4ab47ed70c6154004be49be351e18/livekit_plugins_openai-1.4.1-py3-none-any.whl", hash = "sha256:3d294e7b846487ddc9034e4bf3f67a3d7a5661821d1ffa6297e965c0477b3020", size = 56811, upload-time = "2026-02-06T21:38:24.393Z" },
+]
+
+[[package]]
+name = "livekit-plugins-sarvam"
+version = "1.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "livekit-agents", extra = ["codecs"] },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/6d/9165bfcf44139e3f924e43e8e5f253ac38555f9ad07118b4f7847d619df0/livekit_plugins_sarvam-1.4.1.tar.gz", hash = "sha256:188d192fc1dcf14c76e97b85200b1b931bc2c52db76cd7e5836ee0fdbeb53deb", size = 19268, upload-time = "2026-02-06T21:38:31.69Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/6f/d54a9362e204520b3f24a29ea1f3a52cfb27927378f4ebaaae8112ce69f6/livekit_plugins_sarvam-1.4.1-py3-none-any.whl", hash = "sha256:c3b2ec330c883e1b914ac61df793e3de693dcd29c5f981dbf231726a07c8f7d3", size = 20426, upload-time = "2026-02-06T21:38:30.607Z" },
 ]
 
 [[package]]

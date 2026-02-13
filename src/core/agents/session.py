@@ -11,6 +11,7 @@ from livekit.agents import (
 )
 from openai.types.beta.realtime.session import TurnDetection
 from livekit.plugins import cartesia
+from livekit.plugins import sarvam
 from livekit.plugins.openai import realtime
 from openai.types.realtime import AudioTranscription
 import os
@@ -124,11 +125,19 @@ async def entrypoint(ctx: JobContext):
         api_key=settings.OPENAI_API_KEY,
     )
 
-    tts = cartesia.TTS(
-        model="sonic-3",
-        voice=assistant.assistant_tts_voice_id,
-        api_key=settings.CARTESIA_API_KEY,
-    )
+    # Check between cartesia and sarvam
+    if assistant.assistant_tts_model == "cartesia":
+        tts = cartesia.TTS(
+            model="sonic-3",
+            voice=assistant.assistant_tts_voice_id,
+            api_key=settings.CARTESIA_API_KEY,
+        )
+    elif assistant.assistant_tts_model == "sarvam":
+        tts = sarvam.TTS(
+            model="bulbul:v3",
+            speaker=assistant.assistant_tts_speaker,
+            api_key=settings.SARVAM_API_KEY,
+        )
 
     session = AgentSession(
         llm=llm,

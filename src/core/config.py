@@ -42,6 +42,9 @@ class Settings:
         # Cartesia settings
         self.CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY", "")
 
+        # Sarvam settings
+        self.SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
+
         # Audio Paths
         self.BASE_DIR = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
