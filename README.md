@@ -7,9 +7,9 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 - **Real-time AI Agents**: Powered by OpenAI Realtime API (GPT-4o) and Cartesia/Sarvam TTS.
 - **SIP Support**: Create and manage SIP outbound trunks (Twilio/Exotel) for telephony integration.
 - **Outbound Calls**: Trigger programmatic outbound calls to phone numbers (currently supporting Twilio).
-- **Dynamic Assistants**: Create and configure assistants with custom prompts, voices (Cartesia), speakers (Sarvam), and start instructions.
-- **Custom Tools**: Extend assistant capabilities with custom tools (Webhooks, Static Responses).
-- **Call Recording**: Automatic call recording with LiveKit Egress.
+- **Dynamic Assistants**: Create and configure assistants with custom prompts, typed TTS configuration (Cartesia/Sarvam), and start instructions.
+- **Custom Tools**: Extend assistant capabilities with custom tools (Webhooks, Static Responses) that can be attached/detached dynamically.
+- **Call Recording**: Automatic call recording with LiveKit Egress to AWS S3.
 - **Transcripts**: Real-time transcription storage in MongoDB.
 - **Webhooks**: Automatic webhook notifications for call completion with detailed analytics.
 - **Secure API**: API Key authentication for all management endpoints.
@@ -142,7 +142,9 @@ Create a new AI assistant configuration.
   "assistant_description": "Customer support bot",
   "assistant_prompt": "You are a helpful assistant. User name is {{name}}.",
   "assistant_tts_model": "cartesia",
-  "assistant_tts_voice_id": "248be419-3632-4f38-9500-05f963499d7e",
+  "assistant_tts_config": {
+    "voice_id": "248be419-3632-4f38-9500-05f963499d7e"
+  },
   "assistant_start_instruction": "Hello {{name}}, how can I help?",
   "assistant_end_call_url": "https://your-webhook.com/call-end"
 }
@@ -154,7 +156,10 @@ _For Sarvam TTS:_
 {
   ...
   "assistant_tts_model": "sarvam",
-  "assistant_tts_speaker": "meera",
+  "assistant_tts_config": {
+      "speaker": "meera",
+      "target_language_code": "bn-IN"
+  },
   ...
 }
 ```
@@ -172,7 +177,11 @@ Update an existing assistant's configuration. Only provide the fields you want t
 ```json
 {
   "assistant_name": "Updated Name",
-  "assistant_prompt": "You are an updated assistant."
+  "assistant_tts_model": "sarvam",
+  "assistant_tts_config": {
+      "speaker": "meera",
+      "target_language_code": "bn-IN"
+  }
 }
 ```
 
@@ -217,8 +226,29 @@ _Static Return Tool Example:_
 }
 ```
 
+**PATCH** `/tool/update/{tool_id}`
+Update an existing tool's configuration.
+
+```json
+{
+  "tool_description": "Updated description",
+  "tool_execution_config": {
+      "value": "new-email@example.com"
+  }
+}
+```
+
 **POST** `/tool/attach/{assistant_id}`
 Attach one or more tools to an assistant.
+
+```json
+{
+  "tool_ids": ["<tool_id>"]
+}
+```
+
+**POST** `/tool/detach/{assistant_id}`
+Detach one or more tools from an assistant.
 
 ```json
 {
@@ -307,9 +337,10 @@ The agent (`src/core/agents/session.py`):
 1. Connects to the LiveKit room.
 2. Fetches the assistant configuration from MongoDB using the `assistant_id` (derived from room name).
 3. Injects `metadata` values into the prompt and start instruction.
-4. Initializes OpenAI Realtime API and Cartesia/Sarvam TTS.
-5. Listens for `transcription` events and saves them to MongoDB.
-6. Triggers the `end_call` webhook upon participant disconnection.
+4. Loads and attaches configured tools (webhooks/static) to the assistant.
+5. Initializes OpenAI Realtime API and Cartesia/Sarvam TTS (based on typed configuration).
+6. Listens for `transcription` events and saves them to MongoDB.
+7. Triggers the `end_call` webhook upon participant disconnection.
 
 ## 🤝 Contributing
 
