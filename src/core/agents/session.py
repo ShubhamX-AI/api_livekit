@@ -23,6 +23,7 @@ from src.core.config import settings
 from src.core.logger import logger, setup_logging
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.utils import render_prompt
+from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
 from src.core.db.db_schemas import Assistant
 from src.services.livekit.livekit_svc import LiveKitService
@@ -97,12 +98,22 @@ async def entrypoint(ctx: JobContext):
     except Exception as e:
         logger.error(f"Failed to start recording: {e}", exc_info=True)
 
+    # Load tools attached to this assistant
+    tools = []
+    if assistant.tool_ids:
+        try:
+            tools = await build_tools_from_db(assistant.tool_ids)
+            logger.info(f"Loaded {len(tools)} tool(s) for assistant {assistant.assistant_id}")
+        except Exception as e:
+            logger.error(f"Failed to load tools: {e}", exc_info=True)
+
     # Initialize Agent Instance
     agent_instance = DynamicAssistant(
         room=ctx.room,
         instructions=assistant.assistant_prompt,
         start_instruction=assistant.assistant_start_instruction
         or "Greet the user Professionally",
+        tools=tools,
     )
 
     llm = realtime.RealtimeModel(
@@ -126,17 +137,29 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Check between cartesia and sarvam
+    tts_config = assistant.assistant_tts_config or {}
+    
     if assistant.assistant_tts_model == "cartesia":
+        voice_id = tts_config.get("voice_id")
+        if not voice_id:
+             logger.error(f"Missing voice_id for Cartesia assistant {assistant.assistant_id}")
+             return
+
         tts = cartesia.TTS(
             model="sonic-3",
-            voice=assistant.assistant_tts_voice_id,
+            voice=voice_id,
             api_key=settings.CARTESIA_API_KEY,
         )
     elif assistant.assistant_tts_model == "sarvam":
+        speaker = tts_config.get("speaker")
+        if not speaker:
+             logger.error(f"Missing speaker for Sarvam assistant {assistant.assistant_id}")
+             return
+
         tts = sarvam.TTS(
             model="bulbul:v3",
-            target_language_code="bn-IN",
-            speaker=assistant.assistant_tts_speaker,
+            target_language_code=tts_config.get("target_language_code", "bn-IN"),
+            speaker=speaker,
             api_key=settings.SARVAM_API_KEY,
         )
 
