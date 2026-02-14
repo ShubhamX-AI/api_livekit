@@ -27,8 +27,7 @@ class Assistant(Document):
     assistant_name: str
     assistant_description: Optional[str] = None
     assistant_tts_model: str
-    assistant_tts_voice_id: Optional[str] = None
-    assistant_tts_speaker: Optional[str] = None
+    assistant_tts_config: Dict = {}
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
     assistant_end_call_url: Optional[str] = None

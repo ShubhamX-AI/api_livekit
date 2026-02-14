@@ -104,6 +104,7 @@ async def list_assistants(current_user: APIKey = Depends(get_current_user)):
             "assistant_id": assistant.assistant_id,
             "assistant_name": assistant.assistant_name,
             "assistant_tts_model": assistant.assistant_tts_model,
+            "assistant_tts_config": assistant.assistant_tts_config,
             "assistant_created_by_email": assistant.assistant_created_by_email,
         }
         for assistant in assistants
