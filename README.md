@@ -101,7 +101,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 
 ## 📖 Documentation
 
-For full API documentation, please visit: [https://api-livekit-vyom.indusnettechnologies.com/](https://api-livekit-vyom.indusnettechnologies.com/)
+For full API documentation, please visit: [https://api-livekit-vyom.indusnettechnologies.com/documentation](https://api-livekit-vyom.indusnettechnologies.com/documentation)
 
 ## 🧩 Agent Logic
 
