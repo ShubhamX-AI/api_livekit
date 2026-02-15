@@ -155,7 +155,7 @@ Define a new tool that can be used by your assistants.
 ### Complete Example: Weather Webhook Tool
 
 ```bash
-curl -X POST "http://localhost:8000/tool/create" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -196,7 +196,7 @@ curl -X POST "http://localhost:8000/tool/create" \
 ### Complete Example: Static Return Tool
 
 ```bash
-curl -X POST "http://localhost:8000/tool/create" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -243,7 +243,7 @@ List all active tools created by the current user.
 ### Example Request
 
 ```bash
-curl -X GET "http://localhost:8000/tool/list" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/list" \
      -H "x-api-key: <your_api_key>"
 ```
 
@@ -316,7 +316,7 @@ Fetch details for a specific tool.
 ### Example Request
 
 ```bash
-curl -X GET "http://localhost:8000/tool/details/880e8400-e29b-41d4-a716-446655449999" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/details/880e8400-e29b-41d4-a716-446655449999" \
      -H "x-api-key: <your_api_key>"
 ```
 
@@ -403,7 +403,7 @@ Only provide the fields you want to update. All fields are optional.
 ### Example: Update Webhook URL
 
 ```bash
-curl -X PATCH "http://localhost:8000/tool/update/880e8400-e29b-41d4-a716-446655449999" \
+curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/tool/update/880e8400-e29b-41d4-a716-446655449999" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -466,7 +466,7 @@ Soft-delete a tool. This will also remove the tool from any assistants that are 
 ### Example Request
 
 ```bash
-curl -X DELETE "http://localhost:8000/tool/delete/880e8400-e29b-41d4-a716-446655449999" \
+curl -X DELETE "https://api-livekit-vyom.indusnettechnologies.com/tool/delete/880e8400-e29b-41d4-a716-446655449999" \
      -H "x-api-key: <your_api_key>"
 ```
 
@@ -528,7 +528,7 @@ Enable a set of tools for a specific assistant.
 ### Example Request
 
 ```bash
-curl -X POST "http://localhost:8000/tool/attach/550e8400-e29b-41d4-a716-446655440000" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/attach/550e8400-e29b-41d4-a716-446655440000" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -595,7 +595,7 @@ Remove a set of tools from a specific assistant.
 ### Example Request
 
 ```bash
-curl -X POST "http://localhost:8000/tool/detach/550e8400-e29b-41d4-a716-446655440000" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/detach/550e8400-e29b-41d4-a716-446655440000" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{

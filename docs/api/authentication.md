@@ -45,7 +45,7 @@ Generate a new API key for a user. This endpoint does **not** require authentica
 ### Example Request
 
 ```bash
-curl -X POST "http://localhost:8000/auth/create-key" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key" \
      -H "Content-Type: application/json" \
      -d '{
            "user_name": "John Doe",
@@ -118,7 +118,7 @@ Verify if an API key is valid and retrieve the associated user details.
 ### Example Request
 
 ```bash
-curl -X GET "http://localhost:8000/auth/check-key" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/auth/check-key" \
      -H "x-api-key: lvk_a1b2c3d4e5f6..."
 ```
 
@@ -171,7 +171,7 @@ if not API_KEY:
 
 # Use in requests
 headers = {"x-api-key": API_KEY}
-response = requests.get("http://localhost:8000/assistant/list", headers=headers)
+response = requests.get("https://api-livekit-vyom.indusnettechnologies.com/assistant/list", headers=headers)
 ```
 
 ---

@@ -56,24 +56,32 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
    Create a `.env` file in the root directory:
 
    ```ini
-   # Server Configuration
+   # --- Server Configuration ---
    PORT=8000
+   BACKEND_URL=http://localhost:8000
 
-   # MongoDB
+   # --- MongoDB Settings ---
    MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
    DATABASE_NAME=livekit_db
 
-   # LiveKit
+   # --- LiveKit Settings ---
    LIVEKIT_URL=wss://<your-livekit-domain>
    LIVEKIT_API_KEY=<your-api-key>
    LIVEKIT_API_SECRET=<your-api-secret>
 
-   # AI Providers
+   # --- AI Providers ---
    OPENAI_API_KEY=<your-openai-key>
    CARTESIA_API_KEY=<your-cartesia-key>
    SARVAM_API_KEY=<your-sarvam-key>
 
-   # SMTP Configuration (for emails)
+   # --- Logging Settings ---
+   LOG_LEVEL=INFO                # INFO, DEBUG, WARNING, ERROR, CRITICAL
+   LOG_JSON_FORMAT=False         # Set to True for JSON logging
+   LOG_FILE=app.log
+   LOG_MAX_BYTES=10485760        # 10MB
+   LOG_BACKUP_COUNT=5
+
+   # --- SMTP Configuration (for emails) ---
    SMTP_HOST=smtp.sendgrid.net
    SMTP_PORT=587
    SMTP_USER=apikey
@@ -81,14 +89,12 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
    FROM_EMAIL=noreply@yourdomain.com
    FROM_NAME="Your App Name"
 
-   # AWS S3 (for recordings)
+   # --- AWS S3 (for recordings) ---
    AWS_ACCESS_KEY_ID=<your-access-key>
    AWS_SECRET_ACCESS_KEY=<your-secret-key>
    AWS_REGION=us-east-1
    S3_BUCKET_NAME=<your-bucket-name>
-
-   # Backend Configuration
-   BACKEND_URL=http://localhost:8000
+   S3_RECORDINGS_PREFIX=recordings/
    ```
 
 3. **Run with Docker Compose**:

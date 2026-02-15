@@ -12,7 +12,7 @@
 ### 1. Create Your First API Key
 
 ```bash
-curl -X POST "http://localhost:8000/auth/create-key" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key" \
   -H "Content-Type: application/json" \
   -d '{
     "user_name": "Admin User",
@@ -23,7 +23,7 @@ curl -X POST "http://localhost:8000/auth/create-key" \
 ### 2. Create an Assistant
 
 ```bash
-curl -X POST "http://localhost:8000/assistant/create" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -42,7 +42,7 @@ curl -X POST "http://localhost:8000/assistant/create" \
 Before you can make calls, you need to configure a SIP trunk (e.g., Twilio).
 
 ```bash
-curl -X POST "http://localhost:8000/sip/create-outbound-trunk" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -60,7 +60,7 @@ curl -X POST "http://localhost:8000/sip/create-outbound-trunk" \
 ### 4. Trigger an Outbound Call
 
 ```bash
-curl -X POST "http://localhost:8000/call/outbound" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
