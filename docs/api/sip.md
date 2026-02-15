@@ -67,7 +67,7 @@ Configure a SIP trunk for outbound calls.
 ### Example: Twilio Trunk
 
 ```bash
-curl -X POST "http://localhost:8000/sip/create-outbound-trunk" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -95,7 +95,7 @@ curl -X POST "http://localhost:8000/sip/create-outbound-trunk" \
 ### Example: Exotel Trunk
 
 ```bash
-curl -X POST "http://localhost:8000/sip/create-outbound-trunk" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -147,7 +147,7 @@ List all active SIP trunks created by the current user.
 ### Example Request
 
 ```bash
-curl -X GET "http://localhost:8000/sip/list" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/sip/list" \
      -H "x-api-key: <your_api_key>"
 ```
 

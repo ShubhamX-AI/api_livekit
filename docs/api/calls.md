@@ -74,7 +74,7 @@ Then your metadata should be:
 ### Example: Basic Outbound Call
 
 ```bash
-curl -X POST "http://localhost:8000/call/outbound" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -108,7 +108,7 @@ curl -X POST "http://localhost:8000/call/outbound" \
 ### Example: With Metadata
 
 ```bash
-curl -X POST "http://localhost:8000/call/outbound" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{

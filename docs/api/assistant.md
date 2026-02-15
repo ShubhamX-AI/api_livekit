@@ -68,7 +68,7 @@ Create a new AI assistant configuration.
 ### Example: Cartesia TTS
 
 ```bash
-curl -X POST "http://localhost:8000/assistant/create" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -98,7 +98,7 @@ curl -X POST "http://localhost:8000/assistant/create" \
 ### Example: Sarvam TTS
 
 ```bash
-curl -X POST "http://localhost:8000/assistant/create" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -116,7 +116,7 @@ curl -X POST "http://localhost:8000/assistant/create" \
 ### Example: With Start Instruction
 
 ```bash
-curl -X POST "http://localhost:8000/assistant/create" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -166,7 +166,7 @@ List all active assistants created by the current user.
 ### Example Request
 
 ```bash
-curl -X GET "http://localhost:8000/assistant/list" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/list" \
      -H "x-api-key: <your_api_key>"
 ```
 
@@ -235,7 +235,7 @@ Fetch detailed information about a specific assistant.
 ### Example Request
 
 ```bash
-curl -X GET "http://localhost:8000/assistant/details/550e8400-e29b-41d4-a716-446655440000" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details/550e8400-e29b-41d4-a716-446655440000" \
      -H "x-api-key: <your_api_key>"
 ```
 
@@ -320,7 +320,7 @@ Only provide the fields you want to update. All fields are optional.
 ### Example: Update TTS Configuration
 
 ```bash
-curl -X PATCH "http://localhost:8000/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
      -d '{
@@ -382,7 +382,7 @@ Soft-delete an assistant. Deleted assistants are not permanently removed but mar
 ### Example Request
 
 ```bash
-curl -X DELETE "http://localhost:8000/assistant/delete/550e8400-e29b-41d4-a716-446655440000" \
+curl -X DELETE "https://api-livekit-vyom.indusnettechnologies.com/assistant/delete/550e8400-e29b-41d4-a716-446655440000" \
      -H "x-api-key: <your_api_key>"
 ```
 
@@ -420,7 +420,7 @@ Use `{{key}}` syntax to define placeholders:
 When triggering an outbound call, provide the values:
 
 ```bash
-curl -X POST "http://localhost:8000/call/outbound" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
      -H "x-api-key: <your_api_key>" \
      -H "Content-Type: application/json" \
      -d '{
