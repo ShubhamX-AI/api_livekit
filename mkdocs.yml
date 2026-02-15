@@ -1,0 +1,71 @@
+site_name: LiveKit Agents API
+site_url: https://api-livekit-vyom.indusnettechnologies.com/
+site_description: API documentation for LiveKit Agents - voice AI platform
+copyright: Copyright 2026 - All rights reserved
+repo_url: https://github.com/shubhamINT/api_livekit
+repo_name: shubhamINT/api_livekit
+edit_uri: edit/main/docs/
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - def_list
+  - attr_list
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture: architecture.md
+
+  - API Reference:
+    - Overview: api/errors.md
+    - Authentication: api/authentication.md
+    - Assistants: api/assistant.md
+    - Tools: api/tools.md
+    - SIP Trunks: api/sip.md
+    - Outbound Calls: api/calls.md

@@ -34,7 +34,12 @@ ENV PORT=8000
 # Copy source code and other necessary files
 COPY src /app/src
 COPY assets /app/assets
+COPY docs /app/docs
+COPY mkdocs.yml /app/mkdocs.yml
 COPY server_run.py /app/server_run.py
+
+# Build MkDocs documentation
+RUN mkdocs build -d site
 
 # Download necessary files (models, etc.) during build
 RUN python -m src.core.agents.session download-files
