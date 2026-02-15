@@ -10,25 +10,31 @@
       
       
       
+        <link rel="canonical" href="https://example.com/api/errors/">
       
+      
+        <link rel="prev" href="../../architecture/">
+      
+      
+        <link rel="next" href="../authentication/">
       
       
         
       
       
-      <link rel="icon" href="/assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
-        <title>LiveKit Agents API</title>
+        <title>Overview - LiveKit Agents API</title>
       
     
     
-      <link rel="stylesheet" href="/assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="/assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -47,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL("/",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -71,6 +77,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#api-errors" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -81,7 +92,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="/." title="LiveKit Agents API" class="md-header__button md-logo" aria-label="LiveKit Agents API" data-md-component="logo">
+    <a href="../.." title="LiveKit Agents API" class="md-header__button md-logo" aria-label="LiveKit Agents API" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -101,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              
+              Overview
             
           </span>
         </div>
@@ -214,7 +225,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="/." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -233,7 +244,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="/getting-started/" class="md-tabs__link">
+      <a href="../../getting-started/" class="md-tabs__link">
         
   
   
@@ -252,7 +263,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="/architecture/" class="md-tabs__link">
+      <a href="../../architecture/" class="md-tabs__link">
         
   
   
@@ -269,11 +280,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="/api/errors/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -307,7 +320,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="/." title="LiveKit Agents API" class="md-nav__button md-logo" aria-label="LiveKit Agents API" data-md-component="logo">
+    <a href="../.." title="LiveKit Agents API" class="md-nav__button md-logo" aria-label="LiveKit Agents API" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -337,7 +350,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -364,7 +377,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/getting-started/" class="md-nav__link">
+      <a href="../../getting-started/" class="md-nav__link">
         
   
   
@@ -391,7 +404,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/architecture/" class="md-nav__link">
+      <a href="../../architecture/" class="md-nav__link">
         
   
   
@@ -415,28 +428,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   
@@ -454,7 +470,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -469,10 +485,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="/api/errors/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -488,6 +531,87 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#response-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-status-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="HTTP Status Codes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#2xx-success-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2xx Success Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4xx-client-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4xx Client Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5xx-server-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5xx Server Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -500,7 +624,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/api/authentication/" class="md-nav__link">
+      <a href="../authentication/" class="md-nav__link">
         
   
   
@@ -528,7 +652,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/api/assistant/" class="md-nav__link">
+      <a href="../assistant/" class="md-nav__link">
         
   
   
@@ -556,7 +680,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/api/tools/" class="md-nav__link">
+      <a href="../tools/" class="md-nav__link">
         
   
   
@@ -584,7 +708,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/api/sip/" class="md-nav__link">
+      <a href="../sip/" class="md-nav__link">
         
   
   
@@ -612,7 +736,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/api/calls/" class="md-nav__link">
+      <a href="../calls/" class="md-nav__link">
         
   
   
@@ -657,6 +781,77 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#response-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-status-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="HTTP Status Codes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#2xx-success-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2xx Success Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4xx-client-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4xx Client Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5xx-server-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5xx Server Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -669,8 +864,124 @@
               
               <article class="md-content__inner md-typeset">
                 
-  <h1>404 - Not found</h1>
+                  
 
+
+  
+  
+
+
+<h1 id="api-errors">API Errors</h1>
+<p>This section documents all HTTP status codes and error responses from the API.</p>
+<h2 id="response-structure">Response Structure</h2>
+<p>All API responses follow a consistent structure:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="err">boolea</span><span class="kc">n</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="err">s</span><span class="kc">tr</span><span class="err">i</span><span class="kc">n</span><span class="err">g</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="err">objec</span><span class="kc">t</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="err">array</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="kc">null</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">}</span>
+</span></code></pre></div>
+<ul>
+<li><strong><code>success</code></strong>: <code>true</code> for successful operations, <code>false</code> for errors</li>
+<li><strong><code>message</code></strong>: Human-readable description of the result</li>
+<li><strong><code>data</code></strong>: Contains response payload on success, <code>null</code> on error</li>
+</ul>
+<h2 id="http-status-codes">HTTP Status Codes</h2>
+<h3 id="2xx-success-codes">2xx Success Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>200</code></td>
+<td style="text-align: left;">OK</td>
+<td style="text-align: left;">The request was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>201</code></td>
+<td style="text-align: left;">Created</td>
+<td style="text-align: left;">A new resource was created successfully (also returns <code>200</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4xx-client-errors">4xx Client Errors</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>400</code></td>
+<td style="text-align: left;">Bad Request</td>
+<td style="text-align: left;">Invalid request format or missing required fields.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>401</code></td>
+<td style="text-align: left;">Unauthorized</td>
+<td style="text-align: left;">Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>404</code></td>
+<td style="text-align: left;">Not Found</td>
+<td style="text-align: left;">Resource does not exist or is inactive.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>422</code></td>
+<td style="text-align: left;">Unprocessable Entity</td>
+<td style="text-align: left;">Validation error in request data (handled as <code>400</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="5xx-server-errors">5xx Server Errors</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>500</code></td>
+<td style="text-align: left;">Internal Server Error</td>
+<td style="text-align: left;">Unexpected server error occurred.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>502</code></td>
+<td style="text-align: left;">Bad Gateway</td>
+<td style="text-align: left;">Upstream service (LiveKit, MongoDB) unavailable.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>503</code></td>
+<td style="text-align: left;">Service Unavailable</td>
+<td style="text-align: left;">Temporary overload or maintenance.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+                
               </article>
             </div>
           
@@ -717,10 +1028,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "/", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "toc.follow", "search.suggest", "search.highlight", "content.code.copy"], "search": "/assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "toc.follow", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="/assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

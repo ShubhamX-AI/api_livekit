@@ -25,6 +25,10 @@
          <lastmod>2026-02-15</lastmod>
     </url>
     <url>
+         <loc>https://example.com/api/errors/</loc>
+         <lastmod>2026-02-15</lastmod>
+    </url>
+    <url>
          <loc>https://example.com/api/sip/</loc>
          <lastmod>2026-02-15</lastmod>
     </url>

@@ -3,6 +3,8 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 from src.api.routes import auth, health, assistant, sip, call, tool
 from src.core.logger import setup_logging, logger
 from src.core.db.database import init_db, close_db
@@ -85,6 +87,10 @@ app.include_router(assistant.router, prefix="/assistant", tags=["Assistant"])
 app.include_router(sip.router, prefix="/sip", tags=["Outbound SIP"])
 app.include_router(call.router, prefix="/call", tags=["Call"])
 app.include_router(tool.router, prefix="/tool", tags=["Tool"])
+
+# Serve MkDocs documentation site
+if os.path.exists("site"):
+    app.mount("/documentation", StaticFiles(directory="site", html=True), name="documentation")
 
 if __name__ == "__main__":
     import uvicorn

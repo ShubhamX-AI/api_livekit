@@ -1,8 +1,11 @@
 site_name: LiveKit Agents API
-site_url: https://example.com/
-repo_url: https://github.com/ShubhamX-AI/api_livekit
-repo_name: ShubhamX-AI/api_livekit
+site_url: https://api-livekit-vyom.indusnettechnologies.com/
+site_description: API documentation for LiveKit Agents - voice AI platform
+copyright: Copyright 2026 - All rights reserved
+repo_url: https://github.com/shubhamINT/api_livekit
+repo_name: shubhamINT/api_livekit
 edit_uri: edit/main/docs/
+strict: true
 
 theme:
   name: material
@@ -31,6 +34,9 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+plugins:
+  - search
+
 markdown_extensions:
   - admonition
   - pymdownx.details
@@ -43,12 +49,21 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - def_list
+  - attr_list
 
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Architecture: architecture.md
+
   - API Reference:
+    - Overview: api/errors.md
     - Authentication: api/authentication.md
     - Assistants: api/assistant.md
     - Tools: api/tools.md

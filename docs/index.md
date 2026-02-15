@@ -1,18 +1,34 @@
 # LiveKit Agents API Documentation
 
-Welcome to the documentation for the LiveKit Agents API. this project provides a robust backend for building voice and video AI agents using LiveKit.
+---
 
-## Key Features
+## Build Real-Time Voice AI Agents in Minutes
 
-- **Voice AI**: Integrated with Cartesia and ElevenLabs for high-quality text-to-speech.
-- **LLM Support**: Powered by OpenAI, Anthropic, and Groq.
-- **Tools Framework**: Extend agent capabilities with custom Python functions.
-- **Session Management**: Full persistence of chat history and state.
-- **Deployed Ready**: Dockerized and ready for production.
+A production-ready backend for deploying AI-powered voice agents with LiveKit, OpenAI, and enterprise-grade telephony integration.
 
-## Quick Links
+[Get Started](getting-started.md){ .md-button .md-button--primary }
+[View API Reference](api/authentication.md){ .md-button }
 
-- [Getting Started](getting-started.md): Installation and setup guide.
-- [Architecture](architecture.md): Understand how the system works.
-- [Tool Usage](api/tools.md): Learn how to add capabilities to your agents.
-- [API Reference](api/authentication.md): Detailed API endpoints and schemas.
+---
+
+## :material-chart-timeline: Architecture Overview
+
+```mermaid
+graph TD
+    Client[Client Application] -->|REST API| API[API Server<br/>FastAPI]
+    Client -->|WebSocket| LiveKit[LiveKit Server]
+    
+    API -->|CRUD| DB[(MongoDB)]
+    
+    Worker[Agent Worker] -->|Connect| LiveKit
+    Worker -->|Fetch Config| DB
+    Worker -->|STT/TTS| AI[OpenAI + TTS]
+    
+    Worker -->|Webhook| External[External Services]
+```
+
+For detailed architecture information, see the [Architecture](architecture.md) page.
+
+---
+
+**Ready to build?** [Start with the Getting Started guide :octicons-arrow-right-24:](getting-started.md)

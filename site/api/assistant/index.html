@@ -6,6 +6,8 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
+        <meta name="description" content="API documentation for LiveKit Agents - voice AI platform">
+      
       
       
         <link rel="canonical" href="https://example.com/api/assistant/">
@@ -284,7 +286,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../authentication/" class="md-tabs__link">
+        <a href="../errors/" class="md-tabs__link">
           
   
   
@@ -486,6 +488,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../errors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../authentication/" class="md-nav__link">
         
   
@@ -574,6 +604,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-assistant" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -608,10 +649,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
+  <a href="#response-schema" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-cartesia-tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Cartesia TTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-sarvam-tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Sarvam TTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-with-start-instruction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: With Start Instruction
       
     </span>
   </a>
@@ -636,10 +721,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#example_1" class="md-nav__link">
+  <a href="#response-schema_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
       
     </span>
   </a>
@@ -664,10 +771,43 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#example_2" class="md-nav__link">
+  <a href="#path-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Path Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-schema_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
       
     </span>
   </a>
@@ -692,6 +832,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#path-parameters_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#request-body_1" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -703,10 +854,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example_3" class="md-nav__link">
+  <a href="#response-schema_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-update-tts-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Update TTS Configuration
       
     </span>
   </a>
@@ -731,10 +904,82 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#example_4" class="md-nav__link">
+  <a href="#path-parameters_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Path Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-schema_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-placeholders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Placeholders
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using Placeholders">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#syntax" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Syntax
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#triggering-with-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Triggering with Metadata
       
     </span>
   </a>
@@ -873,6 +1118,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-assistant" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -907,10 +1163,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
+  <a href="#response-schema" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-cartesia-tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Cartesia TTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-sarvam-tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Sarvam TTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-with-start-instruction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: With Start Instruction
       
     </span>
   </a>
@@ -935,10 +1235,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#example_1" class="md-nav__link">
+  <a href="#response-schema_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
       
     </span>
   </a>
@@ -963,10 +1285,43 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#example_2" class="md-nav__link">
+  <a href="#path-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Path Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-schema_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
       
     </span>
   </a>
@@ -991,6 +1346,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#path-parameters_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#request-body_1" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1002,10 +1368,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example_3" class="md-nav__link">
+  <a href="#response-schema_3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-update-tts-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Update TTS Configuration
       
     </span>
   </a>
@@ -1030,10 +1418,82 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#example_4" class="md-nav__link">
+  <a href="#path-parameters_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        Path Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-schema_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-status-codes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-placeholders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Placeholders
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using Placeholders">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#syntax" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Syntax
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#triggering-with-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Triggering with Metadata
       
     </span>
   </a>
@@ -1067,6 +1527,8 @@
 
 <h1 id="assistant-management">Assistant Management</h1>
 <p>This section covers the management of AI assistants, including creation, updates, and deletion.</p>
+<h2 id="overview">Overview</h2>
+<p>Assistants are AI agents configured with specific prompts, TTS (Text-to-Speech) settings, and capabilities. Each assistant can have tools attached to extend its functionality.</p>
 <h2 id="create-assistant">Create Assistant</h2>
 <p>Create a new AI assistant configuration.</p>
 <ul>
@@ -1090,7 +1552,7 @@
 <td style="text-align: left;"><code>assistant_name</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">Yes</td>
-<td style="text-align: left;">The name of the assistant.</td>
+<td style="text-align: left;">The name of the assistant (1-100 characters).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>assistant_description</code></td>
@@ -1102,7 +1564,7 @@
 <td style="text-align: left;"><code>assistant_prompt</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">Yes</td>
-<td style="text-align: left;">The system prompt for the assistant.</td>
+<td style="text-align: left;">The system prompt that defines the assistant's behavior.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>assistant_tts_model</code></td>
@@ -1120,18 +1582,21 @@
 <td style="text-align: left;"><code>assistant_start_instruction</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">No</td>
-<td style="text-align: left;">Instruction for the assistant to follow when the call starts.</td>
+<td style="text-align: left;">Instruction for the assistant to speak when the call starts (max 200 characters).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>assistant_end_call_url</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">No</td>
-<td style="text-align: left;">URL to hit when the call ends.</td>
+<td style="text-align: left;">URL to POST call details when the call ends.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="tts-configuration">TTS Configuration</h3>
-<p><strong>Cartesia Configuration (<code>assistant_tts_model</code>: "cartesia")</strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Cartesia Configuration</label><label for="__tabbed_1_2">Sarvam Configuration</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>Use this when <code>assistant_tts_model</code> is set to <code>"cartesia"</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1146,11 +1611,13 @@
 <td style="text-align: left;"><code>voice_id</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">Yes</td>
-<td style="text-align: left;">The Cartesia voice ID (UUID).</td>
+<td style="text-align: left;">The Cartesia voice ID (UUID format).</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Sarvam Configuration (<code>assistant_tts_model</code>: "sarvam")</strong></p>
+</div>
+<div class="tabbed-block">
+<p>Use this when <code>assistant_tts_model</code> is set to <code>"sarvam"</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1165,17 +1632,84 @@
 <td style="text-align: left;"><code>speaker</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">Yes</td>
-<td style="text-align: left;">The Sarvam speaker identifier (e.g., "meera").</td>
+<td style="text-align: left;">The Sarvam speaker identifier (e.g., "meera", "arvind").</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>target_language_code</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">No</td>
-<td style="text-align: left;">BCP-47 language code (default "bn-IN").</td>
+<td style="text-align: left;">BCP-47 language code (default: "bn-IN").</td>
 </tr>
 </tbody>
 </table>
-<h3 id="example">Example</h3>
+</div>
+</div>
+</div>
+<h3 id="response-schema">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable success message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">Contains the created assistant details.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Unique identifier for the assistant (UUID).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The name of the assistant.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - Assistant created successfully.</td>
+</tr>
+<tr>
+<td style="text-align: left;">400</td>
+<td style="text-align: left;">Bad Request - Invalid input data or mismatched TTS configuration.</td>
+</tr>
+<tr>
+<td style="text-align: left;">401</td>
+<td style="text-align: left;">Unauthorized - Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-cartesia-tts">Example: Cartesia TTS</h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/create&quot;</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
@@ -1189,6 +1723,7 @@
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="s1">           }</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="s1">         }&#39;</span>
 </span></code></pre></div>
+<p><strong>Response:</strong></p>
 <div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Assistant created successfully&quot;</span><span class="p">,</span>
@@ -1198,6 +1733,38 @@
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="p">}</span>
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="p">}</span>
 </span></code></pre></div>
+<h3 id="example-sarvam-tts">Example: Sarvam TTS</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/create&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="s1">           &quot;assistant_name&quot;: &quot;Hindi Support&quot;,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s1">           &quot;assistant_description&quot;: &quot;Hindi speaking support agent&quot;,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="s1">           &quot;assistant_prompt&quot;: &quot;You are a helpful assistant who speaks Hindi.&quot;,</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="s1">           &quot;assistant_tts_model&quot;: &quot;sarvam&quot;,</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="s1">           &quot;assistant_tts_config&quot;: {</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="s1">             &quot;speaker&quot;: &quot;meera&quot;,</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="s1">             &quot;target_language_code&quot;: &quot;hi-IN&quot;</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="s1">           }</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="s1">         }&#39;</span>
+</span></code></pre></div>
+<h3 id="example-with-start-instruction">Example: With Start Instruction</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/create&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s1">           &quot;assistant_name&quot;: &quot;Sales Agent&quot;,</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="s1">           &quot;assistant_description&quot;: &quot;Outbound sales representative&quot;,</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="s1">           &quot;assistant_prompt&quot;: &quot;You are a friendly sales agent.&quot;,</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="s1">           &quot;assistant_tts_model&quot;: &quot;cartesia&quot;,</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="s1">           &quot;assistant_tts_config&quot;: {</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="s1">             &quot;voice_id&quot;: &quot;a167e0f3-df7e-4277-976b-be2f952fa275&quot;</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="s1">           },</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="s1">           &quot;assistant_start_instruction&quot;: &quot;Hello! I&#39;</span>m<span class="w"> </span>calling<span class="w"> </span>from<span class="w"> </span>Acme<span class="w"> </span>Corp.<span class="w"> </span>How<span class="w"> </span>are<span class="w"> </span>you<span class="w"> </span>today?<span class="s2">&quot;,</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="s2">           &quot;</span>assistant_end_call_url<span class="s2">&quot;: &quot;</span>https://api.example.com/call-ended<span class="s2">&quot;</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="s2">         }&#39;</span>
+</span></code></pre></div>
+<hr />
 <h2 id="list-assistants">List Assistants</h2>
 <p>List all active assistants created by the current user.</p>
 <ul>
@@ -1205,10 +1772,101 @@
 <li><strong>Method</strong>: <code>GET</code></li>
 <li><strong>Headers</strong>: <code>x-api-key: &lt;your_api_key&gt;</code></li>
 </ul>
-<h3 id="example_1">Example</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/list&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span>
+<h3 id="response-schema_1">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable success message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">array</td>
+<td style="text-align: left;">List of assistant objects.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data[].assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Unique identifier for the assistant.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data[].assistant_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The name of the assistant.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data[].assistant_tts_model</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The TTS provider used.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data[].assistant_created_by_email</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Email of the user who created the assistant.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data[].assistant_created_at</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">ISO 8601 timestamp of creation.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes_1">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - List retrieved successfully.</td>
+</tr>
+<tr>
+<td style="text-align: left;">401</td>
+<td style="text-align: left;">Unauthorized - Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request">Example Request</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/list&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span>
 </span></code></pre></div>
+<p><strong>Response:</strong></p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Assistants retrieved successfully&quot;</span><span class="p">,</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="nt">&quot;assistant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="p">,</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">&quot;assistant_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Support Bot&quot;</span><span class="p">,</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">&quot;assistant_tts_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cartesia&quot;</span><span class="p">,</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">&quot;assistant_created_by_email&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;admin@example.com&quot;</span><span class="p">,</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="nt">&quot;assistant_created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-01-15T10:00:00.000000&quot;</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
 <h2 id="get-assistant-details">Get Assistant Details</h2>
 <p>Fetch detailed information about a specific assistant.</p>
 <ul>
@@ -1216,10 +1874,158 @@
 <li><strong>Method</strong>: <code>GET</code></li>
 <li><strong>Headers</strong>: <code>x-api-key: &lt;your_api_key&gt;</code></li>
 </ul>
-<h3 id="example_2">Example</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/details/550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span>
+<h3 id="path-parameters">Path Parameters</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The UUID of the assistant.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-schema_2">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable success message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">Complete assistant configuration.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Unique identifier for the assistant.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The name of the assistant.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_description</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The description of the assistant.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_prompt</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The system prompt.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_tts_model</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The TTS provider.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_tts_config</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">The TTS configuration object.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_start_instruction</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The start instruction (if set).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_end_call_url</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The webhook URL (if set).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.tool_ids</code></td>
+<td style="text-align: left;">array</td>
+<td style="text-align: left;">List of attached tool IDs.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_created_at</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">ISO 8601 timestamp of creation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_updated_at</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">ISO 8601 timestamp of last update.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes_2">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - Assistant details retrieved.</td>
+</tr>
+<tr>
+<td style="text-align: left;">401</td>
+<td style="text-align: left;">Unauthorized - Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;">404</td>
+<td style="text-align: left;">Not Found - Assistant does not exist or is inactive.</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_1">Example Request</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/details/550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span>
 </span></code></pre></div>
+<p><strong>Response:</strong></p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Assistant details retrieved successfully&quot;</span><span class="p">,</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">&quot;assistant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="p">,</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="nt">&quot;assistant_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Support Bot&quot;</span><span class="p">,</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="nt">&quot;assistant_description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;First line of support&quot;</span><span class="p">,</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">&quot;assistant_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a helpful customer support agent.&quot;</span><span class="p">,</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">&quot;assistant_tts_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cartesia&quot;</span><span class="p">,</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">&quot;assistant_tts_config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">      </span><span class="nt">&quot;voice_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;a167e0f3-df7e-4277-976b-be2f952fa275&quot;</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">&quot;assistant_start_instruction&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">&quot;assistant_end_call_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="nt">&quot;tool_ids&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">    </span><span class="nt">&quot;assistant_created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-01-15T10:00:00.000000&quot;</span><span class="p">,</span>
+</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">    </span><span class="nt">&quot;assistant_updated_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-01-15T10:00:00.000000&quot;</span>
+</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
 <h2 id="update-assistant">Update Assistant</h2>
 <p>Update the configuration of an existing assistant.</p>
 <ul>
@@ -1228,33 +2034,292 @@
 <li><strong>Headers</strong>: <code>x-api-key: &lt;your_api_key&gt;</code></li>
 <li><strong>Content-Type</strong>: <code>application/json</code></li>
 </ul>
+<h3 id="path-parameters_1">Path Parameters</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The UUID of the assistant to update.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="request-body_1">Request Body</h3>
-<p>Only provide the fields you want to update. Fields are the same as in "Create Assistant".
-<strong>Note</strong>: If updating <code>assistant_tts_model</code> and <code>assistant_tts_config</code>, both should ideally be updated together to ensure consistency.</p>
-<h3 id="example_3">Example</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/update/550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="s1">           &quot;assistant_name&quot;: &quot;Updated Support Bot&quot;,</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="s1">           &quot;assistant_tts_model&quot;: &quot;sarvam&quot;,</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="s1">           &quot;assistant_tts_config&quot;: {</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="s1">             &quot;speaker&quot;: &quot;meera&quot;,</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="s1">             &quot;target_language_code&quot;: &quot;hi-IN&quot;</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="s1">           }</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="s1">         }&#39;</span>
+<p>Only provide the fields you want to update. All fields are optional.</p>
+<div class="admonition note">
+<p class="admonition-title">Important</p>
+<p>If updating <code>assistant_tts_model</code> and <code>assistant_tts_config</code>, both should be updated together to ensure consistency.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>assistant_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The new name of the assistant (1-100 characters).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>assistant_description</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The new description.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>assistant_prompt</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The new system prompt.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>assistant_tts_model</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The new TTS provider (<code>cartesia</code> or <code>sarvam</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>assistant_tts_config</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">The new TTS configuration object.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>assistant_start_instruction</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The new start instruction.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>assistant_end_call_url</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The new webhook URL.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-schema_3">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable success message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">Contains the updated assistant ID.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The ID of the updated assistant.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes_3">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - Assistant updated successfully.</td>
+</tr>
+<tr>
+<td style="text-align: left;">400</td>
+<td style="text-align: left;">Bad Request - Invalid input data.</td>
+</tr>
+<tr>
+<td style="text-align: left;">401</td>
+<td style="text-align: left;">Unauthorized - Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;">404</td>
+<td style="text-align: left;">Not Found - Assistant does not exist.</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-update-tts-configuration">Example: Update TTS Configuration</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/update/550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="s1">           &quot;assistant_name&quot;: &quot;Updated Support Bot&quot;,</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="s1">           &quot;assistant_tts_model&quot;: &quot;sarvam&quot;,</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="s1">           &quot;assistant_tts_config&quot;: {</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="s1">             &quot;speaker&quot;: &quot;meera&quot;,</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="s1">             &quot;target_language_code&quot;: &quot;hi-IN&quot;</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="s1">           }</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="s1">         }&#39;</span>
 </span></code></pre></div>
+<p><strong>Response:</strong></p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Assistant updated successfully&quot;</span><span class="p">,</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nt">&quot;assistant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
 <h2 id="delete-assistant">Delete Assistant</h2>
-<p>Soft-delete an assistant.</p>
+<p>Soft-delete an assistant. Deleted assistants are not permanently removed but marked as inactive.</p>
 <ul>
 <li><strong>URL</strong>: <code>/assistant/delete/{assistant_id}</code></li>
 <li><strong>Method</strong>: <code>DELETE</code></li>
 <li><strong>Headers</strong>: <code>x-api-key: &lt;your_api_key&gt;</code></li>
 </ul>
-<h3 id="example_4">Example</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/delete/550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span>
+<h3 id="path-parameters_2">Path Parameters</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The UUID of the assistant to delete.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-schema_4">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable success message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">Contains the deleted assistant ID.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.assistant_id</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The ID of the deleted assistant.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes_4">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - Assistant deleted successfully.</td>
+</tr>
+<tr>
+<td style="text-align: left;">401</td>
+<td style="text-align: left;">Unauthorized - Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;">404</td>
+<td style="text-align: left;">Not Found - Assistant does not exist or is already inactive.</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_2">Example Request</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span><span class="s2">&quot;http://localhost:8000/assistant/delete/550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span>
 </span></code></pre></div>
+<p><strong>Response:</strong></p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Assistant deleted successfully&quot;</span><span class="p">,</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="nt">&quot;assistant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
+<h2 id="using-placeholders">Using Placeholders</h2>
+<p>Both <code>assistant_prompt</code> and <code>assistant_start_instruction</code> support dynamic placeholders that are replaced at call time using the <code>metadata</code> field in the outbound call request.</p>
+<h3 id="syntax">Syntax</h3>
+<p>Use <code>{{key}}</code> syntax to define placeholders:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">{</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">&quot;assistant_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello {{name}}, you are calling from {{company}}. How can I help?&quot;</span><span class="p">,</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nt">&quot;assistant_start_instruction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hi {{name}}, this is {{agent_name}} from {{company}}.&quot;</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="p">}</span>
+</span></code></pre></div>
+<h3 id="triggering-with-metadata">Triggering with Metadata</h3>
+<p>When triggering an outbound call, provide the values:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8000/call/outbound&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: &lt;your_api_key&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="s1">           &quot;assistant_id&quot;: &quot;550e8400-e29b-41d4-a716-446655440000&quot;,</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="s1">           &quot;trunk_id&quot;: &quot;ST_...&quot;,</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="s1">           &quot;to_number&quot;: &quot;+15550200000&quot;,</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="s1">           &quot;call_service&quot;: &quot;twilio&quot;,</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="s1">           &quot;metadata&quot;: {</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="s1">             &quot;name&quot;: &quot;John Doe&quot;,</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="s1">             &quot;company&quot;: &quot;Acme Corp&quot;,</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="s1">             &quot;agent_name&quot;: &quot;Sarah&quot;</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="s1">           }</span>
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="s1">         }&#39;</span>
+</span></code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Best Practice</p>
+<p>Always provide default values in your prompts for cases where metadata might be missing:
+<div class="language-json highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="p">{</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">&quot;assistant_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello {{name|there}}, welcome to {{company|our service}}!&quot;</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="p">}</span>
+</span></code></pre></div></p>
+</div>
 
 
 
@@ -1288,6 +2353,10 @@
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright 2026 - All rights reserved
+    </div>
   
   
     Made with

@@ -6,12 +6,14 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
+        <meta name="description" content="API documentation for LiveKit Agents - voice AI platform">
+      
       
       
         <link rel="canonical" href="https://example.com/api/authentication/">
       
       
-        <link rel="prev" href="../../architecture/">
+        <link rel="prev" href="../errors/">
       
       
         <link rel="next" href="../assistant/">
@@ -284,7 +286,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../errors/" class="md-tabs__link">
           
   
   
@@ -483,6 +485,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../errors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -546,6 +576,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -569,10 +610,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#response" class="md-nav__link">
+  <a href="#response-schema" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Response
+        Response Schema
       
     </span>
   </a>
@@ -580,10 +621,43 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
+  <a href="#http-status-codes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-response-200-ok" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Response (200 OK)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-error-response-400-bad-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Error Response (400 Bad Request)
       
     </span>
   </a>
@@ -619,10 +693,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#response_1" class="md-nav__link">
+  <a href="#response-schema_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Response
+        Response Schema
       
     </span>
   </a>
@@ -630,10 +704,43 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example_1" class="md-nav__link">
+  <a href="#http-status-codes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-response-200-ok_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Response (200 OK)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-error-response-401-unauthorized" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Error Response (401 Unauthorized)
       
     </span>
   </a>
@@ -642,6 +749,45 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-using-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Using Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
   
 </li>
       
@@ -800,6 +946,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -823,10 +980,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#response" class="md-nav__link">
+  <a href="#response-schema" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Response
+        Response Schema
       
     </span>
   </a>
@@ -834,10 +991,43 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
+  <a href="#http-status-codes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-response-200-ok" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Response (200 OK)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-error-response-400-bad-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Error Response (400 Bad Request)
       
     </span>
   </a>
@@ -873,10 +1063,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#response_1" class="md-nav__link">
+  <a href="#response-schema_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Response
+        Response Schema
       
     </span>
   </a>
@@ -884,10 +1074,43 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#example_1" class="md-nav__link">
+  <a href="#http-status-codes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-response-200-ok_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Response (200 OK)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-error-response-401-unauthorized" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Error Response (401 Unauthorized)
       
     </span>
   </a>
@@ -896,6 +1119,45 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-using-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Using Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
   
 </li>
       
@@ -921,8 +1183,10 @@
 
 <h1 id="authentication">Authentication</h1>
 <p>This section covers the authentication endpoints for the LiveKit Agents API.</p>
+<h2 id="overview">Overview</h2>
+<p>All API endpoints (except creating an API key) require authentication via the <code>x-api-key</code> header. API keys are scoped to individual users and provide access to all resources created by that user.</p>
 <h2 id="create-api-key">Create API Key</h2>
-<p>Generate a new API key for a user.</p>
+<p>Generate a new API key for a user. This endpoint does <strong>not</strong> require authentication and is typically used for initial setup.</p>
 <ul>
 <li><strong>URL</strong>: <code>/auth/create-key</code></li>
 <li><strong>Method</strong>: <code>POST</code></li>
@@ -943,13 +1207,7 @@
 <td style="text-align: left;"><code>user_name</code></td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;">Yes</td>
-<td style="text-align: left;">The name of the user.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>org_name</code></td>
-<td style="text-align: left;">string</td>
-<td style="text-align: left;">No</td>
-<td style="text-align: left;">The name of the organization.</td>
+<td style="text-align: left;">The name of the user (1-100 characters).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>user_email</code></td>
@@ -957,11 +1215,85 @@
 <td style="text-align: left;">Yes</td>
 <td style="text-align: left;">The email address of the user.</td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>org_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">No</td>
+<td style="text-align: left;">The name of the organization (max 100 characters).</td>
+</tr>
 </tbody>
 </table>
-<h3 id="response">Response</h3>
-<p>Returns the generated API key. <strong>Store this key securely as it cannot be retrieved later.</strong></p>
-<h3 id="example">Example</h3>
+<h3 id="response-schema">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable success message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">Contains the API key details.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.api_key</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The generated API key. <strong>Store this securely - it cannot be retrieved later.</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.user_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The user's name.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.org_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The organization name (if provided).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.user_email</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The user's email address.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - API key created successfully.</td>
+</tr>
+<tr>
+<td style="text-align: left;">400</td>
+<td style="text-align: left;">Bad Request - Invalid input data (missing required fields, invalid email).</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error during key creation.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request">Example Request</h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8000/auth/create-key&quot;</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
@@ -970,17 +1302,26 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="s1">           &quot;user_email&quot;: &quot;john@example.com&quot;</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="s1">         }&#39;</span>
 </span></code></pre></div>
+<h3 id="example-response-200-ok">Example Response (200 OK)</h3>
 <div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;API key created successfully, Store it securely&quot;</span><span class="p">,</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">&quot;api_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lvk_...&quot;</span><span class="p">,</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">&quot;api_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lvk_a1b2c3d4e5f6...&quot;</span><span class="p">,</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">&quot;user_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;John Doe&quot;</span><span class="p">,</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">&quot;org_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Acme Corp&quot;</span><span class="p">,</span>
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">&quot;user_email&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;john@example.com&quot;</span>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="p">}</span>
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">}</span>
 </span></code></pre></div>
+<h3 id="example-error-response-400-bad-request">Example Error Response (400 Bad Request)</h3>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Invalid email address&quot;</span><span class="p">,</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
 <h2 id="check-api-key">Check API Key</h2>
 <p>Verify if an API key is valid and retrieve the associated user details.</p>
 <ul>
@@ -1005,23 +1346,132 @@
 </tr>
 </tbody>
 </table>
-<h3 id="response_1">Response</h3>
-<p>Returns the user and organization details associated with the API key.</p>
-<h3 id="example_1">Example</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://localhost:8000/auth/check-key&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: lvk_...&quot;</span>
+<h3 id="response-schema_1">Response Schema</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>success</code></td>
+<td style="text-align: left;">boolean</td>
+<td style="text-align: left;">Indicates if the operation was successful.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>message</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">Human-readable status message.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data</code></td>
+<td style="text-align: left;">object</td>
+<td style="text-align: left;">Contains user details if key is valid.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.user_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The user's name.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.org_name</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The organization name (if set).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.user_email</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">The user's email address.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>data.created_at</code></td>
+<td style="text-align: left;">string</td>
+<td style="text-align: left;">ISO 8601 timestamp of when the key was created.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="http-status-codes_1">HTTP Status Codes</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Code</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">200</td>
+<td style="text-align: left;">Success - API key is valid.</td>
+</tr>
+<tr>
+<td style="text-align: left;">401</td>
+<td style="text-align: left;">Unauthorized - Invalid or missing API key.</td>
+</tr>
+<tr>
+<td style="text-align: left;">500</td>
+<td style="text-align: left;">Server Error - Internal server error during validation.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_1">Example Request</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://localhost:8000/auth/check-key&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;x-api-key: lvk_a1b2c3d4e5f6...&quot;</span>
 </span></code></pre></div>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;API key is valid&quot;</span><span class="p">,</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nt">&quot;user_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;John Doe&quot;</span><span class="p">,</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">&quot;org_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Acme Corp&quot;</span><span class="p">,</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">&quot;user_email&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;john@example.com&quot;</span><span class="p">,</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2023-10-27T10:00:00.000000&quot;</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="p">}</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">}</span>
+<h3 id="example-response-200-ok_1">Example Response (200 OK)</h3>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;API key is valid&quot;</span><span class="p">,</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">&quot;user_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;John Doe&quot;</span><span class="p">,</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">&quot;org_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Acme Corp&quot;</span><span class="p">,</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nt">&quot;user_email&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;john@example.com&quot;</span><span class="p">,</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-01-15T10:00:00.000000&quot;</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">}</span>
 </span></code></pre></div>
+<h3 id="example-error-response-401-unauthorized">Example Error Response (401 Unauthorized)</h3>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Invalid API key&quot;</span><span class="p">,</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
+<h2 id="security-best-practices">Security Best Practices</h2>
+<div class="admonition warning">
+<p class="admonition-title">Important</p>
+<ul>
+<li><strong>Store API keys securely</strong> - never commit them to version control</li>
+<li><strong>Rotate keys regularly</strong> - create new keys and deprecate old ones</li>
+<li><strong>Use environment variables</strong> - never hardcode keys in your application</li>
+<li><strong>Monitor usage</strong> - check the <code>created_at</code> timestamp to track key age</li>
+</ul>
+</div>
+<h3 id="example-using-environment-variables">Example: Using Environment Variables</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Load API key from environment</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">API_KEY</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;LIVEKIT_API_KEY&quot;</span><span class="p">)</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="k">if</span> <span class="ow">not</span> <span class="n">API_KEY</span><span class="p">:</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;LIVEKIT_API_KEY environment variable not set&quot;</span><span class="p">)</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1"># Use in requests</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">headers</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;x-api-key&quot;</span><span class="p">:</span> <span class="n">API_KEY</span><span class="p">}</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;http://localhost:8000/assistant/list&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">)</span>
+</span></code></pre></div>
+<hr />
+<h2 id="next-steps">Next Steps</h2>
+<p>Once you have your API key, you can:</p>
+<ol>
+<li><a href="../assistant/">Create an Assistant</a> - Configure your AI agent</li>
+<li><a href="../tools/">Set up Tools</a> - Add custom capabilities</li>
+<li><a href="../sip/">Configure SIP Trunks</a> - Enable telephony</li>
+<li><a href="../calls/">Make Outbound Calls</a> - Start voice conversations</li>
+</ol>
 
 
 
@@ -1055,6 +1505,10 @@
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright 2026 - All rights reserved
+    </div>
   
   
     Made with
