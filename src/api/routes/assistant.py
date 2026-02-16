@@ -57,11 +57,6 @@ async def update_assistant(
 ):
     logger.info(f"Received request to update assistant: {assistant_id}")
 
-    # Manually validate against Pydantic model  
-    try:
-        request = UpdateAssistant(**request)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Validation Error: {str(e)}")
 
     # Update fields
     update_data = request.model_dump(exclude_unset=True)
