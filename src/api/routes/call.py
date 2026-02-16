@@ -82,8 +82,6 @@ async def end_call(request: Request, _ : dict= Body(...)):
     # Get the request body
     body = await request.json()
     
-    logger.info(f"Payload: {body}")
-    
     # Get the room name from the body
     return apiResponse(
         success=True,

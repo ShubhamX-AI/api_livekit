@@ -184,7 +184,7 @@ async def entrypoint(ctx: JobContext):
         text_input=False,
         audio_input=True,
         audio_output=True,
-        close_on_disconnect=False,
+        close_on_disconnect=False, # Imp or else it will not send the the details of call end to the call end url
         delete_room_on_close=False,
     )
 
@@ -237,29 +237,12 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"Failed to send start instruction: {e}", exc_info=True)
 
     # --- WAIT FOR DISCONNECT ---
-    session_ended = asyncio.Event()
-
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
         logger.info(f"Participant disconnected: {participant.identity}")
-        session_ended.set()
-
-    @ctx.room.on("disconnected")
-    def on_disconnected():
-        session_ended.set()
-
-    # Wait for the session to actually end (room disconnects or participant leaves)
-    await session_ended.wait()
-
-    # Now that we are disconnected, perform the end call tasks and WAIT for them
-    try:
-        await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
-        logger.info(f"End call tasks completed for room: {ctx.room.name}")
-    except Exception as e:
-        logger.error(f"Error during end call tasks: {e}")
-
-    logger.info(f"Agent session ended for room: {ctx.room.name}")
-
+        # Calculate end time and update record
+        asyncio.create_task(livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id))
+        logger.info(f"Agent session ended for room: {ctx.room.name}")
 
 if __name__ == "__main__":
     cli.run_app(

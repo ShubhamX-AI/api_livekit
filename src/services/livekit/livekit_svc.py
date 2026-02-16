@@ -169,7 +169,7 @@ class LiveKitService:
             Assistant.assistant_end_call_url != ""
         )
         
-        logger.info(f"Assistant found with assistant_id: {assistant_id} and end call url: {assistant.assistant_end_call_url}")
+        logger.info(f"Assistant found with assistant_id: {assistant_id}")
 
         if assistant and call_record:
             end_call_url = assistant.assistant_end_call_url
@@ -190,14 +190,12 @@ class LiveKitService:
                 "message": "Call details fetched successfully",
                 "data": filtered_data
             }
-
-            logger.info(f"endcall Payload: {payload}")
             
             # Send the Call record to the end call url
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(end_call_url, json=payload)
-                    logger.info(f"Call details sent to end call url: {end_call_url} with response: {response.text}")
+                    _ = await client.post(end_call_url, json=payload)
+                    logger.info(f"Call details sent to end call url: {end_call_url}")
             except Exception as e:
                 logger.error(f"Failed to send call details to webhook: {e}")
 
