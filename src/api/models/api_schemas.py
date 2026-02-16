@@ -24,11 +24,13 @@ class CreateApiKey(BaseModel):
 # ── TTS Config sub-models ──────────────────────────
 class CartesiaTTSConfig(BaseModel):
     voice_id: str = Field(..., min_length=1, max_length=100, description="Cartesia voice ID")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system key)")
 
 
 class SarvamTTSConfig(BaseModel):
     speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier")
     target_language_code: str = Field("bn-IN", max_length=10, description="BCP-47 language code")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key)")
 
 
 # Discriminated union type

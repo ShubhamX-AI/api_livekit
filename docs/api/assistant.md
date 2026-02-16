@@ -17,15 +17,15 @@ Create a new AI assistant configuration.
 
 ### Request Body
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `assistant_name` | string | Yes | The name of the assistant (1-100 characters). |
-| `assistant_description` | string | Yes | A description of the assistant. |
-| `assistant_prompt` | string | Yes | The system prompt that defines the assistant's behavior. |
-| `assistant_tts_model` | string | Yes | The TTS provider. One of `cartesia` or `sarvam`. |
-| `assistant_tts_config` | object | Yes | The TTS configuration object (see below). |
-| `assistant_start_instruction` | string | No | Instruction for the assistant to speak when the call starts (max 200 characters). |
-| `assistant_end_call_url` | string | No | URL to POST call details when the call ends. |
+| Field                         | Type   | Required | Description                                                                       |
+| :---------------------------- | :----- | :------- | :-------------------------------------------------------------------------------- |
+| `assistant_name`              | string | Yes      | The name of the assistant (1-100 characters).                                     |
+| `assistant_description`       | string | Yes      | A description of the assistant.                                                   |
+| `assistant_prompt`            | string | Yes      | The system prompt that defines the assistant's behavior.                          |
+| `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia` or `sarvam`.                                  |
+| `assistant_tts_config`        | object | Yes      | The TTS configuration object (see below).                                         |
+| `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
+| `assistant_end_call_url`      | string | No       | URL to POST call details when the call ends.                                      |
 
 ### TTS Configuration
 
@@ -36,6 +36,7 @@ Create a new AI assistant configuration.
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
     | `voice_id` | string | Yes | The Cartesia voice ID (UUID format). |
+    | `api_key` | string | No | Optional Cartesia API key. If not provided, the system's default key will be used. |
 
 === "Sarvam Configuration"
 
@@ -45,25 +46,26 @@ Create a new AI assistant configuration.
     | :--- | :--- | :--- | :--- |
     | `speaker` | string | Yes | The Sarvam speaker identifier (e.g., "meera", "arvind"). |
     | `target_language_code` | string | No | BCP-47 language code (default: "bn-IN"). |
+    | `api_key` | string | No | Optional Sarvam API key. If not provided, the system's default key will be used. |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the created assistant details. |
-| `data.assistant_id` | string | Unique identifier for the assistant (UUID). |
-| `data.assistant_name` | string | The name of the assistant. |
+| Field                 | Type    | Description                                 |
+| :-------------------- | :------ | :------------------------------------------ |
+| `success`             | boolean | Indicates if the operation was successful.  |
+| `message`             | string  | Human-readable success message.             |
+| `data`                | object  | Contains the created assistant details.     |
+| `data.assistant_id`   | string  | Unique identifier for the assistant (UUID). |
+| `data.assistant_name` | string  | The name of the assistant.                  |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Assistant created successfully. |
-| 400 | Bad Request - Invalid input data or mismatched TTS configuration. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                                       |
+| :--- | :---------------------------------------------------------------- |
+| 200  | Success - Assistant created successfully.                         |
+| 400  | Bad Request - Invalid input data or mismatched TTS configuration. |
+| 401  | Unauthorized - Invalid or missing API key.                        |
+| 500  | Server Error - Internal server error.                             |
 
 ### Example: Cartesia TTS
 
@@ -71,13 +73,14 @@ Create a new AI assistant configuration.
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
-     -d '{
+         -d '{
            "assistant_name": "Support Bot",
            "assistant_description": "First line of support",
            "assistant_prompt": "You are a helpful customer support agent.",
            "assistant_tts_model": "cartesia",
            "assistant_tts_config": {
-             "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+             "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
+             "api_key": "your_custom_cartesia_api_key"
            }
          }'
 ```
@@ -101,14 +104,15 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
      -H "x-api-key: <your_api_key>" \
-     -d '{
+         -d '{
            "assistant_name": "Hindi Support",
            "assistant_description": "Hindi speaking support agent",
            "assistant_prompt": "You are a helpful assistant who speaks Hindi.",
            "assistant_tts_model": "sarvam",
            "assistant_tts_config": {
              "speaker": "meera",
-             "target_language_code": "hi-IN"
+             "target_language_code": "hi-IN",
+             "api_key": "your_custom_sarvam_api_key"
            }
          }'
 ```
@@ -144,24 +148,24 @@ List all active assistants created by the current user.
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | array | List of assistant objects. |
-| `data[].assistant_id` | string | Unique identifier for the assistant. |
-| `data[].assistant_name` | string | The name of the assistant. |
-| `data[].assistant_tts_model` | string | The TTS provider used. |
-| `data[].assistant_created_by_email` | string | Email of the user who created the assistant. |
-| `data[].assistant_created_at` | string | ISO 8601 timestamp of creation. |
+| Field                               | Type    | Description                                  |
+| :---------------------------------- | :------ | :------------------------------------------- |
+| `success`                           | boolean | Indicates if the operation was successful.   |
+| `message`                           | string  | Human-readable success message.              |
+| `data`                              | array   | List of assistant objects.                   |
+| `data[].assistant_id`               | string  | Unique identifier for the assistant.         |
+| `data[].assistant_name`             | string  | The name of the assistant.                   |
+| `data[].assistant_tts_model`        | string  | The TTS provider used.                       |
+| `data[].assistant_created_by_email` | string  | Email of the user who created the assistant. |
+| `data[].assistant_created_at`       | string  | ISO 8601 timestamp of creation.              |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - List retrieved successfully. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                |
+| :--- | :----------------------------------------- |
+| 200  | Success - List retrieved successfully.     |
+| 401  | Unauthorized - Invalid or missing API key. |
+| 500  | Server Error - Internal server error.      |
 
 ### Example Request
 
@@ -200,37 +204,37 @@ Fetch detailed information about a specific assistant.
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter      | Type   | Description                |
+| :------------- | :----- | :------------------------- |
 | `assistant_id` | string | The UUID of the assistant. |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Complete assistant configuration. |
-| `data.assistant_id` | string | Unique identifier for the assistant. |
-| `data.assistant_name` | string | The name of the assistant. |
-| `data.assistant_description` | string | The description of the assistant. |
-| `data.assistant_prompt` | string | The system prompt. |
-| `data.assistant_tts_model` | string | The TTS provider. |
-| `data.assistant_tts_config` | object | The TTS configuration object. |
-| `data.assistant_start_instruction` | string | The start instruction (if set). |
-| `data.assistant_end_call_url` | string | The webhook URL (if set). |
-| `data.tool_ids` | array | List of attached tool IDs. |
-| `data.assistant_created_at` | string | ISO 8601 timestamp of creation. |
-| `data.assistant_updated_at` | string | ISO 8601 timestamp of last update. |
+| Field                              | Type    | Description                                |
+| :--------------------------------- | :------ | :----------------------------------------- |
+| `success`                          | boolean | Indicates if the operation was successful. |
+| `message`                          | string  | Human-readable success message.            |
+| `data`                             | object  | Complete assistant configuration.          |
+| `data.assistant_id`                | string  | Unique identifier for the assistant.       |
+| `data.assistant_name`              | string  | The name of the assistant.                 |
+| `data.assistant_description`       | string  | The description of the assistant.          |
+| `data.assistant_prompt`            | string  | The system prompt.                         |
+| `data.assistant_tts_model`         | string  | The TTS provider.                          |
+| `data.assistant_tts_config`        | object  | The TTS configuration object.              |
+| `data.assistant_start_instruction` | string  | The start instruction (if set).            |
+| `data.assistant_end_call_url`      | string  | The webhook URL (if set).                  |
+| `data.tool_ids`                    | array   | List of attached tool IDs.                 |
+| `data.assistant_created_at`        | string  | ISO 8601 timestamp of creation.            |
+| `data.assistant_updated_at`        | string  | ISO 8601 timestamp of last update.         |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Assistant details retrieved. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Assistant does not exist or is inactive. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                          |
+| :--- | :--------------------------------------------------- |
+| 200  | Success - Assistant details retrieved.               |
+| 401  | Unauthorized - Invalid or missing API key.           |
+| 404  | Not Found - Assistant does not exist or is inactive. |
+| 500  | Server Error - Internal server error.                |
 
 ### Example Request
 
@@ -276,8 +280,8 @@ Update the configuration of an existing assistant.
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter      | Type   | Description                          |
+| :------------- | :----- | :----------------------------------- |
 | `assistant_id` | string | The UUID of the assistant to update. |
 
 ### Request Body
@@ -288,34 +292,34 @@ Only provide the fields you want to update. All fields are optional.
 
     If updating `assistant_tts_model` and `assistant_tts_config`, both should be updated together to ensure consistency.
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `assistant_name` | string | The new name of the assistant (1-100 characters). |
-| `assistant_description` | string | The new description. |
-| `assistant_prompt` | string | The new system prompt. |
-| `assistant_tts_model` | string | The new TTS provider (`cartesia` or `sarvam`). |
-| `assistant_tts_config` | object | The new TTS configuration object. |
-| `assistant_start_instruction` | string | The new start instruction. |
-| `assistant_end_call_url` | string | The new webhook URL. |
+| Field                         | Type   | Description                                       |
+| :---------------------------- | :----- | :------------------------------------------------ |
+| `assistant_name`              | string | The new name of the assistant (1-100 characters). |
+| `assistant_description`       | string | The new description.                              |
+| `assistant_prompt`            | string | The new system prompt.                            |
+| `assistant_tts_model`         | string | The new TTS provider (`cartesia` or `sarvam`).    |
+| `assistant_tts_config`        | object | The new TTS configuration object.                 |
+| `assistant_start_instruction` | string | The new start instruction.                        |
+| `assistant_end_call_url`      | string | The new webhook URL.                              |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the updated assistant ID. |
-| `data.assistant_id` | string | The ID of the updated assistant. |
+| Field               | Type    | Description                                |
+| :------------------ | :------ | :----------------------------------------- |
+| `success`           | boolean | Indicates if the operation was successful. |
+| `message`           | string  | Human-readable success message.            |
+| `data`              | object  | Contains the updated assistant ID.         |
+| `data.assistant_id` | string  | The ID of the updated assistant.           |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Assistant updated successfully. |
-| 400 | Bad Request - Invalid input data. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Assistant does not exist. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                |
+| :--- | :----------------------------------------- |
+| 200  | Success - Assistant updated successfully.  |
+| 400  | Bad Request - Invalid input data.          |
+| 401  | Unauthorized - Invalid or missing API key. |
+| 404  | Not Found - Assistant does not exist.      |
+| 500  | Server Error - Internal server error.      |
 
 ### Example: Update TTS Configuration
 
@@ -357,27 +361,27 @@ Soft-delete an assistant. Deleted assistants are not permanently removed but mar
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter      | Type   | Description                          |
+| :------------- | :----- | :----------------------------------- |
 | `assistant_id` | string | The UUID of the assistant to delete. |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the deleted assistant ID. |
-| `data.assistant_id` | string | The ID of the deleted assistant. |
+| Field               | Type    | Description                                |
+| :------------------ | :------ | :----------------------------------------- |
+| `success`           | boolean | Indicates if the operation was successful. |
+| `message`           | string  | Human-readable success message.            |
+| `data`              | object  | Contains the deleted assistant ID.         |
+| `data.assistant_id` | string  | The ID of the deleted assistant.           |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Assistant deleted successfully. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Assistant does not exist or is already inactive. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                                  |
+| :--- | :----------------------------------------------------------- |
+| 200  | Success - Assistant deleted successfully.                    |
+| 401  | Unauthorized - Invalid or missing API key.                   |
+| 404  | Not Found - Assistant does not exist or is already inactive. |
+| 500  | Server Error - Internal server error.                        |
 
 ### Example Request
 

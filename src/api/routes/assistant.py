@@ -11,6 +11,23 @@ router = APIRouter()
 setup_logging()
 
 
+def mask_api_key(tts_config: dict) -> dict:
+    """Mask the API key in the TTS config for security."""
+    if not tts_config:
+        return tts_config
+    
+    masked_config = tts_config.copy()
+    if "api_key" in masked_config and masked_config["api_key"]:
+        key = masked_config["api_key"]
+        if len(key) > 8:
+            masked_config["api_key"] = f"{key[:4]}...{key[-4:]}"
+        else:
+            masked_config["api_key"] = "****"
+    else:
+        masked_config["api_key"] = "Using System provided API Key"
+    return masked_config
+
+
 # Create new assistant
 @router.post("/create")
 async def create_assistant(
@@ -105,7 +122,7 @@ async def list_assistants(current_user: APIKey = Depends(get_current_user)):
             "assistant_id": assistant.assistant_id,
             "assistant_name": assistant.assistant_name,
             "assistant_tts_model": assistant.assistant_tts_model,
-            "assistant_tts_config": assistant.assistant_tts_config,
+            "assistant_tts_config": mask_api_key(assistant.assistant_tts_config),
             "assistant_created_by_email": assistant.assistant_created_by_email,
         }
         for assistant in assistants
@@ -134,10 +151,13 @@ async def get_assistant_details(
     if not assistant:
         raise HTTPException(status_code=404, detail="Assistant not found")
 
+    assistant_data = assistant.model_dump(exclude={"id"})
+    assistant_data["assistant_tts_config"] = mask_api_key(assistant_data.get("assistant_tts_config", {}))
+
     return apiResponse(
         success=True,
         message="Assistant details retrieved successfully",
-        data=assistant.model_dump(exclude={"id"}),
+        data=assistant_data,
     )
 
 

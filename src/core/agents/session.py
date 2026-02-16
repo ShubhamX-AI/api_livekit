@@ -145,22 +145,32 @@ async def entrypoint(ctx: JobContext):
              logger.error(f"Missing voice_id for Cartesia assistant {assistant.assistant_id}")
              return
 
+        # Check api key present
+        api_key=tts_config.get("api_key")
+        if not api_key:
+            api_key=settings.CARTESIA_API_KEY
+
         tts = cartesia.TTS(
             model="sonic-3",
             voice=voice_id,
-            api_key=settings.CARTESIA_API_KEY,
+            api_key=api_key,
         )
     elif assistant.assistant_tts_model == "sarvam":
         speaker = tts_config.get("speaker")
         if not speaker:
              logger.error(f"Missing speaker for Sarvam assistant {assistant.assistant_id}")
              return
+        
+        # Check api key present
+        api_key=tts_config.get("api_key")
+        if not api_key:
+            api_key=settings.SARVAM_API_KEY
 
         tts = sarvam.TTS(
             model="bulbul:v3",
             target_language_code=tts_config.get("target_language_code", "bn-IN"),
             speaker=speaker,
-            api_key=settings.SARVAM_API_KEY,
+            api_key=api_key,
         )
 
     session = AgentSession(
