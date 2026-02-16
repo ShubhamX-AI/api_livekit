@@ -169,6 +169,8 @@ class LiveKitService:
             Assistant.assistant_end_call_url != ""
         )
         
+        logger.info(f"Assistant found with assistant_id: {assistant_id} and end call url: {assistant.assistant_end_call_url}")
+
         if assistant and call_record:
             end_call_url = assistant.assistant_end_call_url
             
@@ -188,6 +190,8 @@ class LiveKitService:
                 "message": "Call details fetched successfully",
                 "data": filtered_data
             }
+
+            logger.info(f"endcall Payload: {payload}")
             
             # Send the Call record to the end call url
             try:
