@@ -3,7 +3,6 @@ from src.api.models.api_schemas import CreateAssistant, UpdateAssistant
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Assistant, APIKey
 from src.api.dependencies import get_current_user
-from src.api.dependencies.payload import get_payload
 from src.core.logger import logger, setup_logging
 import uuid
 from datetime import datetime
@@ -53,14 +52,14 @@ async def create_assistant(
 @router.patch("/update/{assistant_id}")
 async def update_assistant(
     assistant_id: str,
-    payload: dict = Depends(get_payload),
+    request: UpdateAssistant,
     current_user: APIKey = Depends(get_current_user),
 ):
     logger.info(f"Received request to update assistant: {assistant_id}")
 
-    # Manually validate against Pydantic model
+    # Manually validate against Pydantic model  
     try:
-        request = UpdateAssistant(**payload)
+        request = UpdateAssistant(**request)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Validation Error: {str(e)}")
 

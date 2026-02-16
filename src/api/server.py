@@ -40,7 +40,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         if error.get("type") == "json_invalid":
             ctx = error.get("ctx", {})
             if "Invalid control character" in str(ctx.get("error", "")):
-                error_msg += ". Hint: Literal newlines and unescaped quotes are not allowed in JSON strings. If you are pasting a YAML prompt, please escape newlines as \\n and quotes as \\\"."
+                error_msg += ". Hint: Literal newlines and unescaped quotes are not allowed in JSON strings. If you are pasting a YAML prompt, Please store it in a variable and send it in the request."
             elif "Expecting value" in str(ctx.get("error", "")):
                 error_msg += ". Hint: The JSON body is malformed or incomplete."
 
