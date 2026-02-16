@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Body
 from src.api.models.api_schemas import TriggerOutboundCall
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import OutboundSIP, APIKey, Assistant
@@ -70,4 +70,23 @@ async def trigger_outbound_call(request: TriggerOutboundCall, current_user: APIK
             "agent_dispatch": MessageToDict(agent_dispatch),
             "participant": MessageToDict(participant),
         },
+    )
+
+
+# DEMO END CALL URL endpoint. This endpint will be hit after the call is ended
+@router.post("/end_call")
+async def end_call(request: Request, _ : dict= Body(...)):
+    
+    logger.info(f"Received payload after end call")
+    
+    # Get the request body
+    body = await request.json()
+    
+    logger.info(f"Payload: {body}")
+    
+    # Get the room name from the body
+    return apiResponse(
+        success=True,
+        message="Call ended successfully",
+        data=body,
     )
