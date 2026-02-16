@@ -29,12 +29,23 @@ app = FastAPI(title="LiveKit AI Backend", version="1.0.0", lifespan=lifespan)
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     from fastapi.encoders import jsonable_encoder
-    error_msg = str(exc)
-    # Log detailed error
-    logger.error(f"Validation Error: {error_msg}")
     
     # Clean up errors to ensure they are JSON serializable
     errors = jsonable_encoder(exc.errors())
+    
+    error_msg = str(exc)
+    
+    # Check for JSON invalid errors to provide better hints
+    for error in errors:
+        if error.get("type") == "json_invalid":
+            ctx = error.get("ctx", {})
+            if "Invalid control character" in str(ctx.get("error", "")):
+                error_msg += ". Hint: Literal newlines and unescaped quotes are not allowed in JSON strings. If you are pasting a YAML prompt, please escape newlines as \\n and quotes as \\\"."
+            elif "Expecting value" in str(ctx.get("error", "")):
+                error_msg += ". Hint: The JSON body is malformed or incomplete."
+
+    # Log detailed error
+    logger.error(f"Validation Error: {error_msg}")
     
     return JSONResponse(
         status_code=422,
