@@ -184,8 +184,8 @@ async def entrypoint(ctx: JobContext):
         text_input=False,
         audio_input=True,
         audio_output=True,
-        close_on_disconnect=True,
-        delete_room_on_close=True,
+        close_on_disconnect=False,
+        delete_room_on_close=False,
     )
 
     # --- TRANSCRIPTION EVENT HANDLERS ---

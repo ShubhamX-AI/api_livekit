@@ -195,9 +195,9 @@ class LiveKitService:
             
             # Send the Call record to the end call url
             try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(end_call_url, json=payload)
-                logger.info(f"Call details sent to end call url: {end_call_url}")
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(end_call_url, json=payload)
+                    logger.info(f"Call details sent to end call url: {end_call_url} with response: {response.text}")
             except Exception as e:
                 logger.error(f"Failed to send call details to webhook: {e}")
 
