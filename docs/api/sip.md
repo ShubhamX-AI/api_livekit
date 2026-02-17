@@ -12,19 +12,19 @@ Configure a SIP trunk for outbound calls.
 
 - **URL**: `/sip/create-outbound-trunk`
 - **Method**: `POST`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Request Body
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `trunk_name` | string | Yes | Name of the trunk (1-100 characters). |
-| `trunk_address` | string | Yes | SIP address/domain of the provider. |
-| `trunk_numbers` | array | Yes | List of phone numbers associated with this trunk (E.164 format). |
-| `trunk_auth_username` | string | Yes | SIP authentication username. |
-| `trunk_auth_password` | string | Yes | SIP authentication password. |
-| `trunk_type` | string | Yes | Provider type. One of: `twilio`, `exotel`. |
+| Field                 | Type   | Required | Description                                                      |
+| :-------------------- | :----- | :------- | :--------------------------------------------------------------- |
+| `trunk_name`          | string | Yes      | Name of the trunk (1-100 characters).                            |
+| `trunk_address`       | string | Yes      | SIP address/domain of the provider.                              |
+| `trunk_numbers`       | array  | Yes      | List of phone numbers associated with this trunk (E.164 format). |
+| `trunk_auth_username` | string | Yes      | SIP authentication username.                                     |
+| `trunk_auth_password` | string | Yes      | SIP authentication password.                                     |
+| `trunk_type`          | string | Yes      | Provider type. One of: `twilio`, `exotel`.                       |
 
 ### Trunk Type Details
 
@@ -48,28 +48,28 @@ Configure a SIP trunk for outbound calls.
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the trunk details. |
-| `data.trunk_id` | string | Unique identifier for the trunk (format: `ST_...`). |
+| Field           | Type    | Description                                         |
+| :-------------- | :------ | :-------------------------------------------------- |
+| `success`       | boolean | Indicates if the operation was successful.          |
+| `message`       | string  | Human-readable success message.                     |
+| `data`          | object  | Contains the trunk details.                         |
+| `data.trunk_id` | string  | Unique identifier for the trunk (format: `ST_...`). |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Trunk created successfully. |
-| 400 | Bad Request - Invalid input data. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 500 | Server Error - Internal server error during trunk creation. |
+| Code | Description                                                 |
+| :--- | :---------------------------------------------------------- |
+| 200  | Success - Trunk created successfully.                       |
+| 400  | Bad Request - Invalid input data.                           |
+| 401  | Unauthorized - Invalid or missing Bearer token.             |
+| 500  | Server Error - Internal server error during trunk creation. |
 
 ### Example: Twilio Trunk
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "trunk_name": "Twilio Production",
            "trunk_address": "example.pstn.twilio.com",
@@ -97,7 +97,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbo
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "trunk_name": "Exotel India",
            "trunk_address": "sip.exotel.com",
@@ -116,21 +116,21 @@ List all active SIP trunks created by the current user.
 
 - **URL**: `/sip/list`
 - **Method**: `GET`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | array | List of trunk objects. |
-| `data[].trunk_id` | string | Unique identifier for the trunk. |
-| `data[].trunk_name` | string | Name of the trunk. |
-| `data[].trunk_address` | string | SIP address/domain. |
-| `data[].trunk_numbers` | array | Associated phone numbers. |
-| `data[].trunk_type` | string | Provider type (`twilio` or `exotel`). |
-| `data[].trunk_created_at` | string | ISO 8601 timestamp of creation. |
+| Field                     | Type    | Description                                |
+| :------------------------ | :------ | :----------------------------------------- |
+| `success`                 | boolean | Indicates if the operation was successful. |
+| `message`                 | string  | Human-readable success message.            |
+| `data`                    | array   | List of trunk objects.                     |
+| `data[].trunk_id`         | string  | Unique identifier for the trunk.           |
+| `data[].trunk_name`       | string  | Name of the trunk.                         |
+| `data[].trunk_address`    | string  | SIP address/domain.                        |
+| `data[].trunk_numbers`    | array   | Associated phone numbers.                  |
+| `data[].trunk_type`       | string  | Provider type (`twilio` or `exotel`).      |
+| `data[].trunk_created_at` | string  | ISO 8601 timestamp of creation.            |
 
 !!! note "Security Note"
 
@@ -138,17 +138,17 @@ List all active SIP trunks created by the current user.
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Trunks retrieved successfully. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                     |
+| :--- | :---------------------------------------------- |
+| 200  | Success - Trunks retrieved successfully.        |
+| 401  | Unauthorized - Invalid or missing Bearer token. |
+| 500  | Server Error - Internal server error.           |
 
 ### Example Request
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/sip/list" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -235,7 +235,7 @@ After creating a SIP trunk:
 
     **Error**: Call fails with authentication error
 
-    **Solution**: 
+    **Solution**:
     - Verify Account SID and Auth Token are correct
     - Check that credentials are URL-encoded if they contain special characters
     - Ensure the SIP domain allows your IP address

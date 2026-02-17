@@ -12,18 +12,18 @@ Initiate a call from an assistant to a phone number.
 
 - **URL**: `/call/outbound`
 - **Method**: `POST`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Request Body
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `assistant_id` | string | Yes | The ID of the assistant to use (UUID format). |
-| `trunk_id` | string | Yes | The ID of the SIP trunk to use (format: `ST_...`). |
-| `to_number` | string | Yes | The phone number to call in E.164 format (e.g., `+15550100000`). |
-| `call_service` | string | Yes | The telephony provider. One of: `twilio`, `exotel`. |
-| `metadata` | object | No | Optional metadata to pass to the call session. Used for placeholder replacement in prompts. |
+| Field          | Type   | Required | Description                                                                                 |
+| :------------- | :----- | :------- | :------------------------------------------------------------------------------------------ |
+| `assistant_id` | string | Yes      | The ID of the assistant to use (UUID format).                                               |
+| `trunk_id`     | string | Yes      | The ID of the SIP trunk to use (format: `ST_...`).                                          |
+| `to_number`    | string | Yes      | The phone number to call in E.164 format (e.g., `+15550100000`).                            |
+| `call_service` | string | Yes      | The telephony provider. One of: `twilio`, `exotel`.                                         |
+| `metadata`     | object | No       | Optional metadata to pass to the call session. Used for placeholder replacement in prompts. |
 
 ### Metadata and Placeholders
 
@@ -32,6 +32,7 @@ The `metadata` object can contain any key-value pairs. These values are used to 
 **Example:**
 
 If your assistant has:
+
 ```json
 {
   "assistant_prompt": "Hello {{name}}, you're calling from {{company}}.",
@@ -40,6 +41,7 @@ If your assistant has:
 ```
 
 Then your metadata should be:
+
 ```json
 {
   "metadata": {
@@ -52,31 +54,31 @@ Then your metadata should be:
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains call initiation details. |
-| `data.room_name` | string | The LiveKit room name for this call. |
-| `data.agent_dispatch` | object | LiveKit agent dispatch details. |
-| `data.participant` | object | LiveKit participant details. |
+| Field                 | Type    | Description                                |
+| :-------------------- | :------ | :----------------------------------------- |
+| `success`             | boolean | Indicates if the operation was successful. |
+| `message`             | string  | Human-readable success message.            |
+| `data`                | object  | Contains call initiation details.          |
+| `data.room_name`      | string  | The LiveKit room name for this call.       |
+| `data.agent_dispatch` | object  | LiveKit agent dispatch details.            |
+| `data.participant`    | object  | LiveKit participant details.               |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Call triggered successfully. |
-| 400 | Bad Request - Invalid input data or missing required fields. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Assistant or trunk not found. |
-| 500 | Server Error - Internal server error during call initiation. |
+| Code | Description                                                  |
+| :--- | :----------------------------------------------------------- |
+| 200  | Success - Call triggered successfully.                       |
+| 400  | Bad Request - Invalid input data or missing required fields. |
+| 401  | Unauthorized - Invalid or missing Bearer token.              |
+| 404  | Not Found - Assistant or trunk not found.                    |
+| 500  | Server Error - Internal server error during call initiation. |
 
 ### Example: Basic Outbound Call
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
            "trunk_id": "ST_a1b2c3d4e5f6...",
@@ -110,7 +112,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
            "trunk_id": "ST_a1b2c3d4e5f6...",
@@ -218,25 +220,25 @@ Content-Type: application/json
 
 ### Webhook Payload Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Always `true` for webhook notifications. |
-| `message` | string | Status message. |
-| `data` | object | Complete call details. |
-| `data.room_name` | string | The LiveKit room name. |
-| `data.assistant_id` | string | ID of the assistant used. |
-| `data.assistant_name` | string | Name of the assistant. |
-| `data.to_number` | string | Phone number that was called. |
-| `data.from_number` | string | Caller ID used (if available). |
-| `data.recording_path` | string | S3 URL of the call recording (if enabled). |
-| `data.transcripts` | array | List of conversation messages. |
-| `data.transcripts[].speaker` | string | Who spoke (`agent` or `user`). |
-| `data.transcripts[].text` | string | The transcribed text. |
-| `data.transcripts[].timestamp` | string | ISO 8601 timestamp. |
-| `data.started_at` | string | Call start time (ISO 8601). |
-| `data.ended_at` | string | Call end time (ISO 8601). |
-| `data.call_duration_minutes` | number | Total call duration in minutes. |
-| `data.metadata` | object | Metadata passed during call initiation. |
+| Field                          | Type    | Description                                |
+| :----------------------------- | :------ | :----------------------------------------- |
+| `success`                      | boolean | Always `true` for webhook notifications.   |
+| `message`                      | string  | Status message.                            |
+| `data`                         | object  | Complete call details.                     |
+| `data.room_name`               | string  | The LiveKit room name.                     |
+| `data.assistant_id`            | string  | ID of the assistant used.                  |
+| `data.assistant_name`          | string  | Name of the assistant.                     |
+| `data.to_number`               | string  | Phone number that was called.              |
+| `data.from_number`             | string  | Caller ID used (if available).             |
+| `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
+| `data.transcripts`             | array   | List of conversation messages.             |
+| `data.transcripts[].speaker`   | string  | Who spoke (`agent` or `user`).             |
+| `data.transcripts[].text`      | string  | The transcribed text.                      |
+| `data.transcripts[].timestamp` | string  | ISO 8601 timestamp.                        |
+| `data.started_at`              | string  | Call start time (ISO 8601).                |
+| `data.ended_at`                | string  | Call end time (ISO 8601).                  |
+| `data.call_duration_minutes`   | number  | Total call duration in minutes.            |
+| `data.metadata`                | object  | Metadata passed during call initiation.    |
 
 ### Webhook Response
 
@@ -281,6 +283,7 @@ Example: `550e8400-e29b-41d4-a716-446655440000_abc123def456`
 ### Phone Number Formatting
 
 Always use E.164 format:
+
 - ✅ `+15550100000` (US number)
 - ✅ `+911234567890` (India number)
 - ❌ `555-010-0000` (missing country code)
@@ -289,12 +292,14 @@ Always use E.164 format:
 ### Rate Limiting
 
 Be aware of your SIP provider's rate limits:
+
 - **Twilio**: Varies by account type
 - **Exotel**: Check your plan limits
 
 ### Metadata Usage
 
 Use metadata for:
+
 - Customer identification
 - Campaign tracking
 - Context for the assistant
@@ -304,12 +309,12 @@ Use metadata for:
 
 Common errors and how to handle them:
 
-| Error | Cause | Solution |
-| :--- | :--- | :--- |
-| `400` Invalid number | Wrong format | Ensure E.164 format |
-| `404` Assistant not found | Wrong ID | Verify assistant exists and is active |
-| `404` Trunk not found | Wrong ID | Verify trunk exists and belongs to user |
-| `500` Provider error | SIP provider issue | Check provider status and credentials |
+| Error                     | Cause              | Solution                                |
+| :------------------------ | :----------------- | :-------------------------------------- |
+| `400` Invalid number      | Wrong format       | Ensure E.164 format                     |
+| `404` Assistant not found | Wrong ID           | Verify assistant exists and is active   |
+| `404` Trunk not found     | Wrong ID           | Verify trunk exists and belongs to user |
+| `500` Provider error      | SIP provider issue | Check provider status and credentials   |
 
 ---
 

@@ -12,7 +12,7 @@ Create a new AI assistant configuration.
 
 - **URL**: `/assistant/create`
 - **Method**: `POST`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Request Body
@@ -64,7 +64,7 @@ Create a new AI assistant configuration.
 | :--- | :---------------------------------------------------------------- |
 | 200  | Success - Assistant created successfully.                         |
 | 400  | Bad Request - Invalid input data or mismatched TTS configuration. |
-| 401  | Unauthorized - Invalid or missing API key.                        |
+| 401  | Unauthorized - Invalid or missing Bearer token.                   |
 | 500  | Server Error - Internal server error.                             |
 
 ### Example: Cartesia TTS
@@ -72,7 +72,7 @@ Create a new AI assistant configuration.
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
          -d '{
            "assistant_name": "Support Bot",
            "assistant_description": "First line of support",
@@ -103,7 +103,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
          -d '{
            "assistant_name": "Hindi Support",
            "assistant_description": "Hindi speaking support agent",
@@ -122,7 +122,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "assistant_name": "Sales Agent",
            "assistant_description": "Outbound sales representative",
@@ -144,7 +144,7 @@ List all active assistants created by the current user.
 
 - **URL**: `/assistant/list`
 - **Method**: `GET`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Response Schema
 
@@ -161,17 +161,17 @@ List all active assistants created by the current user.
 
 ### HTTP Status Codes
 
-| Code | Description                                |
-| :--- | :----------------------------------------- |
-| 200  | Success - List retrieved successfully.     |
-| 401  | Unauthorized - Invalid or missing API key. |
-| 500  | Server Error - Internal server error.      |
+| Code | Description                                     |
+| :--- | :---------------------------------------------- |
+| 200  | Success - List retrieved successfully.          |
+| 401  | Unauthorized - Invalid or missing Bearer token. |
+| 500  | Server Error - Internal server error.           |
 
 ### Example Request
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/list" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -200,7 +200,7 @@ Fetch detailed information about a specific assistant.
 
 - **URL**: `/assistant/details/{assistant_id}`
 - **Method**: `GET`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Path Parameters
 
@@ -232,7 +232,7 @@ Fetch detailed information about a specific assistant.
 | Code | Description                                          |
 | :--- | :--------------------------------------------------- |
 | 200  | Success - Assistant details retrieved.               |
-| 401  | Unauthorized - Invalid or missing API key.           |
+| 401  | Unauthorized - Invalid or missing Bearer token.      |
 | 404  | Not Found - Assistant does not exist or is inactive. |
 | 500  | Server Error - Internal server error.                |
 
@@ -240,7 +240,7 @@ Fetch detailed information about a specific assistant.
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details/550e8400-e29b-41d4-a716-446655440000" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -275,7 +275,7 @@ Update the configuration of an existing assistant.
 
 - **URL**: `/assistant/update/{assistant_id}`
 - **Method**: `PATCH`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Path Parameters
@@ -313,20 +313,20 @@ Only provide the fields you want to update. All fields are optional.
 
 ### HTTP Status Codes
 
-| Code | Description                                |
-| :--- | :----------------------------------------- |
-| 200  | Success - Assistant updated successfully.  |
-| 400  | Bad Request - Invalid input data.          |
-| 401  | Unauthorized - Invalid or missing API key. |
-| 404  | Not Found - Assistant does not exist.      |
-| 500  | Server Error - Internal server error.      |
+| Code | Description                                     |
+| :--- | :---------------------------------------------- |
+| 200  | Success - Assistant updated successfully.       |
+| 400  | Bad Request - Invalid input data.               |
+| 401  | Unauthorized - Invalid or missing Bearer token. |
+| 404  | Not Found - Assistant does not exist.           |
+| 500  | Server Error - Internal server error.           |
 
 ### Example: Update TTS Configuration
 
 ```bash
 curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "assistant_name": "Updated Support Bot",
            "assistant_tts_model": "sarvam",
@@ -357,7 +357,7 @@ Soft-delete an assistant. Deleted assistants are not permanently removed but mar
 
 - **URL**: `/assistant/delete/{assistant_id}`
 - **Method**: `DELETE`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Path Parameters
 
@@ -379,7 +379,7 @@ Soft-delete an assistant. Deleted assistants are not permanently removed but mar
 | Code | Description                                                  |
 | :--- | :----------------------------------------------------------- |
 | 200  | Success - Assistant deleted successfully.                    |
-| 401  | Unauthorized - Invalid or missing API key.                   |
+| 401  | Unauthorized - Invalid or missing Bearer token.              |
 | 404  | Not Found - Assistant does not exist or is already inactive. |
 | 500  | Server Error - Internal server error.                        |
 
@@ -387,7 +387,7 @@ Soft-delete an assistant. Deleted assistants are not permanently removed but mar
 
 ```bash
 curl -X DELETE "https://api-livekit-vyom.indusnettechnologies.com/assistant/delete/550e8400-e29b-41d4-a716-446655440000" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -425,7 +425,7 @@ When triggering an outbound call, provide the values:
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -H "Content-Type: application/json" \
      -d '{
            "assistant_id": "550e8400-e29b-41d4-a716-446655440000",

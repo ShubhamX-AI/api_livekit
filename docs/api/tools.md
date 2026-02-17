@@ -8,10 +8,10 @@ Tools are custom functions that extend your assistant's capabilities. When the L
 
 ### Execution Types
 
-| Type | Description | Use Case |
-| :--- | :--- | :--- |
-| **Webhook** | HTTP POST request to external URL | Fetch live data (weather, stock prices, user info) |
-| **Static Return** | Return a fixed value | Provide constant information (support email, business hours) |
+| Type              | Description                       | Use Case                                                     |
+| :---------------- | :-------------------------------- | :----------------------------------------------------------- |
+| **Webhook**       | HTTP POST request to external URL | Fetch live data (weather, stock prices, user info)           |
+| **Static Return** | Return a fixed value              | Provide constant information (support email, business hours) |
 
 ---
 
@@ -21,28 +21,28 @@ Define a new tool that can be used by your assistants.
 
 - **URL**: `/tool/create`
 - **Method**: `POST`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Request Body
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `tool_name` | string | Yes | Snake_case name, e.g., `lookup_weather` (must match `^[a-z_][a-z0-9_]*$`). |
-| `tool_description` | string | Yes | Description for the LLM explaining what the tool does (1-500 characters). |
-| `tool_parameters` | array | No | List of parameters (see schema below). |
-| `tool_execution_type` | string | Yes | `webhook` or `static_return`. |
-| `tool_execution_config` | object | Yes | Configuration for execution (see examples below). |
+| Field                   | Type   | Required | Description                                                                 |
+| :---------------------- | :----- | :------- | :-------------------------------------------------------------------------- |
+| `tool_name`             | string | Yes      | Snake*case name, e.g., `lookup_weather` (must match `^[a-z*][a-z0-9_]\*$`). |
+| `tool_description`      | string | Yes      | Description for the LLM explaining what the tool does (1-500 characters).   |
+| `tool_parameters`       | array  | No       | List of parameters (see schema below).                                      |
+| `tool_execution_type`   | string | Yes      | `webhook` or `static_return`.                                               |
+| `tool_execution_config` | object | Yes      | Configuration for execution (see examples below).                           |
 
 ### Tool Parameter Schema
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `name` | string | Yes | Parameter name. |
-| `type` | string | Yes | Data type: `string`, `number`, `boolean`, `object`, or `array`. |
-| `description` | string | No | Description for the LLM. |
-| `required` | boolean | No | Whether the parameter is mandatory (default: `true`). |
-| `enum` | array | No | Allowed values (only for string types). |
+| Field         | Type    | Required | Description                                                     |
+| :------------ | :------ | :------- | :-------------------------------------------------------------- |
+| `name`        | string  | Yes      | Parameter name.                                                 |
+| `type`        | string  | Yes      | Data type: `string`, `number`, `boolean`, `object`, or `array`. |
+| `description` | string  | No       | Description for the LLM.                                        |
+| `required`    | boolean | No       | Whether the parameter is mandatory (default: `true`).           |
+| `enum`        | array   | No       | Allowed values (only for string types).                         |
 
 ### Execution Config Examples
 
@@ -135,29 +135,29 @@ Define a new tool that can be used by your assistants.
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the created tool details. |
-| `data.tool_id` | string | Unique identifier for the tool (UUID). |
-| `data.tool_name` | string | The name of the tool. |
+| Field            | Type    | Description                                |
+| :--------------- | :------ | :----------------------------------------- |
+| `success`        | boolean | Indicates if the operation was successful. |
+| `message`        | string  | Human-readable success message.            |
+| `data`           | object  | Contains the created tool details.         |
+| `data.tool_id`   | string  | Unique identifier for the tool (UUID).     |
+| `data.tool_name` | string  | The name of the tool.                      |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tool created successfully. |
-| 400 | Bad Request - Invalid input data (invalid name format, missing fields). |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                                             |
+| :--- | :---------------------------------------------------------------------- |
+| 200  | Success - Tool created successfully.                                    |
+| 400  | Bad Request - Invalid input data (invalid name format, missing fields). |
+| 401  | Unauthorized - Invalid or missing Bearer token.                         |
+| 500  | Server Error - Internal server error.                                   |
 
 ### Complete Example: Weather Webhook Tool
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/create" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "tool_name": "lookup_weather",
            "tool_description": "Get current weather information for a given location",
@@ -198,7 +198,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/create" \
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/create" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "tool_name": "get_support_email",
            "tool_description": "Get the customer support email address",
@@ -217,34 +217,34 @@ List all active tools created by the current user.
 
 - **URL**: `/tool/list`
 - **Method**: `GET`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | array | List of tool objects. |
-| `data[].tool_id` | string | Unique identifier for the tool. |
-| `data[].tool_name` | string | The name of the tool. |
-| `data[].tool_description` | string | The description of the tool. |
-| `data[].tool_execution_type` | string | Either `webhook` or `static_return`. |
-| `data[].tool_created_at` | string | ISO 8601 timestamp of creation. |
+| Field                        | Type    | Description                                |
+| :--------------------------- | :------ | :----------------------------------------- |
+| `success`                    | boolean | Indicates if the operation was successful. |
+| `message`                    | string  | Human-readable success message.            |
+| `data`                       | array   | List of tool objects.                      |
+| `data[].tool_id`             | string  | Unique identifier for the tool.            |
+| `data[].tool_name`           | string  | The name of the tool.                      |
+| `data[].tool_description`    | string  | The description of the tool.               |
+| `data[].tool_execution_type` | string  | Either `webhook` or `static_return`.       |
+| `data[].tool_created_at`     | string  | ISO 8601 timestamp of creation.            |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tools retrieved successfully. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                     |
+| :--- | :---------------------------------------------- |
+| 200  | Success - Tools retrieved successfully.         |
+| 401  | Unauthorized - Invalid or missing Bearer token. |
+| 500  | Server Error - Internal server error.           |
 
 ### Example Request
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/list" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -280,44 +280,44 @@ Fetch details for a specific tool.
 
 - **URL**: `/tool/details/{tool_id}`
 - **Method**: `GET`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter | Type   | Description           |
+| :-------- | :----- | :-------------------- |
 | `tool_id` | string | The UUID of the tool. |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Complete tool configuration. |
-| `data.tool_id` | string | Unique identifier for the tool. |
-| `data.tool_name` | string | The name of the tool. |
-| `data.tool_description` | string | The description of the tool. |
-| `data.tool_parameters` | array | List of parameter definitions. |
-| `data.tool_execution_type` | string | Either `webhook` or `static_return`. |
-| `data.tool_execution_config` | object | Execution configuration. |
-| `data.tool_created_at` | string | ISO 8601 timestamp of creation. |
-| `data.tool_updated_at` | string | ISO 8601 timestamp of last update. |
+| Field                        | Type    | Description                                |
+| :--------------------------- | :------ | :----------------------------------------- |
+| `success`                    | boolean | Indicates if the operation was successful. |
+| `message`                    | string  | Human-readable success message.            |
+| `data`                       | object  | Complete tool configuration.               |
+| `data.tool_id`               | string  | Unique identifier for the tool.            |
+| `data.tool_name`             | string  | The name of the tool.                      |
+| `data.tool_description`      | string  | The description of the tool.               |
+| `data.tool_parameters`       | array   | List of parameter definitions.             |
+| `data.tool_execution_type`   | string  | Either `webhook` or `static_return`.       |
+| `data.tool_execution_config` | object  | Execution configuration.                   |
+| `data.tool_created_at`       | string  | ISO 8601 timestamp of creation.            |
+| `data.tool_updated_at`       | string  | ISO 8601 timestamp of last update.         |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tool details retrieved. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Tool does not exist or is inactive. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                     |
+| :--- | :---------------------------------------------- |
+| 200  | Success - Tool details retrieved.               |
+| 401  | Unauthorized - Invalid or missing Bearer token. |
+| 404  | Not Found - Tool does not exist or is inactive. |
+| 500  | Server Error - Internal server error.           |
 
 ### Example Request
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/details/880e8400-e29b-41d4-a716-446655449999" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -360,52 +360,52 @@ Update an existing tool's configuration.
 
 - **URL**: `/tool/update/{tool_id}`
 - **Method**: `PATCH`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter | Type   | Description                     |
+| :-------- | :----- | :------------------------------ |
 | `tool_id` | string | The UUID of the tool to update. |
 
 ### Request Body
 
 Only provide the fields you want to update. All fields are optional.
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `tool_name` | string | The new name (must follow snake_case format). |
-| `tool_description` | string | The new description. |
-| `tool_parameters` | array | New parameter definitions (replaces all existing). |
-| `tool_execution_type` | string | New execution type (`webhook` or `static_return`). |
-| `tool_execution_config` | object | New execution configuration. |
+| Field                   | Type   | Description                                        |
+| :---------------------- | :----- | :------------------------------------------------- |
+| `tool_name`             | string | The new name (must follow snake_case format).      |
+| `tool_description`      | string | The new description.                               |
+| `tool_parameters`       | array  | New parameter definitions (replaces all existing). |
+| `tool_execution_type`   | string | New execution type (`webhook` or `static_return`). |
+| `tool_execution_config` | object | New execution configuration.                       |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the updated tool ID. |
-| `data.tool_id` | string | The ID of the updated tool. |
+| Field          | Type    | Description                                |
+| :------------- | :------ | :----------------------------------------- |
+| `success`      | boolean | Indicates if the operation was successful. |
+| `message`      | string  | Human-readable success message.            |
+| `data`         | object  | Contains the updated tool ID.              |
+| `data.tool_id` | string  | The ID of the updated tool.                |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tool updated successfully. |
-| 400 | Bad Request - Invalid input data or no fields provided. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Tool does not exist. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                             |
+| :--- | :------------------------------------------------------ |
+| 200  | Success - Tool updated successfully.                    |
+| 400  | Bad Request - Invalid input data or no fields provided. |
+| 401  | Unauthorized - Invalid or missing Bearer token.         |
+| 404  | Not Found - Tool does not exist.                        |
+| 500  | Server Error - Internal server error.                   |
 
 ### Example: Update Webhook URL
 
 ```bash
 curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/tool/update/880e8400-e29b-41d4-a716-446655449999" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "tool_execution_config": {
              "url": "https://api.new-weather.com/v1/current",
@@ -437,37 +437,37 @@ Soft-delete a tool. This will also remove the tool from any assistants that are 
 
 - **URL**: `/tool/delete/{tool_id}`
 - **Method**: `DELETE`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter | Type   | Description                     |
+| :-------- | :----- | :------------------------------ |
 | `tool_id` | string | The UUID of the tool to delete. |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains the deleted tool ID. |
-| `data.tool_id` | string | The ID of the deleted tool. |
+| Field          | Type    | Description                                |
+| :------------- | :------ | :----------------------------------------- |
+| `success`      | boolean | Indicates if the operation was successful. |
+| `message`      | string  | Human-readable success message.            |
+| `data`         | object  | Contains the deleted tool ID.              |
+| `data.tool_id` | string  | The ID of the deleted tool.                |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tool deleted successfully. |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Tool does not exist or is already inactive. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                             |
+| :--- | :------------------------------------------------------ |
+| 200  | Success - Tool deleted successfully.                    |
+| 401  | Unauthorized - Invalid or missing Bearer token.         |
+| 404  | Not Found - Tool does not exist or is already inactive. |
+| 500  | Server Error - Internal server error.                   |
 
 ### Example Request
 
 ```bash
 curl -X DELETE "https://api-livekit-vyom.indusnettechnologies.com/tool/delete/880e8400-e29b-41d4-a716-446655449999" \
-     -H "x-api-key: <your_api_key>"
+     -H "Authorization: Bearer <your_api_key>"
 ```
 
 **Response:**
@@ -490,47 +490,47 @@ Enable a set of tools for a specific assistant.
 
 - **URL**: `/tool/attach/{assistant_id}`
 - **Method**: `POST`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter      | Type   | Description                |
+| :------------- | :----- | :------------------------- |
 | `assistant_id` | string | The UUID of the assistant. |
 
 ### Request Body
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `tool_ids` | array | Yes | List of tool IDs to attach (at least one required). |
+| Field      | Type  | Required | Description                                         |
+| :--------- | :---- | :------- | :-------------------------------------------------- |
+| `tool_ids` | array | Yes      | List of tool IDs to attach (at least one required). |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message with count. |
-| `data` | object | Contains attachment details. |
-| `data.assistant_id` | string | The assistant ID. |
-| `data.tool_ids` | array | Updated list of all attached tool IDs. |
+| Field               | Type    | Description                                |
+| :------------------ | :------ | :----------------------------------------- |
+| `success`           | boolean | Indicates if the operation was successful. |
+| `message`           | string  | Human-readable success message with count. |
+| `data`              | object  | Contains attachment details.               |
+| `data.assistant_id` | string  | The assistant ID.                          |
+| `data.tool_ids`     | array   | Updated list of all attached tool IDs.     |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tools attached successfully. |
-| 400 | Bad Request - Invalid input (empty tool_ids array). |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Assistant or one/more tools not found. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                         |
+| :--- | :-------------------------------------------------- |
+| 200  | Success - Tools attached successfully.              |
+| 400  | Bad Request - Invalid input (empty tool_ids array). |
+| 401  | Unauthorized - Invalid or missing Bearer token.     |
+| 404  | Not Found - Assistant or one/more tools not found.  |
+| 500  | Server Error - Internal server error.               |
 
 ### Example Request
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/attach/550e8400-e29b-41d4-a716-446655440000" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "tool_ids": ["880e8400-e29b-41d4-a716-446655449999"]
          }'
@@ -557,47 +557,47 @@ Remove a set of tools from a specific assistant.
 
 - **URL**: `/tool/detach/{assistant_id}`
 - **Method**: `POST`
-- **Headers**: `x-api-key: <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
 
 ### Path Parameters
 
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
+| Parameter      | Type   | Description                |
+| :------------- | :----- | :------------------------- |
 | `assistant_id` | string | The UUID of the assistant. |
 
 ### Request Body
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `tool_ids` | array | Yes | List of tool IDs to detach (at least one required). |
+| Field      | Type  | Required | Description                                         |
+| :--------- | :---- | :------- | :-------------------------------------------------- |
+| `tool_ids` | array | Yes      | List of tool IDs to detach (at least one required). |
 
 ### Response Schema
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `success` | boolean | Indicates if the operation was successful. |
-| `message` | string | Human-readable success message. |
-| `data` | object | Contains detachment details. |
-| `data.assistant_id` | string | The assistant ID. |
-| `data.tool_ids` | array | Updated list of remaining attached tool IDs. |
+| Field               | Type    | Description                                  |
+| :------------------ | :------ | :------------------------------------------- |
+| `success`           | boolean | Indicates if the operation was successful.   |
+| `message`           | string  | Human-readable success message.              |
+| `data`              | object  | Contains detachment details.                 |
+| `data.assistant_id` | string  | The assistant ID.                            |
+| `data.tool_ids`     | array   | Updated list of remaining attached tool IDs. |
 
 ### HTTP Status Codes
 
-| Code | Description |
-| :--- | :--- |
-| 200 | Success - Tools detached successfully. |
-| 400 | Bad Request - Invalid input (empty tool_ids array). |
-| 401 | Unauthorized - Invalid or missing API key. |
-| 404 | Not Found - Assistant not found. |
-| 500 | Server Error - Internal server error. |
+| Code | Description                                         |
+| :--- | :-------------------------------------------------- |
+| 200  | Success - Tools detached successfully.              |
+| 400  | Bad Request - Invalid input (empty tool_ids array). |
+| 401  | Unauthorized - Invalid or missing Bearer token.     |
+| 404  | Not Found - Assistant not found.                    |
+| 500  | Server Error - Internal server error.               |
 
 ### Example Request
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/tool/detach/550e8400-e29b-41d4-a716-446655440000" \
      -H "Content-Type: application/json" \
-     -H "x-api-key: <your_api_key>" \
+     -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "tool_ids": ["880e8400-e29b-41d4-a716-446655449999"]
          }'
@@ -718,9 +718,9 @@ The `tool_description` is crucial - it's what the LLM uses to decide when to cal
 
 ### Execution Type Selection
 
-| Use Webhook When | Use Static Return When |
-|-----------------|------------------------|
-| Data changes frequently | Information never changes |
-| External API integration needed | No external dependencies |
-| User-specific data required | Same response for all users |
-| Complex business logic | Simple constant values |
+| Use Webhook When                | Use Static Return When      |
+| ------------------------------- | --------------------------- |
+| Data changes frequently         | Information never changes   |
+| External API integration needed | No external dependencies    |
+| User-specific data required     | Same response for all users |
+| Complex business logic          | Simple constant values      |

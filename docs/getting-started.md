@@ -24,7 +24,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key"
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "assistant_name": "Support Bot",
@@ -43,7 +43,7 @@ Before you can make calls, you need to configure a SIP trunk (e.g., Twilio).
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "trunk_name": "My Twilio Trunk",
@@ -55,13 +55,13 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbo
   }'
 ```
 
-*Note: Store the returned `trunk_id` for the next step.*
+_Note: Store the returned `trunk_id` for the next step._
 
 ### 4. Trigger an Outbound Call
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "assistant_id": "ASSISTANT_ID",
