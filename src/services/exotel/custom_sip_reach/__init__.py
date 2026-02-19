@@ -11,5 +11,6 @@ Usage:
 """
 
 from .bridge import run_bridge  # noqa: F401
+from .sip_client import format_exotel_number  # noqa: F401
 
-__all__ = ["run_bridge"]
+__all__ = ["run_bridge", "format_exotel_number"]
