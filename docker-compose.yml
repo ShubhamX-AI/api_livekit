@@ -25,6 +25,5 @@ services:
       - .env
     restart: unless-stopped
     command: python -m src.core.agents.session start
-    network_mode: "host"
     depends_on:
       - api
