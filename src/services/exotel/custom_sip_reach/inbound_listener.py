@@ -7,12 +7,11 @@ bridge to tear down the call.
 """
 
 import asyncio
-import logging
 
 from .config import EXOTEL_CUSTOMER_SIP_PORT, INBOUND_SIP_LISTEN
 from .sip_client import ExotelSipClient
-
-logger = logging.getLogger("sip_bridge_v3")
+from src.core.logger import logger, setup_logging
+setup_logging()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module-level state
