@@ -18,49 +18,63 @@ livekit_services = LiveKitService()
 async def create_outbound_trunk(
     request: CreateOutboundTrunk, current_user: APIKey = Depends(get_current_user)
 ):
-    logger.info(f"Received request to create outbound trunk")
+    logger.info(f"Received request to create outbound trunk of type: {request.trunk_type}")
     try:
-        if request.trunk_type != "twilio":
+        trunk_id = None
+        trunk_config_to_save = {}
+
+        if request.trunk_type == "twilio":
+            # Creating outbound trunk in LiveKit
+            try:
+                # We expect TwilioTrunkConfig here
+                config = request.trunk_config
+                trunk = await livekit_services.create_sip_outbound_trunk(
+                    trunk_name=request.trunk_name,
+                    trunk_address=config.address,
+                    trunk_numbers=config.numbers,
+                    trunk_auth_username=config.username,
+                    trunk_auth_password=config.password,
+                )
+                trunk_dict = MessageToDict(trunk)
+                trunk_id = trunk_dict["sipTrunkId"]
+                trunk_config_to_save = config.model_dump()
+            except Exception as e:
+                logger.error(f"Failed to create outbound trunk in LiveKit: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create outbound trunk in LiveKit: {str(e)}",
+                )
+        elif request.trunk_type == "exotel":
+            # Local Exotel trunk, just generate a trunk_id
+            trunk_id = f"exotel_{uuid.uuid4().hex[:8]}"
+            trunk_config_to_save = request.trunk_config.model_dump()
+        else:
             raise HTTPException(
                 status_code=400,
-                detail="Trunk type not supported. Currently present only from twilio",
+                detail=f"Trunk type '{request.trunk_type}' not supported.",
             )
 
-        # Creating outbout trunk
-        try:
-            trunk = await livekit_services.create_sip_outbound_trunk(
-                trunk_name=request.trunk_name,
-                trunk_address=request.trunk_address,
-                trunk_numbers=request.trunk_numbers,
-                trunk_auth_username=request.trunk_auth_username,
-                trunk_auth_password=request.trunk_auth_password,
-            )
-        except Exception as e:
-            logger.error(f"Failed to create outbound trunk: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to create outbound trunk in livekit: {str(e)}",
-            )
-
-        # Turning the response into dictionary
-        trunk_dict = MessageToDict(trunk)
-        trunk_id = trunk_dict["sipTrunkId"]
-
-        logger.info(f"Inserting outbound trunk into database")
+        logger.info(f"Inserting outbound trunk into database: {trunk_id}")
         outbound_trunk = OutboundSIP(
             trunk_id=trunk_id,
             trunk_name=request.trunk_name,
+            trunk_type=request.trunk_type,
+            trunk_config=trunk_config_to_save,
             trunk_created_by_email=current_user.user_email,
             trunk_updated_by_email=current_user.user_email,
         )
         await outbound_trunk.insert()
+
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Failed to create/insert outbound trunk: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to insert outbound trunk into database: {str(e)}",
+            detail=f"Failed to create outbound trunk: {str(e)}",
         )
 
-    logger.info(f"Outbound trunk created successfully")
+    logger.info(f"Outbound trunk created successfully: {trunk_id}")
     return apiResponse(
         success=True,
         message="Outbound trunk created successfully, Store the trunk id securely.",

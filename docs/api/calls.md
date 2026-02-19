@@ -107,7 +107,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 }
 ```
 
-### Example: With Metadata
+### Example: Exotel Outbound Call
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
@@ -115,57 +115,75 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
      -H "Authorization: Bearer <your_api_key>" \
      -d '{
            "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
-           "trunk_id": "ST_a1b2c3d4e5f6...",
-           "to_number": "+15550200000",
-           "call_service": "twilio",
-           "metadata": {
-             "name": "John Doe",
-             "customer_id": "12345",
-             "campaign_id": "summer_sale_2024"
-           }
+           "trunk_id": "ST_exotel_abc123",
+           "to_number": "+918044319240",
+           "call_service": "exotel"
          }'
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Outbound call triggered successfully via Exotel bridge",
+  "data": {
+    "room_name": "exotel-+918044319240-abc123",
+    "agent_dispatch": {
+      "id": "agent_123",
+      "state": "JOINING"
+    }
+  }
+}
 ```
 
 ---
 
 ## Call Flow
 
-When you trigger an outbound call, the following happens:
+When you trigger an outbound call, the flow differs slightly based on the provider:
 
-1. **Validation**: System validates the assistant, trunk, and phone number
-2. **Room Creation**: A LiveKit room is created with a unique name
-3. **Call Initiation**: The call is initiated via your SIP trunk provider
-4. **Agent Connection**: The AI assistant joins the room
-5. **Conversation**: The assistant speaks and listens according to its configuration
-6. **Call End**: When the user hangs up or the assistant ends the call
-7. **Webhook**: If configured, a POST request is sent to `assistant_end_call_url`
-8. **Recording**: Call recording is saved to AWS S3 (if configured)
-9. **Transcript**: Conversation transcript is saved to MongoDB
+### Twilio Flow (Managed SIP)
+
+1. **Validation**: System validates the assistant, trunk, and phone number.
+2. **Room Creation**: A LiveKit room is created.
+3. **SIP Participant**: API calls LiveKit's SIP API to create a participant.
+4. **Twilio Connection**: LiveKit connects directly to Twilio.
+5. **Agent Connection**: The AI assistant joins the room.
+
+### Exotel Flow (Custom Bridge)
+
+1. **Validation**: System validates the assistant, trunk, and phone number.
+2. **Room Creation**: A LiveKit room is created.
+3. **Custom Bridge**: API starts a background task running the `custom_sip_reach` bridge.
+4. **Exotel Connection**: The bridge connects to Exotel via SIP/TCP.
+5. **RTP Relay**: The bridge relays media between Exotel and the LiveKit room.
+6. **Agent Connection**: The AI assistant joins the room.
 
 ```mermaid
 sequenceDiagram
     participant User
     participant API
-    participant LiveKit
+    participant Bridge as SIP Bridge / LiveKit
     participant Provider as SIP Provider
     participant Phone
 
     User->>API: POST /call/outbound
     API->>API: Validate assistant & trunk
-    API->>LiveKit: Create room
-    API->>Provider: Initiate call
+    Note over API,Bridge: Twilio: API -> LiveKit SIP API
+    Note over API,Bridge: Exotel: API -> Custom SIP Bridge
+    API->>Bridge: Initiate Connection
+    Bridge->>Provider: SIP INVITE
     Provider->>Phone: Ring
     Phone-->>Provider: Answer
-    Provider-->>LiveKit: Connect
-    LiveKit->>LiveKit: AI Agent joins
-    LiveKit->>Phone: Assistant speaks
-    Phone->>LiveKit: User responds
+    Provider-->>Bridge: SIP 200 OK
+    Bridge->>Bridge: AI Agent joins room
+    Bridge->>Phone: Audio Relay (RTP)
+    Phone->>Bridge: Audio Relay (RTP)
     Phone->>Provider: Hang up
-    Provider-->>LiveKit: Disconnect
-    LiveKit-->>API: Call ended
+    Provider-->>Bridge: SIP BYE
+    Bridge-->>API: Call ended
     API->>API: Save recording & transcript
-    API->>API: Send webhook (if configured)
-    API-->>User: Call complete
 ```
 
 ---

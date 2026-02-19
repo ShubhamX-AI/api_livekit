@@ -47,6 +47,8 @@ class OutboundSIP(Document):
 
     trunk_id: Indexed(str, unique=True)
     trunk_name: str
+    trunk_type: str = "twilio"  # "twilio" or "exotel"
+    trunk_config: Dict = {}   # Stores Twilio or Exotel specific config
     trunk_created_by_email: EmailStr
     trunk_updated_by_email: EmailStr
     trunk_created_at: datetime = Field(default_factory=datetime.utcnow)
