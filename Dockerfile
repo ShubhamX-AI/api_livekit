@@ -29,7 +29,7 @@ COPY --from=builder /app/.venv /app/.venv
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
+ENV PORT=8001
 
 # Copy source code and other necessary files
 COPY src /app/src
@@ -45,7 +45,7 @@ RUN mkdocs build -d site
 RUN python -m src.core.agents.session download-files
 
 # Expose the API port
-EXPOSE 8000
+EXPOSE 8001
 
 # Default command - can be overridden in docker-compose
 CMD ["python", "server_run.py"]
