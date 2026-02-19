@@ -123,14 +123,34 @@ class UpdateAssistant(BaseModel):
         return self
 
 
+# ── SIP Trunk Config sub-models ────────────────────────
+class TwilioTrunkConfig(BaseModel):
+    address: str = Field(..., min_length=1, max_length=100, description="SIP trunk address")
+    numbers: List[str] = Field(..., description="SIP trunk numbers")
+    username: str = Field(..., min_length=1, max_length=100, description="SIP auth username")
+    password: str = Field(..., min_length=1, max_length=100, description="SIP auth password")
+
+
+class ExotelTrunkConfig(BaseModel):
+    exotel_number: str = Field(..., min_length=1, max_length=20, description="Exotel virtual number (caller ID)")
+    # Optional overrides for advanced setup
+    sip_host: Optional[str] = Field(None, description="Exotel SIP proxy host")
+    sip_port: Optional[int] = Field(None, description="Exotel SIP proxy port")
+    sip_domain: Optional[str] = Field(None, description="Exotel SIP domain")
+
+
+# Discriminated union type for Trunks
+TrunkConfig = Annotated[
+    Union[TwilioTrunkConfig, ExotelTrunkConfig],
+    Field(discriminator=None)  # discriminated by trunk_type in parent
+]
+
+
 # For Outbound Trunk creation
 class CreateOutboundTrunk(BaseModel):
     trunk_name: str = Field(..., min_length=1, max_length=100, description="Trunk name (cannot be empty)")
-    trunk_address: str = Field(..., min_length=1, max_length=100, description="Trunk address (cannot be empty)")
-    trunk_numbers: List[str] = Field(..., description="Trunk numbers (cannot be empty)")
-    trunk_auth_username: str = Field(..., min_length=1, max_length=100, description="Trunk auth username (cannot be empty)")
-    trunk_auth_password: str = Field(..., min_length=1, max_length=100, description="Trunk auth password (cannot be empty)")
-    trunk_type: Literal["exotel", "twilio"] = Field(..., description="Trunk type (cannot be empty) Currently present only from twilio")
+    trunk_type: Literal["twilio", "exotel"] = Field(..., description="Trunk type")
+    trunk_config: TrunkConfig = Field(..., description="Trunk configuration object (varies by type)")
 
     class Config:
         # Strip whitespace from string fields
@@ -138,14 +158,25 @@ class CreateOutboundTrunk(BaseModel):
         # Example for API documentation
         json_schema_extra = {
             "example": {
-                "trunk_name": "Test Trunk",
-                "trunk_address": "Test Trunk Address",
-                "trunk_numbers": ["Test Trunk Number"],
-                "trunk_auth_username": "Test Trunk Auth Username",
-                "trunk_auth_password": "Test Trunk Auth Password",
-                "trunk_type": "twilio, Currently present only from twilio",
+                "trunk_name": "My Exotel Trunk",
+                "trunk_type": "exotel",
+                "trunk_config": {
+                    "exotel_number": "08044319240"
+                }
             }
         }
+
+    @model_validator(mode="after")
+    def validate_trunk_config_matches_type(self):
+        expected = {
+            "twilio": TwilioTrunkConfig,
+            "exotel": ExotelTrunkConfig,
+        }
+        if not isinstance(self.trunk_config, expected[self.trunk_type]):
+            raise ValueError(
+                f"trunk_config must match trunk_type '{self.trunk_type}'"
+            )
+        return self
 
 
 # Triggure Outbound call
@@ -153,7 +184,7 @@ class TriggerOutboundCall(BaseModel):
     assistant_id: str = Field(..., min_length=1, max_length=100, description="Assistant ID (cannot be empty)")
     trunk_id: str = Field(..., min_length=1, max_length=100, description="Trunk ID (cannot be empty)")
     to_number: str = Field(..., min_length=1, max_length=100, description="To Number (cannot be empty)")
-    call_service: Literal["twilio", "exotel"] = Field(..., description="Call service (cannot be empty) Currently present only from twilio")
+    call_service: Literal["twilio", "exotel"] = Field(..., description="Call service (cannot be empty)")
     metadata: Optional[dict] = Field(None, description="Metadata (optional)")
 
     class Config:
@@ -165,7 +196,7 @@ class TriggerOutboundCall(BaseModel):
                 "assistant_id": "Test Assistant ID",
                 "trunk_id": "Test Trunk ID",
                 "to_number": "Test To Number",
-                "call_service": "twilio, Currently present only from twilio",
+                "call_service": "exotel",
                 "metadata": {"extra": "value about the call"},
             }
         }
