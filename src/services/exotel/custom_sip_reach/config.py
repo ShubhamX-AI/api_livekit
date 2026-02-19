@@ -6,13 +6,11 @@ config validator live here.
 """
 
 import os
-import logging
-
 from dotenv import load_dotenv
+from src.core.logger import logger, setup_logging
+setup_logging()
 
 load_dotenv(override=False)
-
-logger = logging.getLogger("sip_bridge_v3")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SIP / Network Configuration

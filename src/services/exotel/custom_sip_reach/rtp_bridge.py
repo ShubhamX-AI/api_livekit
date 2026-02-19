@@ -10,7 +10,6 @@ Handles:
 
 import asyncio
 import collections
-import logging
 import random
 import socket
 import struct
@@ -31,8 +30,8 @@ from .config import (
     SAMPLE_RATE_SIP,
     MAX_FRAME_BUFFER,
 )
-
-logger = logging.getLogger("sip_bridge_v3")
+from src.core.logger import logger, setup_logging
+setup_logging()
 
 
 class RTPMediaBridge:

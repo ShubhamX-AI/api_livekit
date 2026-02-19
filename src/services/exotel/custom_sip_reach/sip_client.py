@@ -10,7 +10,6 @@ Responsibilities:
 """
 
 import asyncio
-import logging
 import random
 import time
 import uuid
@@ -28,8 +27,24 @@ from .config import (
     PCMA_PAYLOAD_TYPE,
 )
 from .digest_auth import calculate_digest_auth
+from src.core.logger import logger, setup_logging
+setup_logging()
 
-logger = logging.getLogger("sip_bridge_v3")
+
+def format_exotel_number(number: str) -> str:
+    """
+    Exotel requires numbers in the format '08044319240'.
+    Handles:
+      - '+91...': Removes '+' and '91', prefixes with '0'.
+      - '91...': Removes '91', prefixes with '0'.
+      - '...': Prefixes with '0' if it doesn't already start with '0'.
+    """
+    clean = "".join(filter(str.isdigit, number))
+    if clean.startswith("91") and len(clean) > 10:
+        clean = clean[2:]
+    if not clean.startswith("0"):
+        clean = "0" + clean
+    return clean
 
 
 class ExotelSipClient:
@@ -44,7 +59,7 @@ class ExotelSipClient:
         username: str = EXOTEL_AUTH_USERNAME,
         password: str = EXOTEL_AUTH_PASSWORD,
     ):
-        self.callee = callee
+        self.callee = format_exotel_number(callee)
         self.rtp_port = rtp_port
         self.sip_host = sip_host
         self.sip_port = sip_port
