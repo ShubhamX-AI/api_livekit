@@ -63,7 +63,7 @@ class ExotelSipClient:
         self.rtp_port = rtp_port
         self.sip_host = sip_host
         self.sip_port = sip_port
-        self.caller_id = caller_id
+        self.caller_id = format_exotel_number(caller_id)
         self.from_domain = from_domain
         self.username = username
         self.password = password
