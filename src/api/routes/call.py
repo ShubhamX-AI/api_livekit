@@ -73,7 +73,7 @@ async def trigger_outbound_call(
 
     elif request.call_service == "exotel":
         # Custom SIP bridge for Exotel
-        from src.core.custom_sip_reach.bridge import run_bridge
+        from src.services.exotel.custom_sip_reach.bridge import run_bridge
 
         logger.info(f"Triggering Exotel SIP bridge call to {request.to_number}")
 
