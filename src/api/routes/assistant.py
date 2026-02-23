@@ -111,6 +111,7 @@ async def update_assistant(
 async def list_assistants(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=100, description="Items per page"),
+    assistant_name: Optional[str] = Query(None, description="Filter by assistant name (case-insensitive)"),
     start_date: Optional[datetime] = Query(None, description="Start date for filtering (ISO 8601)"),
     end_date: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601)"),
     sort_by: str = Query("assistant_created_at", description="Field to sort by"),
@@ -124,6 +125,15 @@ async def list_assistants(
         Assistant.assistant_created_by_email == current_user.user_email,
         Assistant.assistant_is_active == True
     ]
+    
+    if assistant_name:
+        # Case-insensitive partial match search
+        query_conditions.append({
+            "assistant_name": {
+                "$regex": assistant_name,
+                "$options": "i"
+            }
+        })
     
     if start_date:
         query_conditions.append(Assistant.assistant_created_at >= start_date)

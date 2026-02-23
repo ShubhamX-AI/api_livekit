@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Optional, Literal, Text, List, Dict
 from beanie import Document, Indexed
 from pydantic import BaseModel, Field, EmailStr
+from pymongo import IndexModel
+from pymongo.collation import Collation
 
 
 # API key storage
@@ -40,6 +42,15 @@ class Assistant(Document):
 
     class Settings:
         name = "assistants"  # Collection name in MongoDB
+        indexes = [
+            IndexModel(
+                [("assistant_name", 1)],
+                collation=Collation(
+                    locale="en",
+                    strength=2
+                )
+            )
+        ]
 
 
 class OutboundSIP(Document):
