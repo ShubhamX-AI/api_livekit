@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, Query
 from src.api.models.api_schemas import CreateAssistant, UpdateAssistant
 from src.api.models.response_models import apiResponse
-from src.core.db.db_schemas import Assistant, APIKey
+from src.core.db.db_schemas import Assistant, APIKey, CallRecord
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 import uuid
@@ -15,7 +16,7 @@ def mask_api_key(tts_config: dict) -> dict:
     """Mask the API key in the TTS config for security."""
     if not tts_config:
         return tts_config
-    
+    CallRecord
     masked_config = tts_config.copy()
     if "api_key" in masked_config and masked_config["api_key"]:
         key = masked_config["api_key"]
@@ -107,14 +108,42 @@ async def update_assistant(
 
 # List assistants
 @router.get("/list")
-async def list_assistants(current_user: APIKey = Depends(get_current_user)):
+async def list_assistants(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Items per page"),
+    start_date: Optional[datetime] = Query(None, description="Start date for filtering (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601)"),
+    sort_by: str = Query("assistant_created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", description="Sort order: 'asc' or 'desc'"),
+    current_user: APIKey = Depends(get_current_user)
+):
     logger.info(f"Received request to list assistants")
 
-    # Fetch only active assistants created by the current user
-    assistants = await Assistant.find(
+    # Build query using Beanie expressions
+    query_conditions = [
         Assistant.assistant_created_by_email == current_user.user_email,
-        Assistant.assistant_is_active == True,
-    ).to_list()
+        Assistant.assistant_is_active == True
+    ]
+    
+    if start_date:
+        query_conditions.append(Assistant.assistant_created_at >= start_date)
+    if end_date:
+        query_conditions.append(Assistant.assistant_created_at <= end_date)
+
+    # Calculate skip
+    skip = (page - 1) * limit
+    
+    # Sorting
+    sort_prefix = "-" if sort_order == "desc" else "+"
+    sort_field = f"{sort_prefix}{sort_by}"
+
+    assistant_query = Assistant.find(*query_conditions)
+    
+    # Get total count before pagination
+    total_assistants = await assistant_query.count()
+    
+    # Apply sorting and pagination
+    assistants = await assistant_query.sort(sort_field).skip(skip).limit(limit).to_list()
 
     # Filter only requested fields
     filtered_assistants = [
@@ -131,7 +160,15 @@ async def list_assistants(current_user: APIKey = Depends(get_current_user)):
     return apiResponse(
         success=True,
         message="Assistants retrieved successfully",
-        data=filtered_assistants,
+        data={
+            "assistants": filtered_assistants,
+            "pagination": {
+                "total": total_assistants,
+                "page": page,
+                "limit": limit,
+                "total_pages": (total_assistants + limit - 1) // limit if total_assistants > 0 else 0
+            }
+        },
     )
 
 
@@ -187,4 +224,58 @@ async def delete_assistant(
         success=True,
         message="Assistant deleted successfully",
         data={"assistant_id": assistant_id},
+    )
+
+
+# Get call logs
+@router.get("/call-logs/{assistant_id}")
+async def get_call_logs(
+    assistant_id: str,
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Items per page"),
+    start_date: Optional[datetime] = Query(None, description="Start date for filtering (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601)"),
+    sort_by: str = Query("started_at", description="Field to sort by (e.g., started_at, ended_at, call_duration_minutes)"),
+    sort_order: str = Query("desc", description="Sort order: 'asc' or 'desc'"),
+    _: APIKey = Depends(get_current_user)
+):
+    logger.info(f"Received request to get call logs for assistant: {assistant_id}")
+
+    # Build query using Beanie expressions
+    query_conditions = [CallRecord.assistant_id == assistant_id]
+    
+    if start_date:
+        query_conditions.append(CallRecord.started_at >= start_date)
+    if end_date:
+        query_conditions.append(CallRecord.started_at <= end_date)
+
+    # Calculate skip
+    skip = (page - 1) * limit
+    
+    # Sorting
+    sort_prefix = "-" if sort_order == "desc" else "+"
+    sort_field = f"{sort_prefix}{sort_by}"
+
+    call_log_query = CallRecord.find(*query_conditions)
+    
+    # Get total count before pagination
+    total_logs = await call_log_query.count()
+    
+    # Apply sorting and pagination
+    call_logs = await call_log_query.sort(sort_field).skip(skip).limit(limit).to_list()
+
+    call_log_data = [call_log.model_dump(exclude={"id"}) for call_log in call_logs]
+
+    return apiResponse(
+        success=True,
+        message="Call logs retrieved successfully",
+        data={
+            "logs": call_log_data,
+            "pagination": {
+                "total": total_logs,
+                "page": page,
+                "limit": limit,
+                "total_pages": (total_logs + limit - 1) // limit if total_logs > 0 else 0
+            }
+        },
     )
