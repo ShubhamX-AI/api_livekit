@@ -148,14 +148,15 @@ List assistants created by the current user with support for pagination, sorting
 
 ### Query Parameters
 
-| Parameter    | Type    | Required | Default                | Description                                          |
-| :----------- | :------ | :------- | :--------------------- | :--------------------------------------------------- |
-| `page`       | integer | No       | `1`                    | Page number for pagination (minimum: 1).             |
-| `limit`      | integer | No       | `10`                   | Number of items per page (minimum: 1, maximum: 100). |
-| `start_date` | string  | No       | -                      | Start date for filtering (ISO 8601 format).          |
-| `end_date`   | string  | No       | -                      | End date for filtering (ISO 8601 format).            |
-| `sort_by`    | string  | No       | `assistant_created_at` | Field to sort by.                                    |
-| `sort_order` | string  | No       | `desc`                 | Sort order: `asc` or `desc`.                         |
+| Parameter        | Type    | Required | Default                | Description                                                |
+| :--------------- | :------ | :------- | :--------------------- | :--------------------------------------------------------- |
+| `page`           | integer | No       | `1`                    | Page number for pagination (minimum: 1).                   |
+| `limit`          | integer | No       | `10`                   | Number of items per page (minimum: 1, maximum: 100).       |
+| `assistant_name` | string  | No       | -                      | Filter by assistant name (case-insensitive partial match). |
+| `start_date`     | string  | No       | -                      | Start date for filtering (ISO 8601 format).                |
+| `end_date`       | string  | No       | -                      | End date for filtering (ISO 8601 format).                  |
+| `sort_by`        | string  | No       | `assistant_created_at` | Field to sort by.                                          |
+| `sort_order`     | string  | No       | `desc`                 | Sort order: `asc` or `desc`.                               |
 
 ### Response Schema
 
