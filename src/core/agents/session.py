@@ -227,6 +227,15 @@ async def entrypoint(ctx: JobContext):
     is_sip = participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
     logger.info(f"Participant joined: {participant.identity}, kind={participant.kind}, is_sip={is_sip}")
 
+    # Detect if this is an Exotel bridge participant (checks participant metadata)
+    is_exotel_bridge = False
+    try:
+        meta = json.loads(participant.metadata or "{}")
+        is_exotel_bridge = meta.get("source") == "exotel_bridge"
+    except Exception:
+        pass
+    logger.info(f"is_exotel_bridge={is_exotel_bridge}")
+
     # --- Background Audio Start ---
     if background_audio:
         try:
@@ -241,6 +250,31 @@ async def entrypoint(ctx: JobContext):
     start_instruction = agent_instance.start_instruction
     if start_instruction:
         try:
+            # For Exotel bridge: wait for the explicit call_answered signal before speaking.
+            # The bridge publishes this event AFTER 200 OK is confirmed, meaning the user
+            # has actually picked up and the RTP path is open.
+            if is_exotel_bridge:
+                logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
+                audio_ready = asyncio.Event()
+
+                @ctx.room.on("data_received")
+                def on_data_received(data: rtc.DataPacket):
+                    if data.topic == "sip_bridge_events":
+                        try:
+                            msg = json.loads(data.data.decode())
+                            if msg.get("event") == "call_answered":
+                                logger.info("[EXOTEL] call_answered received — unblocking start instruction")
+                                audio_ready.set()
+                        except Exception:
+                            pass
+
+                try:
+                    await asyncio.wait_for(audio_ready.wait(), timeout=60.0)
+                    logger.info("[EXOTEL] call_answered confirmed — sleeping 2s for RTP stabilization")
+                    await asyncio.sleep(2.0)
+                except asyncio.TimeoutError:
+                    logger.warning("[EXOTEL] Timed out waiting for call_answered — proceeding anyway")
+
             await session.generate_reply(instructions=start_instruction)
             logger.info("Start instruction sent successfully")
         except Exception as e:
