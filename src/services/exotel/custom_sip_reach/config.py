@@ -60,7 +60,7 @@ PCMU_PAYLOAD_TYPE = 0
 PCMA_PAYLOAD_TYPE = 8
 SAMPLE_RATE_SIP = 8000
 SAMPLE_RATE_LK = 48000
-MAX_FRAME_BUFFER = 300  # ~6 seconds of 20ms frames
+MAX_FRAME_BUFFER = 2000  # ~20 seconds of 10ms LiveKit frames (10ms × 2000 = 20s)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Timeout Configuration

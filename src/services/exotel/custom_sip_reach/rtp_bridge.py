@@ -93,6 +93,27 @@ class RTPMediaBridge:
         self._remote_addr = (ip, port)
         self.negotiated_pt = pt
         logger.info(f"[RTP] Remote endpoint → {ip}:{port} PT={pt}")
+        # Immediately flush any agent audio that was buffered during the SIP
+        # INVITE / ringing phase.  We cannot await here (sync method) so we
+        # schedule it as a fire-and-forget task on the running event loop.
+        if self._frame_buffer:
+            asyncio.ensure_future(self._flush_buffer())
+
+    async def _flush_buffer(self):
+        """Drain frames that arrived before the SIP call was answered.
+
+        Without this, the buffer is only flushed the next time send_to_rtp()
+        is called.  If the agent spoke its opening greeting during INVITE and
+        then went silent (waiting for the user to say something), no new frame
+        ever arrives and the greeting is silently discarded.
+        """
+        count = len(self._frame_buffer)
+        if not count:
+            return
+        logger.info(f"[RTP] Flushing {count} buffered frame(s) after SIP answer")
+        while self._frame_buffer:
+            await self._send_frame(self._frame_buffer.popleft())
+        logger.info(f"[RTP] Buffer flush complete ({count} frames sent)")
 
     async def start_inbound(self, room: rtc.Room):
         self._audio_source = rtc.AudioSource(SAMPLE_RATE_LK, 1)
