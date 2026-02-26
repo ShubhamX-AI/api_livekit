@@ -86,7 +86,7 @@ class RTPMediaBridge:
         # At 8kHz, 16-bit mono: 20ms = 160 samples = 320 bytes of PCM.
         # G.711 encodes 1:1, so payload = 160 bytes. Total RTP = 172 bytes.
         # LiveKit sends 10ms frames, so we pack 2 frames → 1 RTP packet.
-        self._PTIME_BYTES = 320  # 20ms at 8kHz 16-bit
+        self._PTIME_BYTES = 160  # 10ms at 8kHz 16-bit
         self._pcm_accumulator = b""
 
     def set_remote_endpoint(self, ip: str, port: int, pt: int = PCMA_PAYLOAD_TYPE):

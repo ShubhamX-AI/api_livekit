@@ -16,7 +16,7 @@ import time
 import uuid
 
 from livekit import rtc
-from livekit.api import AccessToken, VideoGrants
+from livekit.api import AccessToken, VideoGrants, SIPGrants
 
 from .config import (
     EXOTEL_MEDIA_IP,
@@ -101,6 +101,7 @@ async def run_bridge(
             .with_identity(f"sip-{phone_number}")
             .with_metadata(json.dumps({"source": "exotel_bridge"}))
             .with_grants(VideoGrants(room_join=True, room=room_name))
+            .with_sip_grants(SIPGrants(admin=True, call=True))
             .to_jwt()
         )
         await room.connect(LK_URL, token)
