@@ -128,7 +128,7 @@ async def entrypoint(ctx: JobContext):
         input_audio_noise_reduction="near_field",
         turn_detection=TurnDetection(
             type="semantic_vad",
-            eagerness="low",
+            eagerness="high",
             create_response=True,
             interrupt_response=True,
         ),
@@ -152,6 +152,7 @@ async def entrypoint(ctx: JobContext):
 
         tts = cartesia.TTS(
             model="sonic-3",
+            speed=1.1,
             voice=voice_id,
             api_key=api_key,
         )
@@ -168,7 +169,8 @@ async def entrypoint(ctx: JobContext):
 
         tts = sarvam.TTS(
             model="bulbul:v3",
-            target_language_code=tts_config.get("target_language_code", "bn-IN"),
+            pace=1.1,
+            target_language_code=tts_config.get("target_language_code", "en-IN"),
             speaker=speaker,
             api_key=api_key,
         )
@@ -220,21 +222,45 @@ async def entrypoint(ctx: JobContext):
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
     logger.info("AgentSession started successfully")
 
+    # --- EVENT TRACKING FOR CALL ANSWERED ---
+    # We register `data_received` EARLY (before wait_for_participant) so we never
+    # miss the call_answered signal from the Exotel bridge, even if it connects
+    # while the agent is still booting up (common in inbound calls).
+    audio_ready = asyncio.Event()
+
+    @ctx.room.on("data_received")
+    def on_data_received(data: rtc.DataPacket):
+        if data.topic == "sip_bridge_events":
+            try:
+                msg = json.loads(data.data.decode())
+                if msg.get("event") == "call_answered":
+                    logger.info("Bridge reported call answered via data message (SIP 200 OK)")
+                    audio_ready.set()
+            except (json.JSONDecodeError, TypeError):
+                pass
+
     # WAIT for participant
     logger.info("Waiting for participant...")
     participant = await ctx.wait_for_participant()
 
+    # Check for sip participant
     is_sip = participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
-    logger.info(f"Participant joined: {participant.identity}, kind={participant.kind}, is_sip={is_sip}")
 
-    # Detect if this is an Exotel bridge participant (checks participant metadata)
+    # Also detect Exotel bridge participants (join as sip participants)
     is_exotel_bridge = False
-    try:
-        meta = json.loads(participant.metadata or "{}")
-        is_exotel_bridge = meta.get("source") == "exotel_bridge"
-    except Exception:
-        pass
-    logger.info(f"is_exotel_bridge={is_exotel_bridge}")
+    if participant.metadata:    
+        try:
+            meta = json.loads(participant.metadata)
+            is_exotel_bridge = meta.get("source") == "exotel_bridge"
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    logger.info(
+        f"Participant joined: {participant.identity} | "
+        f"kind={participant.kind} | "
+        f"is_sip={is_sip} | "
+        f"is_exotel_bridge={is_exotel_bridge}"
+    )
 
     # --- Background Audio Start ---
     if background_audio:
@@ -260,23 +286,10 @@ async def entrypoint(ctx: JobContext):
                 # has actually picked up and the RTP path is open.
                 if is_exotel_bridge:
                     logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
-                    audio_ready = asyncio.Event()
-
-                    @ctx.room.on("data_received")
-                    def on_data_received(data: rtc.DataPacket):
-                        if data.topic == "sip_bridge_events":
-                            try:
-                                msg = json.loads(data.data.decode())
-                                if msg.get("event") == "call_answered":
-                                    logger.info("[EXOTEL] call_answered received — unblocking start instruction")
-                                    audio_ready.set()
-                            except Exception:
-                                pass
-
                     try:
                         await asyncio.wait_for(audio_ready.wait(), timeout=60.0)
-                        logger.info("[EXOTEL] call_answered confirmed — sleeping 2s for RTP stabilization")
-                        await asyncio.sleep(2.0)
+                        logger.info("[EXOTEL] call_answered confirmed — sleeping 0.5s for RTP stabilization")
+                        await asyncio.sleep(0.5)
                     except asyncio.TimeoutError:
                         logger.warning("[EXOTEL] Timed out waiting for call_answered — proceeding anyway")
 

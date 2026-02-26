@@ -87,14 +87,27 @@ async def _handle_inbound_sip(
                 rest = buf[he + 4 :]
                 lines = hb.split("\r\n")
                 start = lines[0]
-                hdrs = {
-                    l.split(":", 1)[0].strip().lower(): l.split(":", 1)[1].strip()
-                    for l in lines[1:]
-                    if ":" in l
-                }
+                hdrs = {}
+                via_headers = []
+                record_routes = []
+                
+                for l in lines[1:]:
+                    if ":" in l:
+                        k, v = l.split(":", 1)
+                        k = k.strip().lower()
+                        v = v.strip()
+                        if k == "via":
+                            via_headers.append(v)
+                        elif k == "record-route":
+                            record_routes.append(v)
+                        else:
+                            hdrs[k] = v
+
                 cl = int(hdrs.get("content-length", "0"))
                 if len(rest) < cl:
                     break
+                    
+                body = rest[:cl].decode(errors="replace")
                 buf = rest[cl:]
 
                 if start.startswith("BYE "):
@@ -102,13 +115,35 @@ async def _handle_inbound_sip(
                     logger.info(f"[SIP-IN] ← BYE from {peer} call-id={call_id}")
                     if call_id and call_id in _call_registry:
                         _call_registry[call_id].set()
-                    writer.write(ExotelSipClient._response_200_ok(hdrs))
+                    writer.write(ExotelSipClient._response_200_ok(hdrs, via_headers=via_headers))
                     await writer.drain()
                     logger.info("[SIP-IN] → 200 OK (BYE)")
                 elif start.startswith("OPTIONS "):
-                    writer.write(ExotelSipClient._response_200_ok(hdrs))
+                    writer.write(ExotelSipClient._response_200_ok(hdrs, via_headers=via_headers))
                     await writer.drain()
                     logger.info(f"[SIP-IN] → 200 OK (OPTIONS) from {peer}")
+                elif start.startswith("INVITE "):
+                    call_id = hdrs.get("call-id")
+                    logger.info(f"[SIP-IN] ← INVITE from {peer} call-id={call_id}")
+                    from .inbound_bridge import handle_inbound_call
+                    asyncio.create_task(
+                        handle_inbound_call(
+                            hdrs=hdrs,
+                            raw_invite=hb.encode(),
+                            sdp_body=body,
+                            writer=writer,
+                            reader=reader,
+                            from_header=hdrs.get("from", ""),
+                            to_header=hdrs.get("to", ""),
+                            call_id=call_id,
+                            cseq=hdrs.get("cseq", ""),
+                            via_headers=via_headers,
+                            record_routes=record_routes,
+                        )
+                    )
+                elif start.startswith("ACK "):
+                    call_id = hdrs.get("call-id")
+                    logger.info(f"[SIP-IN] ← ACK from {peer} call-id={call_id}")
     except Exception as e:
         logger.info(f"[SIP-IN] Connection ended: {e}")
     finally:
