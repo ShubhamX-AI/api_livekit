@@ -9,26 +9,35 @@ strict: true
 
 theme:
   name: material
+  custom_dir: docs/overrides
+  font:
+    text: Inter
+    code: Roboto Mono
   features:
     - navigation.instant
     - navigation.tracking
     - navigation.tabs
-    - navigation.sections
-    - navigation.expand
+    - navigation.tabs.sticky
     - navigation.top
+    - navigation.indexes
+    - navigation.prune
     - toc.follow
+    - toc.integrate
     - search.suggest
     - search.highlight
+    - search.share
     - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
   palette:
     - scheme: default
-      primary: indigo
+      primary: black
       accent: indigo
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: indigo
+      primary: black
       accent: indigo
       toggle:
         icon: material/brightness-4
@@ -69,7 +78,39 @@ nav:
   - API Reference:
     - Overview: api/errors.md
     - Authentication: api/authentication.md
-    - Assistants: api/assistant.md
-    - Tools: api/tools.md
-    - SIP Trunks: api/sip.md
-    - Outbound Calls: api/calls.md
+
+    - Assistants:
+      - Overview: api/assistant/index.md
+      - Create Assistant: api/assistant/create.md
+      - List Assistants: api/assistant/list.md
+      - Get Details: api/assistant/get.md
+      - Update Assistant: api/assistant/update.md
+      - Delete Assistant: api/assistant/delete.md
+      - Call Logs: api/assistant/logs.md
+      - Using Placeholders: api/assistant/placeholders.md
+
+    - Tools:
+      - Overview: api/tools/index.md
+      - Create Tool: api/tools/create.md
+      - List Tools: api/tools/list.md
+      - Get Details: api/tools/get.md
+      - Update Tool: api/tools/update.md
+      - Delete Tool: api/tools/delete.md
+      - Attach Tools: api/tools/attach.md
+      - Detach Tools: api/tools/detach.md
+      - Webhook Payload: api/tools/webhook.md
+      - Design Guidelines: api/tools/design.md
+
+    - Outbound Calls:
+      - Overview: api/calls/index.md
+      - Trigger Call: api/calls/trigger.md
+      - Call Flow: api/calls/flow.md
+      - End Call Webhook: api/calls/webhook.md
+      - Status Tracking: api/calls/tracking.md
+      - Best Practices: api/calls/best-practices.md
+
+    - SIP Trunks:
+      - Overview: api/sip/index.md
+      - Create Trunk: api/sip/create.md
+      - List Trunks: api/sip/list.md
+      - Provider Setup: api/sip/providers.md
