@@ -32,6 +32,7 @@ class Assistant(Document):
     assistant_tts_config: Dict = {}
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
+    assistant_speaks_first: bool = True  # If False, assistant stays silent and waits for user to speak first
     assistant_end_call_url: Optional[str] = None
     assistant_created_at: datetime = Field(default_factory=datetime.utcnow)
     assistant_updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -247,38 +247,48 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"Failed to start background audio: {e}")
 
     # --- Start Instruction ---
-    start_instruction = agent_instance.start_instruction
-    if start_instruction:
-        try:
-            # For Exotel bridge: wait for the explicit call_answered signal before speaking.
-            # The bridge publishes this event AFTER 200 OK is confirmed, meaning the user
-            # has actually picked up and the RTP path is open.
-            if is_exotel_bridge:
-                logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
-                audio_ready = asyncio.Event()
+    # Respect the assistant_speaks_first flag (defaults True for backward compatibility).
+    # When False, the assistant stays silent on connect and waits for the user to speak first.
+    should_speak_first = getattr(assistant, "assistant_speaks_first", True)
 
-                @ctx.room.on("data_received")
-                def on_data_received(data: rtc.DataPacket):
-                    if data.topic == "sip_bridge_events":
-                        try:
-                            msg = json.loads(data.data.decode())
-                            if msg.get("event") == "call_answered":
-                                logger.info("[EXOTEL] call_answered received — unblocking start instruction")
-                                audio_ready.set()
-                        except Exception:
-                            pass
+    if should_speak_first:
+        start_instruction = agent_instance.start_instruction
+        if start_instruction:
+            try:
+                # For Exotel bridge: wait for the explicit call_answered signal before speaking.
+                # The bridge publishes this event AFTER 200 OK is confirmed, meaning the user
+                # has actually picked up and the RTP path is open.
+                if is_exotel_bridge:
+                    logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
+                    audio_ready = asyncio.Event()
 
-                try:
-                    await asyncio.wait_for(audio_ready.wait(), timeout=60.0)
-                    logger.info("[EXOTEL] call_answered confirmed — sleeping 2s for RTP stabilization")
-                    await asyncio.sleep(2.0)
-                except asyncio.TimeoutError:
-                    logger.warning("[EXOTEL] Timed out waiting for call_answered — proceeding anyway")
+                    @ctx.room.on("data_received")
+                    def on_data_received(data: rtc.DataPacket):
+                        if data.topic == "sip_bridge_events":
+                            try:
+                                msg = json.loads(data.data.decode())
+                                if msg.get("event") == "call_answered":
+                                    logger.info("[EXOTEL] call_answered received — unblocking start instruction")
+                                    audio_ready.set()
+                            except Exception:
+                                pass
 
-            await session.generate_reply(instructions=start_instruction)
-            logger.info("Start instruction sent successfully")
-        except Exception as e:
-            logger.error(f"Failed to send start instruction: {e}", exc_info=True)
+                    try:
+                        await asyncio.wait_for(audio_ready.wait(), timeout=60.0)
+                        logger.info("[EXOTEL] call_answered confirmed — sleeping 2s for RTP stabilization")
+                        await asyncio.sleep(2.0)
+                    except asyncio.TimeoutError:
+                        logger.warning("[EXOTEL] Timed out waiting for call_answered — proceeding anyway")
+
+                await session.generate_reply(instructions=start_instruction)
+                logger.info("Start instruction sent successfully")
+            except Exception as e:
+                logger.error(f"Failed to send start instruction: {e}", exc_info=True)
+    else:
+        logger.info(
+            "assistant_speaks_first=False — skipping start instruction; "
+            "assistant is silent and waiting for the user to speak first"
+        )
 
     # --- WAIT FOR DISCONNECT ---
     @ctx.room.on("participant_disconnected")
