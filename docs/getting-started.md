@@ -3,7 +3,7 @@
 ## Next Steps
 
 - Explore the [Architecture](architecture.md) to understand the system.
-- Check out [Tool Usage](api/tools.md) to add functionality.
+- Check out [Tool Usage](api/tools/index.md) to add functionality.
 
 ---
 

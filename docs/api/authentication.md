@@ -180,7 +180,7 @@ response = requests.get("https://api-livekit-vyom.indusnettechnologies.com/assis
 
 Once you have your API key, you can:
 
-1. [Create an Assistant](assistant.md) - Configure your AI agent
-2. [Set up Tools](tools.md) - Add custom capabilities
-3. [Configure SIP Trunks](sip.md) - Enable telephony
-4. [Make Outbound Calls](calls.md) - Start voice conversations
+1. [Create an Assistant](assistant/index.md) - Configure your AI agent
+2. [Set up Tools](tools/index.md) - Add custom capabilities
+3. [Configure SIP Trunks](sip/index.md) - Enable telephony
+4. [Make Outbound Calls](calls/index.md) - Start voice conversations

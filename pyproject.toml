@@ -13,5 +13,5 @@ dependencies = [
     "livekit-agents[cartesia,openai,sarvam,turn-detector]~=1.3",
     "chevron>=0.14.0",
     "mkdocs-material>=9.7.1",
-    "mkdocs>=1.6.1"
+    "mkdocs>=1.6.1",
 ]
