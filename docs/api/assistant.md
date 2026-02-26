@@ -25,6 +25,7 @@ Create a new AI assistant configuration.
 | `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia` or `sarvam`.                                  |
 | `assistant_tts_config`        | object | Yes      | The TTS configuration object (see below).                                         |
 | `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
+| `assistant_speaks_first`     | boolean | No       | If `true` (default), the assistant speaks first. If `false`, it stays silent and waits for the user to speak first. |
 | `assistant_end_call_url`      | string | No       | URL to POST call details when the call ends.                                      |
 
 ### TTS Configuration
@@ -131,8 +132,27 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
            "assistant_tts_config": {
              "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
            },
-           "assistant_start_instruction": "Hello! I'm calling from Acme Corp. How are you today?",
+           "assistant_start_instruction": "Hello! I'\''m calling from Acme Corp. How are you today?",
+           "assistant_speaks_first": true,
            "assistant_end_call_url": "https://api.example.com/call-ended"
+         }'
+```
+
+### Example: User Speaks First
+
+```bash
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_api_key>" \
+     -d '{
+           "assistant_name": "Passive Assistant",
+           "assistant_description": "Waits for user input",
+           "assistant_prompt": "You are a helpful assistant.",
+           "assistant_tts_model": "cartesia",
+           "assistant_tts_config": {
+             "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+           },
+           "assistant_speaks_first": false
          }'
 ```
 
@@ -251,6 +271,7 @@ Fetch detailed information about a specific assistant.
 | `data.assistant_tts_model`         | string  | The TTS provider.                          |
 | `data.assistant_tts_config`        | object  | The TTS configuration object.              |
 | `data.assistant_start_instruction` | string  | The start instruction (if set).            |
+| `data.assistant_speaks_first`     | boolean | Whether the assistant speaks first.         |
 | `data.assistant_end_call_url`      | string  | The webhook URL (if set).                  |
 | `data.tool_ids`                    | array   | List of attached tool IDs.                 |
 | `data.assistant_created_at`        | string  | ISO 8601 timestamp of creation.            |
@@ -288,6 +309,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details
       "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
     },
     "assistant_start_instruction": null,
+    "assistant_speaks_first": true,
     "assistant_end_call_url": null,
     "tool_ids": [],
     "assistant_created_at": "2024-01-15T10:00:00.000000",
@@ -329,6 +351,7 @@ Only provide the fields you want to update. All fields are optional.
 | `assistant_tts_model`         | string | The new TTS provider (`cartesia` or `sarvam`).    |
 | `assistant_tts_config`        | object | The new TTS configuration object.                 |
 | `assistant_start_instruction` | string | The new start instruction.                        |
+| `assistant_speaks_first`     | boolean | Whether the assistant should speak first.         |
 | `assistant_end_call_url`      | string | The new webhook URL.                              |
 
 ### Response Schema
@@ -362,7 +385,8 @@ curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/updat
            "assistant_tts_config": {
              "speaker": "meera",
              "target_language_code": "hi-IN"
-           }
+           },
+           "assistant_speaks_first": false
          }'
 ```
 

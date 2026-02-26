@@ -48,6 +48,7 @@ class CreateAssistant(BaseModel):
     assistant_tts_model: Literal["cartesia", "sarvam"] = Field(..., description="TTS Provider")
     assistant_tts_config: TTSConfig = Field(..., description="TTS Configuration object (varies by model)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
+    assistant_speaks_first: bool = Field(True, description="If True (default), assistant speaks first. If False, assistant stays silent and waits for the user to speak.")
     assistant_end_call_url: Optional[str] = Field(None, max_length=200, description="Assistant's end call url")
 
     class Config:
@@ -64,6 +65,7 @@ class CreateAssistant(BaseModel):
                     "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
                 },
                 "assistant_start_instruction": "Start instruction.",
+                "assistant_speaks_first": True,
                 "assistant_end_call_url": "End call url.",
             }
         }
@@ -90,6 +92,7 @@ class UpdateAssistant(BaseModel):
     assistant_tts_model: Optional[Literal["cartesia", "sarvam"]] = Field(None, description="TTS Provider (optional)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
+    assistant_speaks_first: Optional[bool] = Field(None, description="If True, assistant speaks first. If False, assistant waits for user. Leave unset to keep existing value.")
     assistant_end_call_url: Optional[str] = Field(None, max_length=200, description="Assistant's end call url (optional)")
 
     class Config:
@@ -99,6 +102,7 @@ class UpdateAssistant(BaseModel):
         json_schema_extra = {
             "example": {
                 "assistant_name": "Updated Assistant Name",
+                "assistant_speaks_first": False,
                 "assistant_tts_model": "sarvam",
                 "assistant_tts_config": {
                     "speaker": "meera",
