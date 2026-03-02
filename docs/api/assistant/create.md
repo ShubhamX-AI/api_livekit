@@ -14,7 +14,7 @@ Create a new AI assistant configuration.
 | `assistant_name`              | string | Yes      | The name of the assistant (1-100 characters).                                     |
 | `assistant_description`       | string | Yes      | A description of the assistant.                                                   |
 | `assistant_prompt`            | string | Yes      | The system prompt that defines the assistant's behavior.                          |
-| `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia` or `sarvam`.                                  |
+| `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia`, `sarvam`, or `elevenlabs`.                   |
 | `assistant_tts_config`        | object | Yes      | The TTS configuration object (see below).                                         |
 | `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
 | `assistant_speaks_first`     | boolean | No       | If `true` (default), the assistant speaks first. If `false`, it stays silent and waits for the user to speak first. |
@@ -40,6 +40,15 @@ Create a new AI assistant configuration.
     | `speaker` | string | Yes | The Sarvam speaker identifier (e.g., "meera", "arvind"). |
     | `target_language_code` | string | No | BCP-47 language code (default: "bn-IN"). |
     | `api_key` | string | No | Optional Sarvam API key. If not provided, the system's default key will be used. |
+
+=== "ElevenLabs Configuration"
+
+    Use this when `assistant_tts_model` is set to `"elevenlabs"`.
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `voice_id` | string | Yes | The ElevenLabs voice ID. |
+    | `api_key` | string | No | Optional ElevenLabs API key. If not provided, the system's default key will be used. |
 
 ### Response Schema
 
@@ -106,6 +115,24 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
              "speaker": "meera",
              "target_language_code": "hi-IN",
              "api_key": "your_custom_sarvam_api_key"
+           }
+         }'
+```
+
+### Example: ElevenLabs TTS
+
+```bash
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_api_key>" \
+         -d '{
+           "assistant_name": "Premium Voice Assistant",
+           "assistant_description": "High-quality voice assistant",
+           "assistant_prompt": "You are a helpful premium assistant.",
+           "assistant_tts_model": "elevenlabs",
+           "assistant_tts_config": {
+             "voice_id": "JBFqnCBv7z4s9ByuOnH",
+             "api_key": "your_custom_elevenlabs_api_key"
            }
          }'
 ```

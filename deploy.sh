@@ -18,6 +18,6 @@ echo "📦 Building and starting containers..."
 docker compose up -d --build
 
 echo "🧹 Cleaning up old images..."
-docker image prune -f
+docker image prune -a -f
 
 echo "✅ Deployment successful!"

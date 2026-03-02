@@ -33,9 +33,14 @@ class SarvamTTSConfig(BaseModel):
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key)")
 
 
+class ElevenLabsTTSConfig(BaseModel):
+    voice_id: str = Field(..., min_length=1, max_length=100, description="ElevenLabs voice ID")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
+
+
 # Discriminated union type
 TTSConfig = Annotated[
-    Union[CartesiaTTSConfig, SarvamTTSConfig],
+    Union[CartesiaTTSConfig, SarvamTTSConfig, ElevenLabsTTSConfig],
     Field(discriminator=None)  # discriminated by assistant_tts_model field in parent
 ]
 
@@ -45,7 +50,7 @@ class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
     assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
-    assistant_tts_model: Literal["cartesia", "sarvam"] = Field(..., description="TTS Provider")
+    assistant_tts_model: Literal["cartesia", "sarvam", "elevenlabs"] = Field(..., description="TTS Provider")
     assistant_tts_config: TTSConfig = Field(..., description="TTS Configuration object (varies by model)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
     assistant_speaks_first: bool = Field(True, description="If True (default), assistant speaks first. If False, assistant stays silent and waits for the user to speak.")
@@ -75,6 +80,7 @@ class CreateAssistant(BaseModel):
         expected = {
             "cartesia": CartesiaTTSConfig,
             "sarvam": SarvamTTSConfig,
+            "elevenlabs": ElevenLabsTTSConfig,
         }
         # Check if config type matches the model string
         if not isinstance(self.assistant_tts_config, expected[self.assistant_tts_model]):
@@ -89,7 +95,7 @@ class UpdateAssistant(BaseModel):
     assistant_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant's name (optional)")
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
-    assistant_tts_model: Optional[Literal["cartesia", "sarvam"]] = Field(None, description="TTS Provider (optional)")
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs"]] = Field(None, description="TTS Provider (optional)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
     assistant_speaks_first: Optional[bool] = Field(None, description="If True, assistant speaks first. If False, assistant waits for user. Leave unset to keep existing value.")
@@ -119,6 +125,7 @@ class UpdateAssistant(BaseModel):
             expected = {
                 "cartesia": CartesiaTTSConfig,
                 "sarvam": SarvamTTSConfig,
+                "elevenlabs": ElevenLabsTTSConfig,
             }
             if not isinstance(self.assistant_tts_config, expected[self.assistant_tts_model]):
                 raise ValueError(
