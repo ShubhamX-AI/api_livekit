@@ -27,6 +27,7 @@ from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
 from src.core.db.db_schemas import Assistant
 from src.services.livekit.livekit_svc import LiveKitService
+from src.services.elevenlabs.v3_nonstream import ElevenLabsNonStreamingTTS
 
 
 setup_logging()
@@ -173,6 +174,22 @@ async def entrypoint(ctx: JobContext):
             target_language_code=tts_config.get("target_language_code", "en-IN"),
             speaker=speaker,
             api_key=api_key,
+        )
+    elif assistant.assistant_tts_model == "elevenlabs":
+        voice_id = tts_config.get("voice_id")
+        if not voice_id:
+             logger.error(f"Missing voice_id for ElevenLabs assistant {assistant.assistant_id}")
+             return
+
+        # Check api key present
+        api_key=tts_config.get("api_key")
+        if not api_key:
+            api_key=settings.ELEVENLABS_API_KEY
+
+        tts = ElevenLabsNonStreamingTTS(
+            model="eleven_v3",
+            voice_id=voice_id,
+            api_key=api_key
         )
 
     session = AgentSession(

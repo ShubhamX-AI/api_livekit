@@ -26,7 +26,7 @@ Only provide the fields you want to update. All fields are optional.
 | `assistant_name`              | string | The new name of the assistant (1-100 characters). |
 | `assistant_description`       | string | The new description.                              |
 | `assistant_prompt`            | string | The new system prompt.                            |
-| `assistant_tts_model`         | string | The new TTS provider (`cartesia` or `sarvam`).    |
+| `assistant_tts_model`         | string | The new TTS provider (`cartesia`, `sarvam`, or `elevenlabs`).|
 | `assistant_tts_config`        | object | The new TTS configuration object.                 |
 | `assistant_start_instruction` | string | The new start instruction.                        |
 | `assistant_speaks_first`     | boolean | Whether the assistant should speak first.         |
@@ -65,6 +65,20 @@ curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/updat
              "target_language_code": "hi-IN"
            },
            "assistant_speaks_first": false
+         }'
+```
+
+**Example: Update to ElevenLabs TTS**
+
+```bash
+curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_api_key>" \
+     -d '{
+           "assistant_tts_model": "elevenlabs",
+           "assistant_tts_config": {
+             "voice_id": "JBFqnCBv7z4s9ByuOnH"
+           }
          }'
 ```
 
