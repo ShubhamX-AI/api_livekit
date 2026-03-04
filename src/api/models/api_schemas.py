@@ -23,17 +23,20 @@ class CreateApiKey(BaseModel):
 
 # ── TTS Config sub-models ──────────────────────────
 class CartesiaTTSConfig(BaseModel):
+    type: Literal["cartesia"] = "cartesia"  # discriminator field
     voice_id: str = Field(..., min_length=1, max_length=100, description="Cartesia voice ID")
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system key)")
 
 
 class SarvamTTSConfig(BaseModel):
+    type: Literal["sarvam"] = "sarvam"
     speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier")
     target_language_code: str = Field("bn-IN", max_length=10, description="BCP-47 language code")
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key)")
 
 
 class ElevenLabsTTSConfig(BaseModel):
+    type: Literal["elevenlabs"] = "elevenlabs"
     voice_id: str = Field(..., min_length=1, max_length=100, description="ElevenLabs voice ID")
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
 
@@ -41,7 +44,7 @@ class ElevenLabsTTSConfig(BaseModel):
 # Discriminated union type
 TTSConfig = Annotated[
     Union[CartesiaTTSConfig, SarvamTTSConfig, ElevenLabsTTSConfig],
-    Field(discriminator=None)  # discriminated by assistant_tts_model field in parent
+    Field(discriminator="type")  # discriminated by type field in parent
 ]
 
 
@@ -75,19 +78,16 @@ class CreateAssistant(BaseModel):
             }
         }
 
-    @model_validator(mode="after")
-    def validate_tts_config_matches_model(self):
-        expected = {
-            "cartesia": CartesiaTTSConfig,
-            "sarvam": SarvamTTSConfig,
-            "elevenlabs": ElevenLabsTTSConfig,
-        }
-        # Check if config type matches the model string
-        if not isinstance(self.assistant_tts_config, expected[self.assistant_tts_model]):
-            raise ValueError(
-                f"assistant_tts_config must match assistant_tts_model '{self.assistant_tts_model}'"
-            )
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def inject_tts_type(cls, data: dict):
+        """Inject the `type` discriminator into tts_config so Pydantic picks the right model."""
+        if isinstance(data, dict):
+            model = data.get("assistant_tts_model")
+            config = data.get("assistant_tts_config")
+            if model and isinstance(config, dict):
+                config["type"] = model  # inject discriminator key
+        return data
 
 
 # For Assistant update
@@ -117,20 +117,24 @@ class UpdateAssistant(BaseModel):
             }
         }
 
+    @model_validator(mode="before")
+    @classmethod
+    def inject_tts_type(cls, data: dict):   
+        """Same injection for updates."""
+        if isinstance(data, dict):
+            model = data.get("assistant_tts_model")
+            config = data.get("assistant_tts_config")
+            if model and isinstance(config, dict):
+                config["type"] = model
+        return data
+
     @model_validator(mode="after")
-    def validate_tts_config_matches_model(self):
-        # Only validate if both are present. API logic often handles partial updates,
-        # but for safety, if user sends both, they must match.
-        if self.assistant_tts_model and self.assistant_tts_config:
-            expected = {
-                "cartesia": CartesiaTTSConfig,
-                "sarvam": SarvamTTSConfig,
-                "elevenlabs": ElevenLabsTTSConfig,
-            }
-            if not isinstance(self.assistant_tts_config, expected[self.assistant_tts_model]):
-                raise ValueError(
-                    f"assistant_tts_config must match assistant_tts_model '{self.assistant_tts_model}'"
-                )
+    def validate_tts_consistency(self):
+        """If only one of tts_model/tts_config is sent, warn or handle in route logic."""
+        if bool(self.assistant_tts_model) != bool(self.assistant_tts_config):
+            raise ValueError(
+                "Provide both `assistant_tts_model` and `assistant_tts_config` together, or neither."
+            )
         return self
 
 
