@@ -30,6 +30,9 @@ Only provide the fields you want to update. All fields are optional.
 | `assistant_tts_config`        | object | The new TTS configuration object.                 |
 | `assistant_start_instruction` | string | The new start instruction.                        |
 | `assistant_speaks_first`     | boolean | Whether the assistant should speak first.         |
+| `assistant_end_call_enabled` | boolean | Enable/disable built-in `end_call` tool. Default remains existing value; for new assistants, default is `false`. |
+| `assistant_end_call_trigger_phrase` | string | Example user phrase that should trigger call end. If omitted, existing value is kept; when effective value is empty, generic confirmation-based trigger rule is used. |
+| `assistant_end_call_agent_message` | string | What the assistant says before ending the call. If omitted, existing value is kept; when effective value is empty, fallback is `say goodbye to the user`. |
 | `assistant_end_call_url`      | string | The new webhook URL.                              |
 
 ### Response Schema

@@ -27,6 +27,9 @@ Fetch detailed information about a specific assistant.
 | `data.assistant_tts_config`        | object  | The TTS configuration object.              |
 | `data.assistant_start_instruction` | string  | The start instruction (if set).            |
 | `data.assistant_speaks_first`     | boolean | Whether the assistant speaks first.         |
+| `data.assistant_end_call_enabled`  | boolean | Whether built-in end call behavior is enabled (`false` by default). |
+| `data.assistant_end_call_trigger_phrase` | string | Example user phrase for end-call trigger. If `null`/empty, runtime uses generic confirmation-based trigger guidance. |
+| `data.assistant_end_call_agent_message` | string | Assistant message spoken before ending call. If `null`/empty, runtime fallback is `say goodbye to the user`. |
 | `data.assistant_end_call_url`      | string  | The webhook URL (if set).                  |
 | `data.tool_ids`                    | array   | List of attached tool IDs.                 |
 | `data.assistant_created_at`        | string  | ISO 8601 timestamp of creation.            |
@@ -65,6 +68,9 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details
     },
     "assistant_start_instruction": null,
     "assistant_speaks_first": true,
+    "assistant_end_call_enabled": true,
+    "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
+    "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
     "assistant_end_call_url": null,
     "tool_ids": [],
     "assistant_created_at": "2024-01-15T10:00:00.000000",

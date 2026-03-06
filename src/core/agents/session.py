@@ -13,6 +13,7 @@ from openai.types.beta.realtime.session import TurnDetection
 from livekit.plugins import cartesia
 from livekit.plugins import sarvam
 from livekit.plugins.openai import realtime
+from livekit.agents.beta.tools import EndCallTool
 from openai.types.realtime import AudioTranscription
 import os
 import asyncio
@@ -107,6 +108,30 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"Loaded {len(tools)} tool(s) for assistant {assistant.assistant_id}")
         except Exception as e:
             logger.error(f"Failed to load tools: {e}", exc_info=True)
+
+    # Built-in EndCallTool support
+    if getattr(assistant, "assistant_end_call_enabled", False):
+        trigger_phrase = (getattr(assistant, "assistant_end_call_trigger_phrase", None) or "").strip()
+        if trigger_phrase:
+            extra_description = (
+                "Only call this tool after the user clearly says:- "
+                f"'{trigger_phrase}'."
+            )
+        else:
+            extra_description = "Only call this tool after the user clearly asks to end the call."
+
+        end_instructions = getattr(assistant, "assistant_end_call_agent_message", None) or "say goodbye to the user"
+
+        try:
+            end_call_tool = EndCallTool(
+                extra_description=extra_description,
+                delete_room=True,
+                end_instructions=end_instructions,
+            )
+            tools.extend(end_call_tool.tools)
+            logger.info(f"EndCallTool enabled for assistant {assistant.assistant_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize EndCallTool: {e}", exc_info=True)
 
     # Initialize Agent Instance
     agent_instance = DynamicAssistant(
