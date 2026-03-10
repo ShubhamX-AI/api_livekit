@@ -115,3 +115,5 @@ nav:
       - List Trunks: api/sip/list.md
       - Deactivate Trunk: api/sip/deactivate.md
       - Provider Setup: api/sip/providers.md
+
+    - Activity Logs: api/activity-logs.md
