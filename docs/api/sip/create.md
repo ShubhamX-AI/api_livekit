@@ -32,12 +32,21 @@ Configure a SIP trunk for outbound calls.
 
     Use this when `trunk_type` is set to `"exotel"`.
 
-    | Field           | Type   | Required | Description                                           |
-    | :-------------- | :----- | :------- | :---------------------------------------------------- |
-    | `exotel_number` | string | Yes      | Your Exotel virtual number (caller ID).               |
-    | `sip_host`      | string | No       | Optional Exotel SIP proxy host (overrides default).   |
-    | `sip_port`      | number | No       | Optional Exotel SIP proxy port (overrides default).   |
-    | `sip_domain`    | string | No       | Optional Exotel SIP domain/realm (overrides default). |
+    | Field             | Type   | Required | Description                                                                            |
+    | :---------------- | :----- | :------- | :------------------------------------------------------------------------------------- |
+    | `exotel_number`   | string | Yes      | Your Exotel virtual number (caller ID).                                                |
+    | `sip_host`        | string | No       | Optional Exotel SIP proxy host (overrides default).                                    |
+    | `sip_port`        | number | No       | Optional Exotel SIP proxy port (overrides default).                                    |
+    | `sip_domain`      | string | No       | Optional Exotel SIP domain/realm (overrides default).                                  |
+    | `auth_username`   | string | No       | SIP auth username for this number (overrides `EXOTEL_AUTH_USERNAME` env var).          |
+    | `auth_password`   | string | No       | SIP auth password for this number (overrides `EXOTEL_AUTH_PASSWORD` env var).          |
+
+    !!! warning "Getting a 403 Forbidden after a number change?"
+        When Exotel reassigns your virtual number they often issue **new SIP credentials** tied
+        to the new number. Simply replacing `exotel_number` is not enough — you must also
+        supply the credentials that Exotel gave you for the new number via `auth_username` and
+        `auth_password`. If you are unsure what those values are, contact the **Exotel support
+        team** and ask for the SIP username and password for your new number.
 
 ### Response Schema
 
@@ -97,7 +106,9 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbo
            "trunk_name": "Exotel India",
            "trunk_type": "exotel",
            "trunk_config": {
-             "exotel_number": "+918044319240"
+             "exotel_number": "+918044319240",
+             "auth_username": "your_sip_username",
+             "auth_password": "your_sip_password"
            }
          }'
 ```

@@ -164,6 +164,18 @@ class ExotelTrunkConfig(BaseModel):
     sip_host: Optional[str] = Field(None, description="Exotel SIP proxy host")
     sip_port: Optional[int] = Field(None, description="Exotel SIP proxy port")
     sip_domain: Optional[str] = Field(None, description="Exotel SIP domain")
+    # Per-trunk SIP auth credentials — required when number-specific credentials differ from the env defaults
+    auth_username: Optional[str] = Field(None, min_length=1, max_length=100, description="Exotel SIP auth username (overrides EXOTEL_AUTH_USERNAME env var)")
+    auth_password: Optional[str] = Field(None, min_length=1, max_length=100, description="Exotel SIP auth password (overrides EXOTEL_AUTH_PASSWORD env var)")
+
+    @model_validator(mode="after")
+    def validate_auth_credentials_together(self):
+        """Ensure auth_username and auth_password are always provided as a pair."""
+        if bool(self.auth_username) != bool(self.auth_password):
+            raise ValueError(
+                "Provide both `auth_username` and `auth_password` together, or neither."
+            )
+        return self
 
 
 # Discriminated union type for Trunks
@@ -188,7 +200,9 @@ class CreateOutboundTrunk(BaseModel):
                 "trunk_name": "My Exotel Trunk",
                 "trunk_type": "exotel",
                 "trunk_config": {
-                    "exotel_number": "08044319240"
+                    "exotel_number": "08044319240",
+                    "auth_username": "your_sip_username",
+                    "auth_password": "your_sip_password"
                 }
             }
         }

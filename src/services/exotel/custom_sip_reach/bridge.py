@@ -56,6 +56,9 @@ async def run_bridge(
     sip_host = sip_config.get("sip_host")
     sip_port = sip_config.get("sip_port")
     sip_domain = sip_config.get("sip_domain")
+    # Per-trunk credentials override the env-level defaults (fixes 403 after number change)
+    auth_username = sip_config.get("auth_username")
+    auth_password = sip_config.get("auth_password")
 
     pool = get_port_pool()
     port = await pool.acquire()
@@ -80,6 +83,10 @@ async def run_bridge(
             sip_client_kwargs["sip_port"] = int(sip_port)
         if sip_domain:
             sip_client_kwargs["from_domain"] = sip_domain
+        if auth_username:
+            sip_client_kwargs["username"] = auth_username
+        if auth_password:
+            sip_client_kwargs["password"] = auth_password
 
         sip_client = ExotelSipClient(**sip_client_kwargs)
         inbound_bye = register_call_id(sip_client.call_id)
