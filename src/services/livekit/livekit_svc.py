@@ -1,5 +1,6 @@
 import uuid
 import json
+import time
 import httpx
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
@@ -13,7 +14,7 @@ from livekit.protocol.sip import (
 )
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
-from src.core.db.db_schemas import CallRecord, Assistant
+from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog
 
 setup_logging()
 
@@ -192,12 +193,41 @@ class LiveKitService:
             }
             
             # Send the Call record to the end call url
+            start_ms = time.monotonic()
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     _ = await client.post(end_call_url, json=payload)
+                    latency = int((time.monotonic() - start_ms) * 1000)
                     logger.info(f"Call details sent to end call url: {end_call_url}")
+                    try:
+                        await ActivityLog(
+                            user_email=assistant.assistant_created_by_email,
+                            log_type="end_call_webhook",
+                            assistant_id=assistant_id,
+                            room_name=room_name,
+                            status="success",
+                            request_data={"url": end_call_url},
+                            latency_ms=latency,
+                            message=f"Post-call data sent to {end_call_url}",
+                        ).insert()
+                    except Exception as log_err:
+                        logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
             except Exception as e:
+                latency = int((time.monotonic() - start_ms) * 1000)
                 logger.error(f"Failed to send call details to webhook: {e}")
+                try:
+                    await ActivityLog(
+                        user_email=assistant.assistant_created_by_email,
+                        log_type="end_call_webhook",
+                        assistant_id=assistant_id,
+                        room_name=room_name,
+                        status="error",
+                        request_data={"url": end_call_url},
+                        latency_ms=latency,
+                        message=f"Failed to send post-call data to {end_call_url}: {str(e)}",
+                    ).insert()
+                except Exception as log_err:
+                    logger.warning(f"Failed to write activity log: {log_err}")
 
 
     async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[str]:

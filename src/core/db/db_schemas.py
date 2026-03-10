@@ -116,3 +116,21 @@ class Tool(Document):
 
     class Settings:
         name = "tools"  # Collection name in MongoDB
+
+
+class ActivityLog(Document):
+    """User-visible activity log — one record per notable event (tool call, webhook fire)."""
+
+    user_email: Indexed(str)  # used to scope logs to the owning user
+    log_type: Literal["tool_call", "end_call_webhook"]
+    assistant_id: Optional[str] = None
+    room_name: Optional[str] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: Literal["success", "error"]
+    request_data: Optional[Dict] = None   # what was sent outbound
+    response_data: Optional[Dict] = None  # what came back
+    latency_ms: Optional[int] = None
+    message: str  # human-readable one-liner
+
+    class Settings:
+        name = "activity_logs"

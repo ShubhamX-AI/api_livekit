@@ -12,6 +12,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 - **Call Recording**: Automatic call recording with LiveKit Egress to AWS S3.
 - **Transcripts**: Real-time transcription storage in MongoDB.
 - **Webhooks**: Automatic webhook notifications for call completion with detailed analytics.
+- **Activity Logs**: Per-user activity logs for tool calls and post-call webhooks, queryable via API.
 - **Secure API**: API Key authentication for all management endpoints.
 
 ## 🛠️ Tech Stack
@@ -28,8 +29,8 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 1. **API Service**: Manages resources (Assistants, API Keys, Trunks) and triggers calls.
 2. **Agent Worker**: Connects to LiveKit rooms to handle AI logic (STT, LLM, TTS).
 3. **LiveKit Server**: Handles real-time audio/video transport.
-4. **MongoDB**: Stores configuration (assistants, tools), call records, and transcripts.
-5. **Webhooks**: Pushes call data to external services upon completion.
+4. **MongoDB**: Stores configuration (assistants, tools), call records, transcripts, and activity logs.
+5. **Webhooks**: Pushes call data to external services upon completion. All outbound webhook calls are recorded as activity logs.
 
 ## 📋 Prerequisites
 
@@ -128,7 +129,7 @@ api_livekit/
 │   │   ├── server.py
 │   │   ├── dependencies/  # Auth middleware
 │   │   ├── models/        # Request/response schemas
-│   │   └── routes/        # Endpoints: assistant, auth, call, sip, tool
+│   │   └── routes/        # Endpoints: assistant, auth, call, logs, sip, tool
 │   ├── core/
 │   │   ├── config.py      # Settings loaded from .env
 │   │   ├── logger.py
@@ -155,10 +156,35 @@ The agent (`src/core/agents/session.py`):
 1. Connects to the LiveKit room.
 2. Fetches the assistant configuration from MongoDB using the `assistant_id` (derived from room name).
 3. Injects `metadata` values into the prompt and start instruction.
-4. Loads and attaches configured tools (webhooks/static) to the assistant.
+4. Loads and attaches configured tools (webhooks/static) to the assistant. Each webhook tool call writes an activity log to MongoDB.
 5. Initializes OpenAI Realtime API and Cartesia/Sarvam TTS (based on typed configuration).
 6. Listens for `transcription` events and saves them to MongoDB.
-7. Triggers the `end_call` webhook upon participant disconnection.
+7. Triggers the `end_call` webhook upon participant disconnection. The webhook fire result (success/error) is also written as an activity log.
+
+## 📊 Activity Logs
+
+Users can query their own activity logs via the API to observe tool calls and webhook deliveries in real time.
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /logs` | Bearer | Fetch paginated activity logs for the authenticated user |
+
+### Query parameters
+
+| Param | Default | Description |
+|---|---|---|
+| `log_type` | — | Filter by `tool_call` or `end_call_webhook` |
+| `assistant_id` | — | Filter to a specific assistant |
+| `room_name` | — | Filter to a specific call |
+| `page` | `1` | Page number |
+| `limit` | `50` | Items per page (max 100) |
+
+### Log types
+
+| Type | When it fires |
+|---|---|
+| `tool_call` | Every time the agent calls a webhook tool — includes URL, arguments, response, latency |
+| `end_call_webhook` | When post-call data is sent to `assistant_end_call_url` — includes URL, latency, success/error |
 
 ## 🤝 Contributing
 

@@ -104,7 +104,12 @@ async def entrypoint(ctx: JobContext):
     tools = []
     if assistant.tool_ids:
         try:
-            tools = await build_tools_from_db(assistant.tool_ids)
+            tools = await build_tools_from_db(
+                assistant.tool_ids,
+                user_email=assistant.assistant_created_by_email,
+                room_name=room_name,
+                assistant_id=assistant_id,
+            )
             logger.info(f"Loaded {len(tools)} tool(s) for assistant {assistant.assistant_id}")
         except Exception as e:
             logger.error(f"Failed to load tools: {e}", exc_info=True)

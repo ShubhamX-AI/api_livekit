@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from src.core.config import settings
-from src.core.db.db_schemas import APIKey, Assistant, OutboundSIP, CallRecord, Tool
+from src.core.db.db_schemas import APIKey, Assistant, OutboundSIP, CallRecord, Tool, ActivityLog
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,8 @@ class Database:
                     Assistant,
                     OutboundSIP,
                     CallRecord,
-                    Tool
+                    Tool,
+                    ActivityLog
                 ]
             )
             logger.info(f"Beanie initialized with database: {settings.DATABASE_NAME}")
