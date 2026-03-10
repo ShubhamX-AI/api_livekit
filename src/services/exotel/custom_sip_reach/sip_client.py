@@ -75,6 +75,7 @@ class ExotelSipClient:
         self._to_tag = None
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
+        self.last_sip_error: str | None = None  # set when INVITE gets a ≥400 response
 
     # ── SDP / Message Builders ───────────────────────────────────────────
 
@@ -274,6 +275,7 @@ class ExotelSipClient:
 
                     if code >= 400:
                         logger.error(f"[SIP] ❌ {status}")
+                        self.last_sip_error = status  # e.g. "SIP/2.0 400 Bad Request"
                         return None
 
             except asyncio.TimeoutError:

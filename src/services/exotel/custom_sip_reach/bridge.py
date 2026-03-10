@@ -43,6 +43,7 @@ async def run_bridge(
     agent_type: str = "invoice",
     room_name: str | None = None,
     sip_config: dict | None = None,
+    result_signal: asyncio.Queue | None = None,
 ):
     if not validate_config():
         return
@@ -112,7 +113,14 @@ async def run_bridge(
         res = await sip_client.send_invite()
         if not res:
             logger.error("[BRIDGE] SIP failed")
+            if result_signal:
+                error = sip_client.last_sip_error or "SIP INVITE failed"
+                await result_signal.put({"success": False, "error": error})
             return
+
+        # Signal the API that the call is established; bridge loop continues below
+        if result_signal:
+            await result_signal.put({"success": True, "room_name": room_name})
 
         # Flush buffered agent audio + open RTP path
         rtp_bridge.set_remote_endpoint(res["remote_ip"], res["remote_port"], res["pt"])
@@ -185,6 +193,12 @@ async def run_bridge(
 
     except Exception as e:
         logger.error(f"[BRIDGE] Error: {e}", exc_info=True)
+        # Signal failure if crash happened before the INVITE resolved
+        if result_signal:
+            try:
+                result_signal.put_nowait({"success": False, "error": str(e)})
+            except asyncio.QueueFull:
+                pass  # already signaled
 
     finally:
         if forward_task:

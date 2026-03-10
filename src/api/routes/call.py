@@ -80,18 +80,31 @@ async def trigger_outbound_call(
         # Trunk config (Exotel number, etc.)
         sip_config = trunk.trunk_config
 
-        # Run bridge in background
-        logger.info(f"Starting SIP bridge background task")
         import asyncio
 
-        # We don't await this, just fire and forget (the bridge handles its own lifecycle)
+        # One-shot queue — bridge puts result after INVITE resolves, then keeps running
+        result_signal = asyncio.Queue(maxsize=0)
+
         asyncio.create_task(
             run_bridge(
                 phone_number=request.to_number,
                 room_name=room_name,
                 sip_config=sip_config,
+                result_signal=result_signal,
             )
         )
+
+        # Wait for the SIP INVITE to get a final response (100 Trying is skipped internally)
+        try:
+            sip_result = await asyncio.wait_for(result_signal.get(), timeout=60.0)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="SIP call setup timed out")
+
+        if not sip_result.get("success"):
+            raise HTTPException(
+                status_code=502,
+                detail=f"SIP call setup failed: {sip_result.get('error', 'unknown')}",
+            )
 
         return apiResponse(
             success=True,
