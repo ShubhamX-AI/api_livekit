@@ -5,7 +5,7 @@ from src.core.db.db_schemas import Tool, Assistant, APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 setup_logging()
@@ -75,7 +75,7 @@ async def update_tool(
 
     update_data.update(
         {
-            "tool_updated_at": datetime.utcnow(),
+            "tool_updated_at": datetime.now(timezone.utc),
             "tool_updated_by_email": current_user.user_email,
         }
     )
@@ -161,7 +161,7 @@ async def delete_tool(
         raise HTTPException(status_code=404, detail="Tool not found")
 
     tool.tool_is_active = False
-    tool.tool_updated_at = datetime.utcnow()
+    tool.tool_updated_at = datetime.now(timezone.utc)
     tool.tool_updated_by_email = current_user.user_email
     await tool.save()
 
@@ -222,7 +222,7 @@ async def attach_tools(
     existing = set(assistant.tool_ids)
     new_ids = [tid for tid in request.tool_ids if tid not in existing]
     assistant.tool_ids = assistant.tool_ids + new_ids
-    assistant.assistant_updated_at = datetime.utcnow()
+    assistant.assistant_updated_at = datetime.now(timezone.utc)
     assistant.assistant_updated_by_email = current_user.user_email
     await assistant.save()
 
@@ -255,7 +255,7 @@ async def detach_tools(
 
     detach_set = set(request.tool_ids)
     assistant.tool_ids = [tid for tid in assistant.tool_ids if tid not in detach_set]
-    assistant.assistant_updated_at = datetime.utcnow()
+    assistant.assistant_updated_at = datetime.now(timezone.utc)
     assistant.assistant_updated_by_email = current_user.user_email
     await assistant.save()
 

@@ -1,9 +1,10 @@
 import uuid
 import json
+import time
 import httpx
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 from livekit import api
 from livekit.api import LiveKitAPI
 from livekit.protocol.sip import (
@@ -13,7 +14,7 @@ from livekit.protocol.sip import (
 )
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
-from src.core.db.db_schemas import CallRecord, Assistant
+from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog
 
 setup_logging()
 
@@ -126,7 +127,7 @@ class LiveKitService:
                 {
                     "speaker": speaker,
                     "text": text,
-                    "timestamp": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
                 }
             )
             await call_record.save()
@@ -142,10 +143,10 @@ class LiveKitService:
                     {
                         "speaker": speaker,
                         "text": text,
-                        "timestamp": datetime.utcnow(),
+                        "timestamp": datetime.now(timezone.utc),
                     }
                 ],
-                started_at=datetime.utcnow(),
+                started_at=datetime.now(timezone.utc),
             )
             await call_record.insert()
 
@@ -154,7 +155,7 @@ class LiveKitService:
         """Update the call record with the end time"""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
-            call_record.ended_at = datetime.utcnow()
+            call_record.ended_at = datetime.now(timezone.utc)
             # Call clculate the call duration
             call_record.call_duration_minutes = (
                 call_record.ended_at - call_record.started_at
@@ -192,12 +193,41 @@ class LiveKitService:
             }
             
             # Send the Call record to the end call url
+            start_ms = time.monotonic()
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     _ = await client.post(end_call_url, json=payload)
+                    latency = int((time.monotonic() - start_ms) * 1000)
                     logger.info(f"Call details sent to end call url: {end_call_url}")
+                    try:
+                        await ActivityLog(
+                            user_email=assistant.assistant_created_by_email,
+                            log_type="end_call_webhook",
+                            assistant_id=assistant_id,
+                            room_name=room_name,
+                            status="success",
+                            request_data={"url": end_call_url},
+                            latency_ms=latency,
+                            message=f"Post-call data sent to {end_call_url}",
+                        ).insert()
+                    except Exception as log_err:
+                        logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
             except Exception as e:
+                latency = int((time.monotonic() - start_ms) * 1000)
                 logger.error(f"Failed to send call details to webhook: {e}")
+                try:
+                    await ActivityLog(
+                        user_email=assistant.assistant_created_by_email,
+                        log_type="end_call_webhook",
+                        assistant_id=assistant_id,
+                        room_name=room_name,
+                        status="error",
+                        request_data={"url": end_call_url},
+                        latency_ms=latency,
+                        message=f"Failed to send post-call data to {end_call_url}: {str(e)}",
+                    ).insert()
+                except Exception as log_err:
+                    logger.warning(f"Failed to write activity log: {log_err}")
 
 
     async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[str]:
@@ -205,8 +235,8 @@ class LiveKitService:
         try:
             async with self.get_livekit_api() as lkapi:
                 # Store the recording in Year/Month/Day/Timestamp.ogg format
-                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-                folder_path = datetime.utcnow().strftime('%Y/%m/%d')
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                folder_path = datetime.now(timezone.utc).strftime('%Y/%m/%d')
                 filepath = f"lvk_call_recordings/{folder_path}/{assistant_id}/{timestamp}.ogg"
 
                 # Set the file output

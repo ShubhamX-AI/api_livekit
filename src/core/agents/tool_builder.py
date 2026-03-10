@@ -8,24 +8,27 @@ At runtime, when a session starts, this module:
 4. Wraps everything into LiveKit function_tool objects
 """
 
-import json
 import logging
+import time
 from typing import List, Any
 
 import httpx
 from livekit.agents import function_tool, RunContext
 
-from src.core.db.db_schemas import Tool
+from src.core.db.db_schemas import Tool, ActivityLog
 
 logger = logging.getLogger(__name__)
 
 
-async def build_tools_from_db(tool_ids: List[str]) -> list:
+async def build_tools_from_db(tool_ids: List[str], user_email: str, room_name: str, assistant_id: str) -> list:
     """
     Load tool definitions from the database and build LiveKit function_tool objects.
 
     Args:
         tool_ids: List of tool_id strings to load.
+        user_email: Owner email — used to attribute activity logs.
+        room_name: Current call room — stored on activity logs.
+        assistant_id: Current assistant — stored on activity logs.
 
     Returns:
         List of LiveKit FunctionTool objects ready to pass to an Agent.
@@ -45,7 +48,7 @@ async def build_tools_from_db(tool_ids: List[str]) -> list:
     built_tools = []
     for tool_doc in tools:
         try:
-            ft = _build_single_tool(tool_doc)
+            ft = _build_single_tool(tool_doc, user_email, room_name, assistant_id)
             built_tools.append(ft)
             logger.info(f"Built tool: {tool_doc.tool_name} ({tool_doc.tool_id})")
         except Exception as e:
@@ -54,14 +57,14 @@ async def build_tools_from_db(tool_ids: List[str]) -> list:
     return built_tools
 
 
-def _build_single_tool(tool_doc: Tool):
+def _build_single_tool(tool_doc: Tool, user_email: str, room_name: str, assistant_id: str):
     """Convert a single Tool document into a LiveKit function_tool."""
 
     # 1. Build the raw JSON schema
     raw_schema = _build_raw_schema(tool_doc)
 
     # 2. Create the executor based on execution type
-    executor = _create_executor(tool_doc)
+    executor = _create_executor(tool_doc, user_email, room_name, assistant_id)
 
     # 3. Wrap into a LiveKit function_tool using raw_schema
     return function_tool(executor, raw_schema=raw_schema)
@@ -111,7 +114,7 @@ def _build_raw_schema(tool_doc: Tool) -> dict:
     return schema
 
 
-def _create_executor(tool_doc: Tool):
+def _create_executor(tool_doc: Tool, user_email: str, room_name: str, assistant_id: str):
     """
     Create an async executor function for the given tool.
 
@@ -122,14 +125,37 @@ def _create_executor(tool_doc: Tool):
     config = tool_doc.tool_execution_config
 
     if execution_type == "webhook":
-        return _create_webhook_executor(tool_doc.tool_name, config)
+        return _create_webhook_executor(tool_doc.tool_name, config, user_email, room_name, assistant_id)
     elif execution_type == "static_return":
         return _create_static_return_executor(tool_doc.tool_name, config)
     else:
         raise ValueError(f"Unsupported execution type: {execution_type}")
 
 
-def _create_webhook_executor(tool_name: str, config: dict):
+async def _log_tool_call(
+    user_email: str, assistant_id: str, room_name: str,
+    url: str, raw_arguments: dict,
+    status: str, latency_ms: int, message: str,
+    response_data: dict | None = None,
+) -> None:
+    """Write a single tool_call activity log, swallowing any DB errors."""
+    try:
+        await ActivityLog(
+            user_email=user_email,
+            log_type="tool_call",
+            assistant_id=assistant_id,
+            room_name=room_name,
+            status=status,
+            request_data={"url": url, "arguments": raw_arguments},
+            response_data=response_data,
+            latency_ms=latency_ms,
+            message=message,
+        ).insert()
+    except Exception as log_err:
+        logger.warning(f"Failed to write activity log: {log_err}")
+
+
+def _create_webhook_executor(tool_name: str, config: dict, user_email: str, room_name: str, assistant_id: str):
     """
     Create an executor that POSTs tool arguments to a webhook URL.
 
@@ -152,6 +178,7 @@ def _create_webhook_executor(tool_name: str, config: dict):
         logger.debug(f"Tool '{tool_name}' args: {raw_arguments}")
 
         headers = {"Content-Type": "application/json", **custom_headers}
+        start_ms = time.monotonic()
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -164,17 +191,46 @@ def _create_webhook_executor(tool_name: str, config: dict):
                 except Exception:
                     result = response.text
 
+                latency = int((time.monotonic() - start_ms) * 1000)
                 logger.info(f"Tool '{tool_name}' webhook returned status {response.status_code}")
+
+                await _log_tool_call(
+                    user_email, assistant_id, room_name, url, raw_arguments,
+                    status="success", latency_ms=latency,
+                    message=f"Tool '{tool_name}' called {url} — {response.status_code}",
+                    response_data=result if isinstance(result, dict) else {"response": result},
+                )
+
                 return result
 
         except httpx.TimeoutException:
+            latency = int((time.monotonic() - start_ms) * 1000)
             logger.error(f"Tool '{tool_name}' webhook timed out after {timeout}s")
+            await _log_tool_call(
+                user_email, assistant_id, room_name, url, raw_arguments,
+                status="error", latency_ms=latency,
+                message=f"Tool '{tool_name}' timed out after {timeout}s calling {url}",
+            )
             return {"error": f"Webhook timed out after {timeout}s"}
+
         except httpx.HTTPStatusError as e:
+            latency = int((time.monotonic() - start_ms) * 1000)
             logger.error(f"Tool '{tool_name}' webhook returned {e.response.status_code}")
+            await _log_tool_call(
+                user_email, assistant_id, room_name, url, raw_arguments,
+                status="error", latency_ms=latency,
+                message=f"Tool '{tool_name}' got HTTP {e.response.status_code} from {url}",
+            )
             return {"error": f"Webhook returned status {e.response.status_code}"}
+
         except Exception as e:
+            latency = int((time.monotonic() - start_ms) * 1000)
             logger.error(f"Tool '{tool_name}' webhook failed: {e}")
+            await _log_tool_call(
+                user_email, assistant_id, room_name, url, raw_arguments,
+                status="error", latency_ms=latency,
+                message=f"Tool '{tool_name}' failed: {str(e)}",
+            )
             return {"error": f"Webhook call failed: {str(e)}"}
 
     return webhook_handler
