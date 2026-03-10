@@ -17,7 +17,7 @@ class Database:
         """Initialize database connection and Beanie ODM"""
         try:
             # Create Motor client
-            cls.client = AsyncIOMotorClient(settings.MONGODB_URL)
+            cls.client = AsyncIOMotorClient(settings.MONGODB_URL, tz_aware=True)
             
             # Test connection
             await cls.client.admin.command('ping')
