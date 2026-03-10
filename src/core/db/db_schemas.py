@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Literal, Text, List, Dict
 from beanie import Document, Indexed
 from pydantic import BaseModel, Field, EmailStr
@@ -14,7 +14,7 @@ class APIKey(Document):
     user_name: str
     org_name: Optional[str] = None
     user_email: Indexed(EmailStr, unique=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
 
     class Settings:
@@ -37,8 +37,8 @@ class Assistant(Document):
     assistant_end_call_trigger_phrase: Optional[str] = None
     assistant_end_call_agent_message: Optional[str] = None
     assistant_end_call_url: Optional[str] = None
-    assistant_created_at: datetime = Field(default_factory=datetime.utcnow)
-    assistant_updated_at: datetime = Field(default_factory=datetime.utcnow)
+    assistant_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    assistant_updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     assistant_created_by_email: EmailStr
     assistant_updated_by_email: EmailStr
     assistant_is_active: bool = True
@@ -66,8 +66,8 @@ class OutboundSIP(Document):
     trunk_config: Dict = {}   # Stores Twilio or Exotel specific config
     trunk_created_by_email: EmailStr
     trunk_updated_by_email: EmailStr
-    trunk_created_at: datetime = Field(default_factory=datetime.utcnow)
-    trunk_updated_at: datetime = Field(default_factory=datetime.utcnow)
+    trunk_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    trunk_updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     trunk_is_active: bool = True
 
     class Settings:
@@ -81,7 +81,7 @@ class CallRecord(Document):
     to_number: str
     recording_path: Optional[str] = None
     transcripts: List[Dict] = []  # [{speaker, text, timestamp}]
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: Optional[datetime] = None
     call_duration_minutes: Optional[float] = None
 
@@ -110,8 +110,8 @@ class Tool(Document):
     tool_execution_config: Dict = {}  # {"url": "..."} or {"value": ...}
     tool_created_by_email: EmailStr
     tool_updated_by_email: EmailStr
-    tool_created_at: datetime = Field(default_factory=datetime.utcnow)
-    tool_updated_at: datetime = Field(default_factory=datetime.utcnow)
+    tool_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    tool_updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tool_is_active: bool = True
 
     class Settings:

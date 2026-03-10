@@ -6,7 +6,7 @@ from src.core.db.db_schemas import Assistant, APIKey, CallRecord
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 setup_logging()
@@ -85,7 +85,7 @@ async def update_assistant(
     logger.info(f"Updating assistant {assistant_id}")
     update_data.update(
         {
-            "assistant_updated_at": datetime.utcnow(),
+            "assistant_updated_at": datetime.now(timezone.utc),
             "assistant_updated_by_email": current_user.user_email,
         }
     )
@@ -225,7 +225,7 @@ async def delete_assistant(
         raise HTTPException(status_code=404, detail="Assistant not found")
 
     assistant.assistant_is_active = False
-    assistant.assistant_updated_at = datetime.utcnow()
+    assistant.assistant_updated_at = datetime.now(timezone.utc)
     assistant.assistant_updated_by_email = current_user.user_email
     await assistant.save()
 

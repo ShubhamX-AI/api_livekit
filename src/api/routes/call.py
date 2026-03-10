@@ -31,10 +31,11 @@ async def trigger_outbound_call(
     if not assistant:
         raise HTTPException(status_code=404, detail="Assistant not found in DB")
 
-    # Check of the trunk exists for the user
+    # Check if the trunk exists and is active for the user
     trunk = await OutboundSIP.find_one(
         OutboundSIP.trunk_id == request.trunk_id,
         OutboundSIP.trunk_created_by_email == current_user.user_email,
+        OutboundSIP.trunk_is_active == True,
     )
     if not trunk:
         raise HTTPException(status_code=404, detail="Trunk not found in DB")

@@ -113,4 +113,5 @@ nav:
       - Overview: api/sip/index.md
       - Create Trunk: api/sip/create.md
       - List Trunks: api/sip/list.md
+      - Deactivate Trunk: api/sip/deactivate.md
       - Provider Setup: api/sip/providers.md

@@ -3,7 +3,7 @@ import json
 import httpx
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 from livekit import api
 from livekit.api import LiveKitAPI
 from livekit.protocol.sip import (
@@ -126,7 +126,7 @@ class LiveKitService:
                 {
                     "speaker": speaker,
                     "text": text,
-                    "timestamp": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
                 }
             )
             await call_record.save()
@@ -142,10 +142,10 @@ class LiveKitService:
                     {
                         "speaker": speaker,
                         "text": text,
-                        "timestamp": datetime.utcnow(),
+                        "timestamp": datetime.now(timezone.utc),
                     }
                 ],
-                started_at=datetime.utcnow(),
+                started_at=datetime.now(timezone.utc),
             )
             await call_record.insert()
 
@@ -154,7 +154,7 @@ class LiveKitService:
         """Update the call record with the end time"""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
-            call_record.ended_at = datetime.utcnow()
+            call_record.ended_at = datetime.now(timezone.utc)
             # Call clculate the call duration
             call_record.call_duration_minutes = (
                 call_record.ended_at - call_record.started_at
@@ -205,8 +205,8 @@ class LiveKitService:
         try:
             async with self.get_livekit_api() as lkapi:
                 # Store the recording in Year/Month/Day/Timestamp.ogg format
-                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-                folder_path = datetime.utcnow().strftime('%Y/%m/%d')
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                folder_path = datetime.now(timezone.utc).strftime('%Y/%m/%d')
                 filepath = f"lvk_call_recordings/{folder_path}/{assistant_id}/{timestamp}.ogg"
 
                 # Set the file output

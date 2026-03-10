@@ -10,4 +10,5 @@ Explore the sub-sections to interact with the SIP Trunks API and configure provi
 
 - [Create Outbound Trunk](create.md)
 - [List SIP Trunks](list.md)
+- [Deactivate Trunk](deactivate.md)
 - [Provider Setup Guides](providers.md)

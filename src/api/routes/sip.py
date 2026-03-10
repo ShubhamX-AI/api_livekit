@@ -6,6 +6,7 @@ from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 from src.services.livekit.livekit_svc import LiveKitService
 from google.protobuf.json_format import MessageToDict
+from datetime import datetime, timezone
 import uuid
 
 router = APIRouter()
@@ -105,4 +106,36 @@ async def list_sip_trunks(current_user: APIKey = Depends(get_current_user)):
 
     return apiResponse(
         success=True, message="SIP trunks retrieved successfully", data=filtered_trunks
+    )
+
+
+# Deactivate (soft delete) an outbound trunk
+@router.delete("/deactivate/{trunk_id}")
+async def deactivate_outbound_trunk(
+    trunk_id: str, current_user: APIKey = Depends(get_current_user)
+):
+    logger.info(f"Received request to deactivate trunk: {trunk_id}")
+
+    # Fetch trunk owned by the current user
+    trunk = await OutboundSIP.find_one(
+        OutboundSIP.trunk_id == trunk_id,
+        OutboundSIP.trunk_created_by_email == current_user.user_email,
+    )
+    if not trunk:
+        raise HTTPException(status_code=404, detail="Trunk not found")
+
+    if not trunk.trunk_is_active:
+        raise HTTPException(status_code=400, detail="Trunk is already deactivated")
+
+    # Soft delete: mark as inactive
+    trunk.trunk_is_active = False
+    trunk.trunk_updated_at = datetime.now(timezone.utc)
+    trunk.trunk_updated_by_email = current_user.user_email
+    await trunk.save()
+
+    logger.info(f"Trunk deactivated successfully: {trunk_id}")
+    return apiResponse(
+        success=True,
+        message="Trunk deactivated successfully",
+        data={"trunk_id": trunk_id},
     )
