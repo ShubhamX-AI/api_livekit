@@ -4,10 +4,10 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 
 ## 🚀 Features
 
-- **Real-time AI Agents**: Powered by OpenAI Realtime API (GPT-4o) and Cartesia/Sarvam TTS.
+- **Real-time AI Agents**: Powered by OpenAI Realtime API (GPT-4o) and Cartesia/Sarvam/ElevenLabs TTS.
 - **SIP Support**: Create and manage SIP outbound trunks (Twilio/Exotel) for telephony integration.
 - **Outbound Calls**: Trigger programmatic outbound calls to phone numbers (currently supporting Twilio).
-- **Dynamic Assistants**: Create and configure assistants with custom prompts, typed TTS configuration (Cartesia/Sarvam), and start instructions.
+- **Dynamic Assistants**: Create and configure assistants with custom prompts, typed TTS configuration (Cartesia/Sarvam/ElevenLabs), and start instructions.
 - **Custom Tools**: Extend assistant capabilities with custom tools (Webhooks, Static Responses) that can be attached/detached dynamically.
 - **Call Recording**: Automatic call recording with LiveKit Egress to AWS S3.
 - **Transcripts**: Real-time transcription storage in MongoDB.
@@ -20,7 +20,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 - **Real-time Communication**: LiveKit
 - **Database**: MongoDB (with Beanie ODM)
 - **AI/LLM**: OpenAI Realtime API
-- **TTS**: Cartesia (Sonic-3) & Sarvam (Bulbul:v3)
+- **TTS**: Cartesia (Sonic-3), Sarvam (Bulbul:v3) & ElevenLabs (eleven_v3)
 - **Deployment**: Docker & Docker Compose
 
 ## 🏗️ Architecture
@@ -40,6 +40,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
   - OpenAI API Key
   - Cartesia API Key
   - Sarvam API Key
+  - ElevenLabs API Key
   - LiveKit API Key & Secret
   - AWS S3 Credentials (for recordings)
 
@@ -73,6 +74,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
    OPENAI_API_KEY=<your-openai-key>
    CARTESIA_API_KEY=<your-cartesia-key>
    SARVAM_API_KEY=<your-sarvam-key>
+   ELEVENLABS_API_KEY=<your-elevenlabs-key>
 
    # --- Logging Settings ---
    LOG_LEVEL=INFO                # INFO, DEBUG, WARNING, ERROR, CRITICAL
@@ -108,6 +110,43 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 ## 📖 Documentation
 
 For full API documentation, please visit: [https://api-livekit-vyom.indusnettechnologies.com/documentation](https://api-livekit-vyom.indusnettechnologies.com/documentation)
+
+## 📁 Project Structure
+
+```
+api_livekit/
+├── README.md
+├── Dockerfile
+├── docker-compose.yml
+├── pyproject.toml
+├── server_run.py          # Entry point — starts API + agent worker
+├── assets/
+│   └── audio/             # Background audio files (WAV)
+├── docs/                  # MkDocs source documentation
+├── src/
+│   ├── api/               # REST API (FastAPI)
+│   │   ├── server.py
+│   │   ├── dependencies/  # Auth middleware
+│   │   ├── models/        # Request/response schemas
+│   │   └── routes/        # Endpoints: assistant, auth, call, sip, tool
+│   ├── core/
+│   │   ├── config.py      # Settings loaded from .env
+│   │   ├── logger.py
+│   │   ├── agents/        # LiveKit agent logic
+│   │   │   ├── session.py          # Agent entrypoint & lifecycle
+│   │   │   ├── dynamic_assistant.py
+│   │   │   ├── tool_builder.py
+│   │   │   └── utils.py
+│   │   └── db/            # MongoDB (Beanie ODM)
+│   │       ├── database.py
+│   │       └── db_schemas.py
+│   └── services/
+│       ├── elevenlabs/    # ElevenLabs TTS (non-streaming)
+│       ├── email/         # SMTP email
+│       ├── exotel/        # Custom SIP bridge for Exotel
+│       └── livekit/       # LiveKit service helpers
+└── output-recordings/     # Local recording output (dev)
+```
 
 ## 🧩 Agent Logic
 
