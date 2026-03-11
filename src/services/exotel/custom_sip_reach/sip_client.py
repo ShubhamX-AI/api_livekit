@@ -196,7 +196,7 @@ class ExotelSipClient:
     async def send_invite(self) -> dict | None:
         self._writer.write(self._invite())
         await self._writer.drain()
-        logger.info("[SIP] INVITE →")
+        logger.info(f"[SIP] INVITE → call-id={self._call_id}")
         return await self._recv_loop()
 
     async def _recv_loop(self) -> dict | None:
