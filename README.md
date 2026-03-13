@@ -1,8 +1,8 @@
 # LiveKit Agent Service
 
-A production-ready service for deploying real-time AI voice agents using LiveKit, OpenAI Realtime API, and Cartesia/Sarvam TTS. This service provides a REST API for managing assistants, tools, SIP trunks, and triggering outbound calls, along with a robust agent worker for handling real-time interactions.
+FastAPI backend and LiveKit worker for running real-time voice assistants with OpenAI Realtime, Cartesia, Sarvam, and ElevenLabs.
 
-## 🚀 Features
+## What It Does
 
 - **Real-time AI Agents**: Powered by OpenAI Realtime API (GPT-4o) and Cartesia/Sarvam/ElevenLabs TTS.
 - **SIP Support**: Create and manage SIP outbound trunks (Twilio/Exotel) for telephony integration.
@@ -15,7 +15,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 - **Activity Logs**: Per-user activity logs for tool calls and post-call webhooks, queryable via API.
 - **Secure API**: API Key authentication for all management endpoints.
 
-## 🛠️ Tech Stack
+## Main Features
 
 - **Framework**: FastAPI (Python 3.12+)
 - **Real-time Communication**: LiveKit
@@ -24,7 +24,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 - **TTS**: Cartesia (Sonic-3), Sarvam (Bulbul:v3) & ElevenLabs (eleven_v3)
 - **Deployment**: Docker & Docker Compose
 
-## 🏗️ Architecture
+## Tech Stack
 
 1. **API Service**: Manages resources (Assistants, API Keys, Trunks) and triggers calls.
 2. **Agent Worker**: Connects to LiveKit rooms to handle AI logic (STT, LLM, TTS).
@@ -32,7 +32,7 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
 4. **MongoDB**: Stores configuration (assistants, tools), call records, transcripts, and activity logs.
 5. **Webhooks**: Pushes call data to external services upon completion. All outbound webhook calls are recorded as activity logs.
 
-## 📋 Prerequisites
+## Requirements
 
 - Docker & Docker Compose
 - LiveKit Server (Cloud or Self-hosted)
@@ -45,31 +45,31 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
   - LiveKit API Key & Secret
   - AWS S3 Credentials (for recordings)
 
-## 🔧 Development Setup
+## Environment Variables
 
-1. **Clone the repository**:
+Create a `.env` file in the project root.
 
-   ```bash
-   git clone <repository-url>
-   cd api_livekit
-   ```
+```ini
+PORT=8000
+BACKEND_URL=http://localhost:8000
 
-2. **Configure Environment Variables**:
-   Create a `.env` file in the root directory:
+MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
+DATABASE_NAME=livekit_db
 
-   ```ini
-   # --- Server Configuration ---
-   PORT=8000
-   BACKEND_URL=http://localhost:8000
+LIVEKIT_URL=wss://<your-livekit-domain>
+LIVEKIT_API_KEY=<your-livekit-api-key>
+LIVEKIT_API_SECRET=<your-livekit-api-secret>
 
-   # --- MongoDB Settings ---
-   MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
-   DATABASE_NAME=livekit_db
+OPENAI_API_KEY=<your-openai-api-key>
+CARTESIA_API_KEY=<your-cartesia-api-key>
+SARVAM_API_KEY=<your-sarvam-api-key>
+ELEVENLABS_API_KEY=<your-elevenlabs-api-key>
 
-   # --- LiveKit Settings ---
-   LIVEKIT_URL=wss://<your-livekit-domain>
-   LIVEKIT_API_KEY=<your-api-key>
-   LIVEKIT_API_SECRET=<your-api-secret>
+LOG_LEVEL=INFO
+LOG_JSON_FORMAT=False
+LOG_FILE=app.log
+LOG_MAX_BYTES=10485760
+LOG_BACKUP_COUNT=5
 
    # --- AI Providers ---
    OPENAI_API_KEY=<your-openai-key>
@@ -77,40 +77,32 @@ A production-ready service for deploying real-time AI voice agents using LiveKit
    SARVAM_API_KEY=<your-sarvam-key>
    ELEVENLABS_API_KEY=<your-elevenlabs-key>
 
-   # --- Logging Settings ---
-   LOG_LEVEL=INFO                # INFO, DEBUG, WARNING, ERROR, CRITICAL
-   LOG_JSON_FORMAT=False         # Set to True for JSON logging
-   LOG_FILE=app.log
-   LOG_MAX_BYTES=10485760        # 10MB
-   LOG_BACKUP_COUNT=5
+AWS_ACCESS_KEY_ID=<your-access-key>
+AWS_SECRET_ACCESS_KEY=<your-secret-key>
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=<your-bucket-name>
+S3_RECORDINGS_PREFIX=recordings/
+```
 
-   # --- SMTP Configuration (for emails) ---
-   SMTP_HOST=smtp.sendgrid.net
-   SMTP_PORT=587
-   SMTP_USER=apikey
-   SMTP_PASSWORD=<your-smtp-password>
-   FROM_EMAIL=noreply@yourdomain.com
-   FROM_NAME="Your App Name"
+## Run Locally
 
-   # --- AWS S3 (for recordings) ---
-   AWS_ACCESS_KEY_ID=<your-access-key>
-   AWS_SECRET_ACCESS_KEY=<your-secret-key>
-   AWS_REGION=us-east-1
-   S3_BUCKET_NAME=<your-bucket-name>
-   S3_RECORDINGS_PREFIX=recordings/
-   ```
+Install dependencies:
 
-3. **Run with Docker Compose**:
+```bash
+uv sync
+```
 
-   ```bash
-   docker-compose up --build
-   ```
+Start the API server:
 
-   This will start both the API service and the Agent Worker.
+```bash
+uv run python server_run.py
+```
 
-## 📖 Documentation
+Start the LiveKit worker in another terminal:
 
-For full API documentation, please visit: [https://api-livekit-vyom.indusnettechnologies.com/documentation](https://api-livekit-vyom.indusnettechnologies.com/documentation)
+```bash
+uv run python src/core/agents/session.py
+```
 
 ## 📁 Project Structure
 
@@ -151,7 +143,9 @@ api_livekit/
 
 ## 🧩 Agent Logic
 
-The agent (`src/core/agents/session.py`):
+```bash
+uv run python src/api/server.py
+```
 
 1. Connects to the LiveKit room.
 2. Fetches the assistant configuration from MongoDB using the `assistant_id` (derived from room name).
@@ -186,14 +180,69 @@ Users can query their own activity logs via the API to observe tool calls and we
 | `tool_call` | Every time the agent calls a webhook tool — includes URL, arguments, response, latency |
 | `end_call_webhook` | When post-call data is sent to `assistant_end_call_url` — includes URL, latency, success/error |
 
-## 🤝 Contributing
+```bash
+docker-compose up --build
+```
 
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Commit your changes (`git commit -m 'Add amazing feature'`).
-4. Push to the branch (`git push origin feature/amazing-feature`).
-5. Open a Pull Request.
+## Assistant Voice Behavior Settings
 
-## 📄 License
+Assistant create and update requests support these flags:
 
-[MIT License](LICENSE)
+- `assistant_speaks_first`: assistant greets first or waits for the user.
+- `assistant_filler_words`: assistant can produce short live filler phrases while the user is speaking.
+- `assistant_silence_reprompts`: assistant reprompts after silence and can end the session after repeated silence.
+
+These settings are stored on the assistant and applied in the worker at session startup.
+
+## Key Runtime Flow
+
+1. API receives assistant or call requests.
+2. LiveKit dispatch starts a worker session for the room.
+3. Worker loads the assistant from MongoDB.
+4. Worker builds the prompt, tools, TTS, and session behavior.
+5. Worker stores transcripts and sends end-of-call details when the room closes.
+
+## API Routes
+
+- `/auth`
+- `/assistant`
+- `/sip`
+- `/call`
+- `/tool`
+- `/documentation`
+
+## Project Structure
+
+```text
+api_livekit/
+├── README.md
+├── pyproject.toml
+├── docker-compose.yml
+├── Dockerfile
+├── server_run.py
+├── assets/
+├── docs/
+├── src/
+│   ├── api/
+│   │   ├── dependencies/
+│   │   ├── models/
+│   │   ├── routes/
+│   │   └── server.py
+│   ├── core/
+│   │   ├── agents/
+│   │   ├── db/
+│   │   ├── config.py
+│   │   └── logger.py
+│   └── services/
+│       ├── elevenlabs/
+│       ├── email/
+│       ├── exotel/
+│       └── livekit/
+└── uv.lock
+```
+
+## Notes
+
+- `/documentation` is served from the built MkDocs site when the `site/` directory exists.
+- Assistant details endpoints expose the stored voice behavior settings.
+- Outbound call metadata is still supported for prompt placeholder rendering.

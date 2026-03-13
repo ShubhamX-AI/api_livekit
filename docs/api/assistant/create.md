@@ -18,6 +18,8 @@ Create a new AI assistant configuration.
 | `assistant_tts_config`        | object | Yes      | The TTS configuration object (see below).                                         |
 | `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
 | `assistant_speaks_first`     | boolean | No       | If `true` (default), the assistant speaks first. If `false`, it stays silent and waits for the user to speak first. |
+| `assistant_filler_words`    | boolean | No       | If `true`, the assistant generates short filler phrases while the user is speaking. Default: `false`. |
+| `assistant_silence_reprompts` | boolean | No | If `true`, the assistant reprompts the user after silence and can end the call after repeated silence. Default: `false`. |
 | `assistant_end_call_enabled`  | boolean | No       | If `true`, enables built-in `end_call` tool for graceful call ending. Default: `false`. |
 | `assistant_end_call_trigger_phrase` | string | No | Example user phrase that should signal the assistant to trigger `end_call` (max 300 chars). Default when omitted: generic instruction to end only after clear user confirmation. |
 | `assistant_end_call_agent_message` | string | No | What the assistant should say just before ending the call (max 300 chars). Default when omitted: `say goodbye to the user`. |

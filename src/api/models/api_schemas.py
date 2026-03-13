@@ -57,6 +57,8 @@ class CreateAssistant(BaseModel):
     assistant_tts_config: TTSConfig = Field(..., description="TTS Configuration object (varies by model)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
     assistant_speaks_first: bool = Field(True, description="If True (default), assistant speaks first. If False, assistant stays silent and waits for the user to speak.")
+    assistant_filler_words: bool = Field(False, description="Enable filler words while the user is speaking")
+    assistant_silence_reprompts: bool = Field(False, description="Enable silence reprompts when the user stops responding")
     assistant_end_call_enabled: bool = Field(False, description="Enable built-in end_call tool")
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
@@ -77,6 +79,8 @@ class CreateAssistant(BaseModel):
                 },
                 "assistant_start_instruction": "Start instruction.",
                 "assistant_speaks_first": True,
+                "assistant_filler_words": True,
+                "assistant_silence_reprompts": True,
                 "assistant_end_call_enabled": True,
                 "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
                 "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
@@ -105,6 +109,8 @@ class UpdateAssistant(BaseModel):
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
     assistant_speaks_first: Optional[bool] = Field(None, description="If True, assistant speaks first. If False, assistant waits for user. Leave unset to keep existing value.")
+    assistant_filler_words: Optional[bool] = Field(None, description="Enable or disable filler words")
+    assistant_silence_reprompts: Optional[bool] = Field(None, description="Enable or disable silence reprompts")
     assistant_end_call_enabled: Optional[bool] = Field(None, description="Enable/disable built-in end_call tool")
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
@@ -118,6 +124,8 @@ class UpdateAssistant(BaseModel):
             "example": {
                 "assistant_name": "Updated Assistant Name",
                 "assistant_speaks_first": False,
+                "assistant_filler_words": True,
+                "assistant_silence_reprompts": False,
                 "assistant_tts_model": "sarvam",
                 "assistant_tts_config": {
                     "speaker": "meera",

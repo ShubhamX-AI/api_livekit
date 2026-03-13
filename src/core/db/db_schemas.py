@@ -33,6 +33,8 @@ class Assistant(Document):
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
     assistant_speaks_first: bool = True  # If False, assistant stays silent and waits for user to speak first
+    assistant_filler_words: bool = False
+    assistant_silence_reprompts: bool = False
     assistant_end_call_enabled: bool = False
     assistant_end_call_trigger_phrase: Optional[str] = None
     assistant_end_call_agent_message: Optional[str] = None

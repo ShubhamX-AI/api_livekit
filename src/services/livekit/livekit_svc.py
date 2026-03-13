@@ -54,7 +54,7 @@ class LiveKitService:
             return room.name
 
     # Create agent dispatch
-    async def create_agent_dispatch(self, room_name: str, metadata: dict = None):
+    async def create_agent_dispatch(self, room_name: str, metadata: Optional[dict] = None):
         async with self.get_livekit_api() as lkapi:
             # Create agent dispatch with metadata
             agent_dispatch = await lkapi.agent_dispatch.create_dispatch(
@@ -118,7 +118,7 @@ class LiveKitService:
         assistant_id: str,
         assistant_name: str,
         to_number: str,
-        recording_path: str,
+        recording_path: Optional[str],
     ):
         # If room name present in call_records collection, update it
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
@@ -172,7 +172,7 @@ class LiveKitService:
         
         logger.info(f"Assistant found with assistant_id: {assistant_id}")
 
-        if assistant and call_record:
+        if assistant and call_record and assistant.assistant_end_call_url:
             end_call_url = assistant.assistant_end_call_url
             
             # Serialize the Call record and format the data
@@ -230,7 +230,7 @@ class LiveKitService:
                     logger.warning(f"Failed to write activity log: {log_err}")
 
 
-    async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[str]:
+    async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[dict]:
         """Start recording the room using LiveKit Egress"""
         try:
             async with self.get_livekit_api() as lkapi:

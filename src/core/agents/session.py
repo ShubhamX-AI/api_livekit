@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from collections import deque
 from livekit import rtc
 from livekit.agents import (
     AgentSession,
@@ -18,12 +19,14 @@ from openai.types.realtime import AudioTranscription
 import os
 import asyncio
 import json
-from typing import cast, Optional
+import random
+from typing import Optional
 
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.utils import render_prompt
+from src.core.agents.voice_features import SilenceWatchdogController, generate_filler
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
 from src.core.db.db_schemas import Assistant
@@ -81,6 +84,11 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")
 
+    filler_words_enabled = bool(getattr(assistant, "assistant_filler_words", False))
+    silence_reprompts_enabled = bool(getattr(assistant, "assistant_silence_reprompts", False))
+
+    logger.info(f"Assistant voice features | filler_words={filler_words_enabled} | silence_reprompts={silence_reprompts_enabled}")
+
     # Initialize Services per session
     livekit_services = LiveKitService()
     s3_url = None
@@ -93,8 +101,10 @@ async def entrypoint(ctx: JobContext):
         )
         if recording_info and recording_info.get("success"):
             logger.info(f"Recording started: {recording_info}")
-            s3_url = recording_info["data"]["s3_url"]
-            logger.info(f"S3 URL: {s3_url}")
+            recording_data = recording_info.get("data")
+            if isinstance(recording_data, dict):
+                s3_url = recording_data.get("s3_url")
+                logger.info(f"S3 URL: {s3_url}")
         else:
             logger.warning(f"Recording start returned failure or empty: {recording_info}")
     except Exception as e:
@@ -169,6 +179,7 @@ async def entrypoint(ctx: JobContext):
 
     # Check between cartesia and sarvam
     tts_config = assistant.assistant_tts_config or {}
+    tts = None
     
     if assistant.assistant_tts_model == "cartesia":
         voice_id = tts_config.get("voice_id")
@@ -221,6 +232,9 @@ async def entrypoint(ctx: JobContext):
             voice_id=voice_id,
             api_key=api_key
         )
+    else:
+        logger.error(f"Unsupported TTS model for assistant {assistant.assistant_id}")
+        return
 
     session = AgentSession(
         llm=llm,
@@ -228,6 +242,25 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=True,
         use_tts_aligned_transcript=True,
     )
+
+    context_turns = deque(maxlen=4)
+    filler_task = None
+    user_is_speaking = False
+    silence_watchdog = SilenceWatchdogController(session=session, logger=logger) if silence_reprompts_enabled else None
+
+    def cancel_filler_task():
+        nonlocal filler_task
+        if filler_task and not filler_task.done():
+            filler_task.cancel()
+        filler_task = None
+
+    async def filler_loop():
+        await asyncio.sleep(random.uniform(2.0, 3.0))
+        while True:
+            text = await generate_filler(list(context_turns))
+            if text:
+                await session.say(text, allow_interruptions=True)
+            await asyncio.sleep(random.uniform(5.0, 8.0))
 
     # Background audio
     ambient_path = os.path.join(settings.AUDIO_DIR, "office-ambience_48k.wav")
@@ -251,6 +284,15 @@ async def entrypoint(ctx: JobContext):
     @session.on("conversation_item_added")
     def on_conversation_item(event):
         if event.item.text_content:
+            if filler_words_enabled and event.item.role in ("user", "assistant"):
+                context_turns.append({"role": event.item.role, "text": event.item.text_content})
+
+            if silence_watchdog and event.item.role == "user":
+                silence_watchdog.on_user_message()
+
+            if silence_watchdog and event.item.role == "assistant" and not user_is_speaking:
+                silence_watchdog.on_assistant_message(event.item.text_content)
+
             # Use to_number from job metadata
             asyncio.create_task(
                 livekit_services.add_transcript(
@@ -268,6 +310,26 @@ async def entrypoint(ctx: JobContext):
     logger.info("Starting AgentSession...")
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
     logger.info("AgentSession started successfully")
+
+    if filler_words_enabled or silence_reprompts_enabled:
+        @session.on("user_state_changed")
+        def on_user_state_changed(event):
+            nonlocal filler_task, user_is_speaking
+            is_speaking = event.new_state == "speaking"
+            user_is_speaking = is_speaking
+
+            if silence_watchdog:
+                silence_watchdog.on_user_state_changed(is_speaking)
+
+            if not filler_words_enabled:
+                return
+
+            if is_speaking:
+                cancel_filler_task()
+                filler_task = asyncio.create_task(filler_loop())
+                return
+
+            cancel_filler_task()
 
     # --- EVENT TRACKING FOR CALL ANSWERED ---
     # We register `data_received` EARLY (before wait_for_participant) so we never
@@ -353,6 +415,9 @@ async def entrypoint(ctx: JobContext):
     # --- WAIT FOR DISCONNECT ---
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
+        cancel_filler_task()
+        if silence_watchdog:
+            silence_watchdog.stop()
         logger.info(f"Participant disconnected: {participant.identity}")
         # Calculate end time and update record
         asyncio.create_task(livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id))
