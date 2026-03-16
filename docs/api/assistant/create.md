@@ -25,13 +25,19 @@ Create a new AI assistant configuration.
 
 ### Interaction Configuration
 
+These settings control how the assistant interacts with the user during a session.
+
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `speaks_first` | boolean | No | If `true` (default), the assistant speaks first. If `false`, it stays silent and waits for the user to speak first. |
-| `filler_words` | boolean | No | If `true`, the assistant generates short filler phrases while the user is speaking. Default: `false`. |
-| `silence_reprompts` | boolean | No | If `true`, enables silence reprompts when the user stops responding. Default: `false`. |
-| `silence_reprompt_interval` | number | No | Interval in seconds between silence reprompts (1.0 - 60.0). Default: `10.0`. |
-| `silence_max_reprompts` | number | No | Maximum number of silence reprompts before ending the session (0 - 5). Default: `2`. |
+| `speaks_first` | boolean | No | If `true` (default), the assistant initiates the conversation. If `false`, it waits for the user to speak first. |
+| `filler_words` | boolean | No | If `true`, the assistant uses short filler phrases (like "Um", "Let me see") to acknowledge user speech and reduce perceived latency. Default: `false`. |
+| `silence_reprompts` | boolean | No | If `true`, the assistant will proactively speak if the user remains silent for a period. Default: `false`. |
+| `silence_reprompt_interval` | number | No | The time in seconds to wait for user input before a reprompt (1.0 - 60.0). Default: `10.0`. |
+| `silence_max_reprompts` | number | No | The maximum number of times the assistant will reprompt before ending the call (0 - 5). Default: `2`. |
+
+!!! note "Interaction Defaults"
+
+    If `assistant_interaction_config` is omitted, the assistant uses the default values listed above. You can provide only the fields you wish to override within the object.
 
 !!! note "End call defaults"
 

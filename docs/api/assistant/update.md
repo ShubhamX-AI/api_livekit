@@ -54,6 +54,18 @@ Only provide the fields you want to update. All fields are optional.
 | 404  | Not Found - Assistant does not exist.           |
 | 500  | Server Error - Internal server error.           |
 
+### Interaction Configuration
+
+When updating the interaction configuration, you only need to provide the fields you want to change.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `speaks_first` | boolean | If `true`, the assistant initiates the conversation. If `false`, it waits for the user to speak first. |
+| `filler_words` | boolean | Enable or disable short filler phrases (like "Um", "Let me see"). |
+| `silence_reprompts` | boolean | Enable or disable proactive speaking when the user is silent. |
+| `silence_reprompt_interval` | number | The time in seconds to wait for user input before a reprompt (1.0 - 60.0). |
+| `silence_max_reprompts` | number | The maximum number of times the assistant will reprompt (0 - 5). |
+
 ### Example: Update TTS Configuration
 
 ```bash
@@ -66,8 +78,21 @@ curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/updat
            "assistant_tts_config": {
              "speaker": "meera",
              "target_language_code": "hi-IN"
-           },
+           }
+         }'
+```
+
+### Example: Update Interaction Config
+
+You can update specific fields within the interaction configuration without affecting others.
+
+```bash
+curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_api_key>" \
+     -d '{
            "assistant_interaction_config": {
+             "filler_words": true,
              "speaks_first": false
            }
          }'
