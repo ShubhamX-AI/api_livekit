@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from collections import deque
 from typing import Final
 
@@ -92,20 +93,32 @@ class SilenceWatchdogController:
         self._max_reprompts = max_reprompts
         self._silence_task: asyncio.Task | None = None
         self._reprompt_count = 0
-        self._waiting_for_user_response = False
         self._user_is_speaking = False
         self._skip_next_assistant_message = False
 
-    def stop(self) -> None:
-        """Stop silence tracking."""
-        self._clear_waiting_state()
+
+    def stop(self, reset_count: bool = True) -> None:
+        """Stop silence tracking and optionally reset reprompt count."""
+        if reset_count:
+            self._reprompt_count = 0
+        if self._silence_task and not self._silence_task.done():
+            self._silence_task.cancel()
+        self._silence_task = None
+
+    def start(self) -> None:
+        """Start silence tracking if not already running and user is silent."""
+        if self._user_is_speaking:
+            return
+        if self._silence_task and not self._silence_task.done():
+            return
+        self._silence_task = asyncio.create_task(self._watchdog_loop())
 
     def on_user_message(self) -> None:
         """Reset silence tracking when the user replies."""
-        self._clear_waiting_state()
+        self.stop(reset_count=True)
 
     def on_assistant_message(self, message_text: str) -> None:
-        """Track assistant turns that expect a reply."""
+        """Track assistant turns and start silence watchdog."""
         if not message_text:
             return
 
@@ -113,69 +126,29 @@ class SilenceWatchdogController:
             self._skip_next_assistant_message = False
             return
 
-        if self._assistant_expects_reply(message_text):
-            self._waiting_for_user_response = True
-            self._reprompt_count = 0
-            self._cancel_watchdog_task()
-            self._start_watchdog_task()
-            return
-
-        self._clear_waiting_state()
+        self.stop(reset_count=True)
+        self.start()
 
     def on_user_state_changed(self, is_speaking: bool) -> None:
-        """Pause silence tracking while the user speaks."""
+        """Pause or resume silence tracking based on user speaking state."""
         self._user_is_speaking = is_speaking
         if is_speaking:
-            self._cancel_watchdog_task()
+            self.stop(reset_count=False) # Pause task, but keep count
             return
-        self._start_watchdog_task()
-
-    def _assistant_expects_reply(self, message_text: str) -> bool:
-        normalized_text = " ".join(message_text.lower().split())
-        if "?" in normalized_text:
-            return True
-
-        reply_phrases = (
-            "let me know",
-            "tell me",
-            "please respond",
-            "can you",
-            "could you",
-            "would you",
-            "share with me",
-        )
-        return any(phrase in normalized_text for phrase in reply_phrases)
-
-    def _clear_waiting_state(self) -> None:
-        self._waiting_for_user_response = False
-        self._reprompt_count = 0
-        self._cancel_watchdog_task()
-
-    def _cancel_watchdog_task(self) -> None:
-        silence_task = self._silence_task
-        if silence_task and not silence_task.done():
-            silence_task.cancel()
-        self._silence_task = None
-
-    def _start_watchdog_task(self) -> None:
-        if not self._waiting_for_user_response or self._user_is_speaking:
-            return
-        if self._silence_task and not self._silence_task.done():
-            return
-        self._silence_task = asyncio.create_task(self._watchdog_loop())
+        self.start()
 
     async def _watchdog_loop(self) -> None:
         try:
-            while self._waiting_for_user_response:
+            while True:
                 if self._reprompt_count >= self._max_reprompts:
                     self._logger.info("[silence] ending session after repeated silence")
-                    self._clear_waiting_state()
+                    self.stop(reset_count=True)
                     self._session.shutdown()
                     return
 
                 await asyncio.sleep(self._reprompt_interval_sec)
 
-                if not self._waiting_for_user_response or self._user_is_speaking:
+                if self._user_is_speaking:
                     return
 
                 self._reprompt_count += 1
@@ -197,3 +170,45 @@ class SilenceWatchdogController:
         finally:
             if asyncio.current_task() is self._silence_task:
                 self._silence_task = None
+
+
+class FillerController:
+    """Manage the filler word task lifecycle."""
+
+    def __init__(
+        self,
+        session: AgentSession,
+        context_turns: deque[dict[str, str]],
+    ) -> None:
+        self._session = session
+        self._context_turns = context_turns
+        self._filler_task: asyncio.Task | None = None
+
+    def stop(self) -> None:
+        """Stop the filler word task."""
+        if self._filler_task and not self._filler_task.done():
+            self._filler_task.cancel()
+        self._filler_task = None
+
+    def start(self) -> None:
+        """Start the filler word loop."""
+        self.stop()
+        self._filler_task = asyncio.create_task(self._filler_loop())
+
+    async def _filler_loop(self) -> None:
+        """Generate and speak filler words periodically."""
+        try:
+            # Initial wait before first filler
+            await asyncio.sleep(random.uniform(2.0, 3.0))
+            while True:
+                text = await generate_filler(list(self._context_turns))
+                if text:
+                    await self._session.say(text, allow_interruptions=True)
+                await asyncio.sleep(random.uniform(5.0, 8.0))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        finally:
+            if asyncio.current_task() is self._filler_task:
+                self._filler_task = None

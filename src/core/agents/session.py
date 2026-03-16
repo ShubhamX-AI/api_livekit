@@ -26,7 +26,7 @@ from src.core.config import settings
 from src.core.logger import logger, setup_logging
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.utils import render_prompt
-from src.core.agents.voice_features import SilenceWatchdogController, generate_filler
+from src.core.agents.voice_features import SilenceWatchdogController, FillerController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
 from src.core.db.db_schemas import Assistant
@@ -244,23 +244,9 @@ async def entrypoint(ctx: JobContext):
     )
 
     context_turns = deque(maxlen=4)
-    filler_task = None
     user_is_speaking = False
     silence_watchdog = SilenceWatchdogController(session=session, logger=logger) if silence_reprompts_enabled else None
-
-    def cancel_filler_task():
-        nonlocal filler_task
-        if filler_task and not filler_task.done():
-            filler_task.cancel()
-        filler_task = None
-
-    async def filler_loop():
-        await asyncio.sleep(random.uniform(2.0, 3.0))
-        while True:
-            text = await generate_filler(list(context_turns))
-            if text:
-                await session.say(text, allow_interruptions=True)
-            await asyncio.sleep(random.uniform(5.0, 8.0))
+    filler_controller = FillerController(session=session, context_turns=context_turns) if filler_words_enabled else None
 
     # Background audio
     ambient_path = os.path.join(settings.AUDIO_DIR, "office-ambience_48k.wav")
@@ -314,22 +300,18 @@ async def entrypoint(ctx: JobContext):
     if filler_words_enabled or silence_reprompts_enabled:
         @session.on("user_state_changed")
         def on_user_state_changed(event):
-            nonlocal filler_task, user_is_speaking
+            nonlocal user_is_speaking
             is_speaking = event.new_state == "speaking"
             user_is_speaking = is_speaking
 
             if silence_watchdog:
                 silence_watchdog.on_user_state_changed(is_speaking)
 
-            if not filler_words_enabled:
-                return
-
-            if is_speaking:
-                cancel_filler_task()
-                filler_task = asyncio.create_task(filler_loop())
-                return
-
-            cancel_filler_task()
+            if filler_controller:
+                if is_speaking:
+                    filler_controller.start()
+                else:
+                    filler_controller.stop()
 
     # --- EVENT TRACKING FOR CALL ANSWERED ---
     # We register `data_received` EARLY (before wait_for_participant) so we never
@@ -403,6 +385,8 @@ async def entrypoint(ctx: JobContext):
                         logger.warning("[EXOTEL] Timed out waiting for call_answered — proceeding anyway")
 
                 await session.generate_reply(instructions=start_instruction)
+                if silence_watchdog:
+                    silence_watchdog.on_assistant_message(start_instruction)
                 logger.info("Start instruction sent successfully")
             except Exception as e:
                 logger.error(f"Failed to send start instruction: {e}", exc_info=True)
@@ -415,7 +399,8 @@ async def entrypoint(ctx: JobContext):
     # --- WAIT FOR DISCONNECT ---
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
-        cancel_filler_task()
+        if filler_controller:
+            filler_controller.stop()
         if silence_watchdog:
             silence_watchdog.stop()
         logger.info(f"Participant disconnected: {participant.identity}")
