@@ -84,8 +84,9 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")
 
-    filler_words_enabled = bool(getattr(assistant, "assistant_filler_words", False))
-    silence_reprompts_enabled = bool(getattr(assistant, "assistant_silence_reprompts", False))
+    interaction_config = assistant.assistant_interaction_config
+    filler_words_enabled = bool(interaction_config.filler_words)
+    silence_reprompts_enabled = bool(interaction_config.silence_reprompts)
 
     logger.info(f"Assistant voice features | filler_words={filler_words_enabled} | silence_reprompts={silence_reprompts_enabled}")
 
@@ -245,7 +246,14 @@ async def entrypoint(ctx: JobContext):
 
     context_turns = deque(maxlen=4)
     user_is_speaking = False
-    silence_watchdog = SilenceWatchdogController(session=session, logger=logger) if silence_reprompts_enabled else None
+    silence_watchdog = (
+        SilenceWatchdogController(
+            session=session, 
+            logger=logger,
+            reprompt_interval_sec=interaction_config.silence_reprompt_interval,
+            max_reprompts=interaction_config.silence_max_reprompts
+        ) if silence_reprompts_enabled else None
+    )
     filler_controller = FillerController(session=session, context_turns=context_turns) if filler_words_enabled else None
 
     # Background audio
@@ -366,7 +374,7 @@ async def entrypoint(ctx: JobContext):
     # --- Start Instruction ---
     # Respect the assistant_speaks_first flag (defaults True for backward compatibility).
     # When False, the assistant stays silent on connect and waits for the user to speak first.
-    should_speak_first = getattr(assistant, "assistant_speaks_first", True)
+    should_speak_first = interaction_config.speaks_first
 
     if should_speak_first:
         start_instruction = agent_instance.start_instruction

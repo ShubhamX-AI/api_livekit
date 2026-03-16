@@ -21,6 +21,16 @@ class APIKey(Document):
         name = "api_keys"  # Collection name in MongoDB
 
 
+class AssistantInteractionConfig(BaseModel):
+    """Configuration for how the assistant interacts with the user."""
+
+    speaks_first: bool = True
+    filler_words: bool = False
+    silence_reprompts: bool = False
+    silence_reprompt_interval: float = 10.0
+    silence_max_reprompts: int = 2
+
+
 # Assistant storage
 class Assistant(Document):
     """Assistant model for Beanie ODM"""
@@ -32,9 +42,7 @@ class Assistant(Document):
     assistant_tts_config: Dict = {}
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
-    assistant_speaks_first: bool = True  # If False, assistant stays silent and waits for user to speak first
-    assistant_filler_words: bool = False
-    assistant_silence_reprompts: bool = False
+    assistant_interaction_config: AssistantInteractionConfig = Field(default_factory=AssistantInteractionConfig)
     assistant_end_call_enabled: bool = False
     assistant_end_call_trigger_phrase: Optional[str] = None
     assistant_end_call_agent_message: Optional[str] = None
@@ -57,6 +65,8 @@ class Assistant(Document):
                 )
             )
         ]
+
+
 
 
 class OutboundSIP(Document):

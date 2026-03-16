@@ -26,9 +26,7 @@ Fetch detailed information about a specific assistant.
 | `data.assistant_tts_model`         | string  | The TTS provider.                          |
 | `data.assistant_tts_config`        | object  | The TTS configuration object.              |
 | `data.assistant_start_instruction` | string  | The start instruction (if set).            |
-| `data.assistant_speaks_first`     | boolean | Whether the assistant speaks first.         |
-| `data.assistant_filler_words`    | boolean | Whether filler words are enabled.           |
-| `data.assistant_silence_reprompts` | boolean | Whether silence reprompts are enabled.    |
+| `data.assistant_interaction_config` | object | Interaction settings for the assistant. |
 | `data.assistant_end_call_enabled`  | boolean | Whether built-in end call behavior is enabled (`false` by default). |
 | `data.assistant_end_call_trigger_phrase` | string | Example user phrase for end-call trigger. If `null`/empty, runtime uses generic confirmation-based trigger guidance. |
 | `data.assistant_end_call_agent_message` | string | Assistant message spoken before ending call. If `null`/empty, runtime fallback is `say goodbye to the user`. |
@@ -69,9 +67,13 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details
       "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
     },
     "assistant_start_instruction": null,
-    "assistant_speaks_first": true,
-    "assistant_filler_words": false,
-    "assistant_silence_reprompts": false,
+    "assistant_interaction_config": {
+      "speaks_first": true,
+      "filler_words": false,
+      "silence_reprompts": false,
+      "silence_reprompt_interval": 10.0,
+      "silence_max_reprompts": 2
+    },
     "assistant_end_call_enabled": true,
     "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
     "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",

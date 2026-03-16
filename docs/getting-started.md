@@ -33,6 +33,11 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_tts_model": "cartesia",
     "assistant_tts_config": {
       "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+    },
+    "assistant_interaction_config": {
+      "speaks_first": true,
+      "filler_words": false,
+      "silence_reprompts": true
     }
   }'
 ```

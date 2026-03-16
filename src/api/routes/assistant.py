@@ -162,8 +162,7 @@ async def list_assistants(
             "assistant_name": assistant.assistant_name,
             "assistant_tts_model": assistant.assistant_tts_model,
             "assistant_tts_config": mask_api_key(assistant.assistant_tts_config),
-            "assistant_filler_words": assistant.assistant_filler_words,
-            "assistant_silence_reprompts": assistant.assistant_silence_reprompts,
+            "assistant_interaction_config": assistant.assistant_interaction_config,
             "assistant_created_by_email": assistant.assistant_created_by_email,
         }
         for assistant in assistants

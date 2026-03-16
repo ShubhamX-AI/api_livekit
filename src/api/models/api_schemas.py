@@ -48,6 +48,23 @@ TTSConfig = Annotated[
 ]
 
 
+# ── Interaction Config sub-models ──────────────────
+class AssistantInteractionConfigSchema(BaseModel):
+    speaks_first: bool = Field(True, description="If True (default), assistant speaks first. If False, assistant stays silent and waits for the user to speak.")
+    filler_words: bool = Field(False, description="Enable filler words while the user is speaking")
+    silence_reprompts: bool = Field(False, description="Enable silence reprompts when the user stops responding")
+    silence_reprompt_interval: float = Field(10.0, ge=1.0, le=60.0, description="Interval in seconds between silence reprompts")
+    silence_max_reprompts: int = Field(2, ge=0, le=5, description="Maximum number of silence reprompts before ending the session")
+
+
+class UpdateAssistantInteractionConfigSchema(BaseModel):
+    speaks_first: Optional[bool] = Field(None, description="If True, assistant speaks first. If False, assistant waits for user.")
+    filler_words: Optional[bool] = Field(None, description="Enable or disable filler words")
+    silence_reprompts: Optional[bool] = Field(None, description="Enable or disable silence reprompts")
+    silence_reprompt_interval: Optional[float] = Field(None, ge=1.0, le=60.0, description="Interval in seconds between silence reprompts")
+    silence_max_reprompts: Optional[int] = Field(None, ge=0, le=5, description="Maximum number of silence reprompts before ending the session")
+
+
 # For Assistant creation
 class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
@@ -56,9 +73,7 @@ class CreateAssistant(BaseModel):
     assistant_tts_model: Literal["cartesia", "sarvam", "elevenlabs"] = Field(..., description="TTS Provider")
     assistant_tts_config: TTSConfig = Field(..., description="TTS Configuration object (varies by model)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
-    assistant_speaks_first: bool = Field(True, description="If True (default), assistant speaks first. If False, assistant stays silent and waits for the user to speak.")
-    assistant_filler_words: bool = Field(False, description="Enable filler words while the user is speaking")
-    assistant_silence_reprompts: bool = Field(False, description="Enable silence reprompts when the user stops responding")
+    assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
     assistant_end_call_enabled: bool = Field(False, description="Enable built-in end_call tool")
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
@@ -78,9 +93,13 @@ class CreateAssistant(BaseModel):
                     "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
                 },
                 "assistant_start_instruction": "Start instruction.",
-                "assistant_speaks_first": True,
-                "assistant_filler_words": True,
-                "assistant_silence_reprompts": True,
+                "assistant_interaction_config": {
+                    "speaks_first": True,
+                    "filler_words": True,
+                    "silence_reprompts": True,
+                    "silence_reprompt_interval": 10.0,
+                    "silence_max_reprompts": 2
+                },
                 "assistant_end_call_enabled": True,
                 "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
                 "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
@@ -108,9 +127,7 @@ class UpdateAssistant(BaseModel):
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs"]] = Field(None, description="TTS Provider (optional)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
-    assistant_speaks_first: Optional[bool] = Field(None, description="If True, assistant speaks first. If False, assistant waits for user. Leave unset to keep existing value.")
-    assistant_filler_words: Optional[bool] = Field(None, description="Enable or disable filler words")
-    assistant_silence_reprompts: Optional[bool] = Field(None, description="Enable or disable silence reprompts")
+    assistant_interaction_config: Optional[UpdateAssistantInteractionConfigSchema] = Field(None, description="Update interaction settings")
     assistant_end_call_enabled: Optional[bool] = Field(None, description="Enable/disable built-in end_call tool")
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
@@ -123,13 +140,10 @@ class UpdateAssistant(BaseModel):
         json_schema_extra = {
             "example": {
                 "assistant_name": "Updated Assistant Name",
-                "assistant_speaks_first": False,
-                "assistant_filler_words": True,
-                "assistant_silence_reprompts": False,
-                "assistant_tts_model": "sarvam",
-                "assistant_tts_config": {
-                    "speaker": "meera",
-                    "target_language_code": "bn-IN"
+                "assistant_interaction_config": {
+                    "speaks_first": False,
+                    "filler_words": True,
+                    "silence_reprompts": False
                 },
                 "assistant_end_call_enabled": True,
                 "assistant_end_call_trigger_phrase": "Okay bye, please end the call.",

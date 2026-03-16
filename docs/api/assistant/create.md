@@ -17,13 +17,21 @@ Create a new AI assistant configuration.
 | `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia`, `sarvam`, or `elevenlabs`.                   |
 | `assistant_tts_config`        | object | Yes      | The TTS configuration object (see below).                                         |
 | `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
-| `assistant_speaks_first`     | boolean | No       | If `true` (default), the assistant speaks first. If `false`, it stays silent and waits for the user to speak first. |
-| `assistant_filler_words`    | boolean | No       | If `true`, the assistant generates short filler phrases while the user is speaking. Default: `false`. |
-| `assistant_silence_reprompts` | boolean | No | If `true`, the assistant reprompts the user after silence and can end the call after repeated silence. Default: `false`. |
+| `assistant_interaction_config` | object | No | Interaction settings (see below). |
 | `assistant_end_call_enabled`  | boolean | No       | If `true`, enables built-in `end_call` tool for graceful call ending. Default: `false`. |
 | `assistant_end_call_trigger_phrase` | string | No | Example user phrase that should signal the assistant to trigger `end_call` (max 300 chars). Default when omitted: generic instruction to end only after clear user confirmation. |
 | `assistant_end_call_agent_message` | string | No | What the assistant should say just before ending the call (max 300 chars). Default when omitted: `say goodbye to the user`. |
 | `assistant_end_call_url`      | string | No       | URL to POST call details when the call ends.                                      |
+
+### Interaction Configuration
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `speaks_first` | boolean | No | If `true` (default), the assistant speaks first. If `false`, it stays silent and waits for the user to speak first. |
+| `filler_words` | boolean | No | If `true`, the assistant generates short filler phrases while the user is speaking. Default: `false`. |
+| `silence_reprompts` | boolean | No | If `true`, enables silence reprompts when the user stops responding. Default: `false`. |
+| `silence_reprompt_interval` | number | No | Interval in seconds between silence reprompts (1.0 - 60.0). Default: `10.0`. |
+| `silence_max_reprompts` | number | No | Maximum number of silence reprompts before ending the session (0 - 5). Default: `2`. |
 
 !!! note "End call defaults"
 
@@ -162,13 +170,17 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
            "assistant_tts_config": {
              "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
            },
-            "assistant_start_instruction": "Hello! I'\''m calling from Acme Corp. How are you today?",
-            "assistant_speaks_first": true,
-            "assistant_end_call_enabled": true,
-            "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
-            "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
-            "assistant_end_call_url": "https://api.example.com/call-ended"
-          }'
+           "assistant_start_instruction": "Hello! I'\''m calling from Acme Corp. How are you today?",
+           "assistant_interaction_config": {
+             "speaks_first": true,
+             "filler_words": true,
+             "silence_reprompts": true
+           },
+           "assistant_end_call_enabled": true,
+           "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
+           "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
+           "assistant_end_call_url": "https://api.example.com/call-ended"
+         }'
 ```
 
 ### Example: User Speaks First
@@ -185,6 +197,8 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
            "assistant_tts_config": {
              "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
            },
-           "assistant_speaks_first": false
+           "assistant_interaction_config": {
+             "speaks_first": false
+           }
          }'
 ```

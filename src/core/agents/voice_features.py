@@ -12,12 +12,17 @@ from src.core.config import settings
 REPROMPT_INTERVAL_SEC: Final[float] = 10.0
 MAX_REPROMPTS: Final[int] = 2
 _recent_fillers: deque[str] = deque(maxlen=5)
+_client: AsyncOpenAI | None = None
 
 
 async def generate_filler(context: list[dict[str, str]]) -> str | None:
     """Generate a short filler phrase for live backchanneling."""
+    global _client
     if not settings.OPENAI_API_KEY:
         return None
+
+    if _client is None:
+        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
     avoid = list(_recent_fillers)
     avoid_clause = f"Do not use any of these phrases: {avoid}. " if avoid else ""
@@ -84,8 +89,8 @@ class SilenceWatchdogController:
         self,
         session: AgentSession,
         logger: logging.Logger,
-        reprompt_interval_sec: float = REPROMPT_INTERVAL_SEC,
-        max_reprompts: int = MAX_REPROMPTS,
+        reprompt_interval_sec: float = 10.0,
+        max_reprompts: int = 2,
     ) -> None:
         self._session = session
         self._logger = logger
