@@ -10,9 +10,8 @@ from livekit.api import LiveKitAPI, AccessToken, VideoGrants
 from livekit.protocol.sip import (
     CreateSIPOutboundTrunkRequest,
     SIPOutboundTrunkInfo,
-    ListSIPOutboundTrunkRequest,
+    # ListSIPOutboundTrunkRequest,
 )
-from livekit.protocol.room import RoomConfiguration, RoomAgentDispatch
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
 from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog
@@ -299,16 +298,6 @@ class LiveKitService:
 
             # Attach metadata as participant metadata
             at.metadata = json.dumps(metadata) if metadata else ""
-
-            # Dispatch agent into the room when user joins
-            at.room_config = RoomConfiguration(
-                agents=[
-                    RoomAgentDispatch(
-                        agent_name="api-agent",
-                        metadata=json.dumps(metadata) if metadata else "",
-                    )
-                ]
-            )
 
             return at.to_jwt()
         except Exception as e:

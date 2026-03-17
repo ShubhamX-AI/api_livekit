@@ -5,6 +5,7 @@ from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 from src.services.livekit.livekit_svc import LiveKitService
 from src.api.models.api_schemas import TriggerWebCall
+from google.protobuf.json_format import MessageToDict
 
 router = APIRouter()
 setup_logging()
@@ -28,6 +29,10 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
         logger.info(f"Creating room for assistant: {request.assistant_id}")
         room_name = await livekit_services.create_room(request.assistant_id)
 
+        # Create agent dispatch
+        logger.info(f"Creating dispatch for room: {room_name}")
+        agent_dispatch = await livekit_services.create_agent_dispatch(room_name, request.metadata)
+
         # Generate join token (agent dispatch embedded via RoomConfiguration)
         logger.info(f"Creating token for room: {room_name}")
         token = await livekit_services.create_token(room_name, request.metadata)
@@ -39,6 +44,7 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
             message="Token generated successfully",
             data={
                 "room_name": room_name,
+                "agent_dispatch": MessageToDict(agent_dispatch),
                 "token": token,
             },
         )
