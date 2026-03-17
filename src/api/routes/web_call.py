@@ -11,7 +11,7 @@ setup_logging()
 livekit_services = LiveKitService()
 
 # Generate Web Call Token
-@router.post("/getToken")
+@router.post("/get_token")
 async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_current_user)):
     try:
         logger.info(f"Web call token requested by: {current_user.user_email} for assistant: {request.assistant_id}")
@@ -46,5 +46,5 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating web call token: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error generating web call token: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate web call token")

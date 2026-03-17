@@ -29,7 +29,7 @@ Create a LiveKit room and return a participant token for browser or mobile web c
 | Code | Description |
 | :--- | :--- |
 | 200 | Success - Token generated successfully. |
-| 400 | Bad Request - Invalid input or token generation failure. |
+| 422 | Validation Error - Invalid request body. |
 | 401 | Unauthorized - Invalid or missing Bearer token. |
 | 404 | Not Found - Assistant not found for the authenticated user. |
 | 500 | Server Error - Internal error while generating the token. |
