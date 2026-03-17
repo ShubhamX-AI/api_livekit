@@ -104,6 +104,7 @@ nav:
     - Outbound Calls:
       - Overview: api/calls/index.md
       - Trigger Call: api/calls/trigger.md
+      - Generate Web Call Token: api/calls/web-call.md
       - Call Flow: api/calls/flow.md
       - End Call Webhook: api/calls/webhook.md
       - Status Tracking: api/calls/tracking.md

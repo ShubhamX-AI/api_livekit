@@ -9,6 +9,7 @@ Outbound calls allow your AI assistants to call phone numbers. When triggered, t
 Explore the sub-sections to interact with the Outbound Calls API:
 
 - [Trigger Outbound Call](trigger.md)
+- [Generate Web Call Token](web-call.md)
 - [Call Flow](flow.md)
 - [End Call Webhook](webhook.md)
 - [Call Status Tracking](tracking.md)
