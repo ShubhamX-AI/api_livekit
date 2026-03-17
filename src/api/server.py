@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
-from src.api.routes import auth, health, assistant, sip, call, tool, logs
+from src.api.routes import auth, health, assistant, sip, call, tool, logs, web_call
 from src.core.logger import setup_logging, logger
 from src.core.db.database import init_db, close_db
 from src.api.models.response_models import apiResponse
@@ -99,6 +99,7 @@ app.include_router(sip.router, prefix="/sip", tags=["Outbound SIP"])
 app.include_router(call.router, prefix="/call", tags=["Call"])
 app.include_router(tool.router, prefix="/tool", tags=["Tool"])
 app.include_router(logs.router, prefix="/logs", tags=["Logs"])
+app.include_router(web_call.router, prefix="/web_call", tags=["Web Call"])
 
 # Serve MkDocs documentation site
 if os.path.exists("site"):

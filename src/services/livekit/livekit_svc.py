@@ -6,12 +6,13 @@ from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
 from livekit import api
-from livekit.api import LiveKitAPI
+from livekit.api import LiveKitAPI, AccessToken, VideoGrants
 from livekit.protocol.sip import (
     CreateSIPOutboundTrunkRequest,
     SIPOutboundTrunkInfo,
     ListSIPOutboundTrunkRequest,
 )
+from livekit.protocol.room import RoomConfiguration, RoomAgentDispatch
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
 from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog
@@ -278,4 +279,38 @@ class LiveKitService:
 
         except Exception as e:
             logger.error(f"Failed to start recording: {e}", exc_info=True)
+            return None
+
+
+    # Create token for web call — user joins room, agent is auto-dispatched via RoomConfiguration
+    async def create_token(self, room_name: str, metadata: Optional[dict] = None) -> Optional[str]:
+        try:
+            at = AccessToken(self.api_key, self.api_secret)
+            at.identity = f"user-{uuid.uuid4().hex[:8]}"
+
+            # Grant room join with publish + subscribe
+            at.add_grant(VideoGrants(
+                room_join=True,
+                room=room_name,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+            ))
+
+            # Attach metadata as participant metadata
+            at.metadata = json.dumps(metadata) if metadata else ""
+
+            # Dispatch agent into the room when user joins
+            at.room_config = RoomConfiguration(
+                agents=[
+                    RoomAgentDispatch(
+                        agent_name="api-agent",
+                        metadata=json.dumps(metadata) if metadata else "",
+                    )
+                ]
+            )
+
+            return at.to_jwt()
+        except Exception as e:
+            logger.error(f"Failed to create token: {e}", exc_info=True)
             return None

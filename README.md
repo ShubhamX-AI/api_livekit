@@ -209,6 +209,7 @@ These settings are stored on the assistant and applied in the worker at session 
 - `/sip`
 - `/call`
 - `/tool`
+- `/web_call`
 - `/documentation`
 
 ## Project Structure

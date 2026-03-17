@@ -251,6 +251,23 @@ class TriggerOutboundCall(BaseModel):
         }
 
 
+# Trigger Web Call
+class TriggerWebCall(BaseModel):
+    assistant_id: str = Field(..., min_length=1, max_length=100, description="Assistant ID")
+    metadata: Optional[dict] = Field(None, description="Optional metadata passed to the agent")
+
+    class Config:
+        # Strip whitespace from string fields
+        str_strip_whitespace = True
+        # Example for API documentation
+        json_schema_extra = {
+            "example": {
+                "assistant_id": "Test Assistant ID",
+                "metadata": {"extra": "value about the call"},
+            }
+        }
+
+
 # ---- Tool Schemas ----
 
 

@@ -64,12 +64,12 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"Loaded assistant config: {assistant.assistant_name} (ID: {assistant.assistant_id})")
 
     # Extract metadata from job metadata (reliable way to pass data to agent)
-    to_number = "Unknown"
+    to_number = "Unknown | Web Call"
     job_metadata = {}
     if ctx.job.metadata:
         try:
             job_metadata = json.loads(ctx.job.metadata)
-            to_number = job_metadata.get("to_number", "Unknown")
+            to_number = job_metadata.get("to_number", "Unknown | Web Call")
             logger.info(f"Extracted to_number from job metadata: {to_number}")
             
             # Update Assistant Prompt and Start Instruction with metadata placeholders {{key}}
