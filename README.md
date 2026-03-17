@@ -95,13 +95,13 @@ uv sync
 Start the API server:
 
 ```bash
-uv run python server_run.py
+uv run server_run.py
 ```
 
 Start the LiveKit worker in another terminal:
 
 ```bash
-uv run python src/core/agents/session.py
+uv run -m src.core.agents.session dev
 ```
 
 ## 📁 Project Structure
@@ -115,13 +115,15 @@ api_livekit/
 ├── server_run.py          # Entry point — starts API + agent worker
 ├── assets/
 │   └── audio/             # Background audio files (WAV)
-├── docs/                  # MkDocs source documentation
+├── docs/                  # MkDocs source documentation (see also: MkDocs site output in `site/`)
+├── scripts/               # Utility scripts (e.g., migration)
+├── site/                  # MkDocs static site output (auto-generated, do not edit by hand)
 ├── src/
 │   ├── api/               # REST API (FastAPI)
 │   │   ├── server.py
 │   │   ├── dependencies/  # Auth middleware
 │   │   ├── models/        # Request/response schemas
-│   │   └── routes/        # Endpoints: assistant, auth, call, logs, sip, tool
+│   │   └── routes/        # Endpoints: assistant, auth, call, logs, sip, tool, web_call
 │   ├── core/
 │   │   ├── config.py      # Settings loaded from .env
 │   │   ├── logger.py
@@ -162,6 +164,7 @@ Users can query their own activity logs via the API to observe tool calls and we
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /logs` | Bearer | Fetch paginated activity logs for the authenticated user |
+| `POST /web_call/get_token` | Bearer | Generate a LiveKit web call token (for browser clients) |
 
 ### Query parameters
 
@@ -209,7 +212,7 @@ These settings are stored on the assistant and applied in the worker at session 
 - `/sip`
 - `/call`
 - `/tool`
-- `/web_call`
+- `/web_call/get_token`
 - `/documentation`
 
 ## Project Structure

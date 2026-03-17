@@ -2,7 +2,7 @@
 
 Create a LiveKit room and return a participant token for browser or mobile web calls.
 
-- **URL**: `/web_call/getToken`
+- **URL**: `/web_call/get_token`
 - **Method**: `POST`
 - **Headers**: `Authorization: Bearer <your_api_key>`
 - **Content-Type**: `application/json`
@@ -37,7 +37,7 @@ Create a LiveKit room and return a participant token for browser or mobile web c
 ### Example Request
 
 ```bash
-curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/getToken" \
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/get_token" \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer <your_api_key>" \
      -d '{

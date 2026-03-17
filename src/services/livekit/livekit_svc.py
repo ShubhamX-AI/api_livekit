@@ -285,10 +285,10 @@ class LiveKitService:
     async def create_token(self, room_name: str, metadata: Optional[dict] = None) -> Optional[str]:
         try:
             at = AccessToken(self.api_key, self.api_secret)
-            at.identity = f"user-{uuid.uuid4().hex[:8]}"
+            at.with_identity(f"user-{uuid.uuid4().hex[:8]}")
 
             # Grant room join with publish + subscribe
-            at.add_grant(VideoGrants(
+            at.with_grants(VideoGrants(
                 room_join=True,
                 room=room_name,
                 can_publish=True,
@@ -297,7 +297,7 @@ class LiveKitService:
             ))
 
             # Attach metadata as participant metadata
-            at.metadata = json.dumps(metadata) if metadata else ""
+            at.with_metadata(json.dumps(metadata) if metadata else "")
 
             return at.to_jwt()
         except Exception as e:

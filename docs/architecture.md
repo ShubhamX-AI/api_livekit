@@ -19,7 +19,7 @@ sequenceDiagram
     participant Agent as 🤖 [AI Agent Session]
 
     Note over Web, API: Phase 1: Secure Authentication
-    Web->>API: GET /api/getToken?agent=bank
+    Web->>API: GET /api/get_token?agent=bank
     Note right of API: server.py validates & generates JWT
     API-->>Web: Return Access Token (JWT)
 
