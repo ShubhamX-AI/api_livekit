@@ -4,6 +4,12 @@
 
 Inbound routing maps normalized dialed numbers to assistants and dispatches the mapped assistant into a new LiveKit room.
 
+!!! info "Provider support status"
+
+    Inbound calling currently supports **Exotel only**.
+    **Twilio inbound is not implemented yet**.
+    Outbound provider behavior differs; see [Outbound Calls](../calls/index.md).
+
 ## Current Behavior
 
 - `/inbound` routes currently support `exotel` as the active provider.

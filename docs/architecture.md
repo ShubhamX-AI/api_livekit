@@ -90,6 +90,17 @@ graph TD
     LKR <-->|Audio| Agent
 ```
 
+## Provider Support Matrix
+
+| Provider | Inbound | Outbound | Implementation path |
+| :--- | :--- | :--- | :--- |
+| `exotel` | Supported | Supported | Custom SIP bridge (`custom_sip_reach`) |
+| `twilio` | Not implemented yet | Supported | LiveKit managed SIP participant |
+
+!!! note "Current support status"
+
+    Twilio inbound is planned but currently unsupported.
+
 ## Inbound Routing (Exotel)
 
 Inbound Exotel calls do not use managed LiveKit SIP participants. The bridge receives `INVITE`, normalizes the number, resolves mapping in MongoDB, creates a room, and dispatches the mapped assistant.
@@ -122,9 +133,12 @@ sequenceDiagram
     Bridge->>LK: Create room
     Bridge->>LK: Create dispatch metadata
     Bridge-->>Exotel: SIP 200 OK
-    Exotel<-->>Bridge: RTP audio
-    Bridge<-->>LK: Audio relay
-    LK<-->>Agent: Real-time session
+    Exotel->>Bridge: RTP audio uplink
+    Bridge-->>Exotel: RTP audio downlink
+    Bridge->>LK: Audio relay uplink
+    LK-->>Bridge: Audio relay downlink
+    LK->>Agent: Real-time uplink
+    Agent-->>LK: Real-time downlink
 ```
 
 ### Inbound Failure Paths
