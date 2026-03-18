@@ -8,7 +8,7 @@ bridge to tear down the call.
 
 import asyncio
 
-from .config import EXOTEL_CUSTOMER_SIP_PORT, INBOUND_SIP_LISTEN
+from .config import EXOTEL_CUSTOMER_SIP_PORT, EXOTEL_SIP_ALLOWED_IPS, INBOUND_SIP_LISTEN
 from .sip_client import ExotelSipClient
 from src.core.logger import logger, setup_logging
 setup_logging()
@@ -74,6 +74,15 @@ async def _handle_inbound_sip(
 ):
     buf = b""
     peer = writer.get_extra_info("peername")
+    # Only accept SIP from known Exotel IPs (if allowlist is configured)
+    if EXOTEL_SIP_ALLOWED_IPS and peer and peer[0] not in EXOTEL_SIP_ALLOWED_IPS:
+        logger.warning(f"[SIP-IN] Rejected connection from untrusted IP {peer[0]}")
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return
     try:
         while True:
             data = await reader.read(4096)

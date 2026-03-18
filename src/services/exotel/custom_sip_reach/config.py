@@ -74,6 +74,11 @@ INBOUND_SIP_LISTEN = os.getenv("INBOUND_SIP_LISTEN", "true").lower() in (
     "yes",
 )
 
+# Comma-separated list of trusted Exotel SIP IPs (empty = allow all, not recommended for production)
+EXOTEL_SIP_ALLOWED_IPS: set[str] = set(
+    filter(None, os.getenv("EXOTEL_SIP_ALLOWED_IPS", "").split(","))
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config Validation

@@ -151,6 +151,10 @@ class RTPMediaBridge:
         """Called by event loop when UDP socket has data. Works with uvloop."""
         try:
             data, addr = self._sock.recvfrom(4096)
+            # DROP packets from unknown sources — prevents stale/foreign RTP
+            # from a prior call (port reuse) leaking audio into the wrong room.
+            if self._remote_addr and addr != self._remote_addr:
+                return
             self._recv_queue.put_nowait((data, addr))
         except BlockingIOError:
             pass  # no data yet, ignore
@@ -174,6 +178,10 @@ class RTPMediaBridge:
                 continue
 
             if not self._first_rx:
+                # Lock onto first sender if remote not yet set (inbound flow)
+                if not self._remote_addr:
+                    self._remote_addr = addr
+                    logger.info(f"[RTP] Auto-learned remote endpoint: {addr}")
                 logger.info(f"[RTP] ✅ First inbound RTP from {addr} ({len(data)} B)")
                 self._first_rx = True
 

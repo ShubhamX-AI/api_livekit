@@ -248,9 +248,18 @@ async def get_call_logs(
     end_date: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601)"),
     sort_by: str = Query("started_at", description="Field to sort by (e.g., started_at, ended_at, call_duration_minutes)"),
     sort_order: str = Query("desc", description="Sort order: 'asc' or 'desc'"),
-    _: APIKey = Depends(get_current_user)
+    current_user: APIKey = Depends(get_current_user)
 ):
     logger.info(f"Received request to get call logs for assistant: {assistant_id}")
+
+    # Verify the caller owns this assistant — prevents cross-tenant data leakage
+    assistant = await Assistant.find_one(
+        Assistant.assistant_id == assistant_id,
+        Assistant.assistant_created_by_email == current_user.user_email,
+        Assistant.assistant_is_active == True,
+    )
+    if not assistant:
+        raise HTTPException(status_code=404, detail="Assistant not found")
 
     # Build query using Beanie expressions
     query_conditions = [CallRecord.assistant_id == assistant_id]
