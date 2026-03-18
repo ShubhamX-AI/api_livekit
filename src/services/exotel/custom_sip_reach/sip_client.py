@@ -41,7 +41,11 @@ def format_exotel_number(number: str) -> str:
       - '91...': Removes '91', prefixes with '0'.
       - '...': Prefixes with '0' if it doesn't already start with '0'.
     """
+    if not number or number == "Unknown":
+        return "Unknown"
     clean = "".join(filter(str.isdigit, number))
+    if not clean:
+        return "Unknown"
     if clean.startswith("91") and len(clean) > 10:
         clean = clean[2:]
     if not clean.startswith("0"):

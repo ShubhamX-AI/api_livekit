@@ -107,7 +107,7 @@ def validate_config() -> bool:
             logger.error(f"[CONFIG] ❌ {msg}")
             ok = False
     if ok:
-        logger.info(
+        logger.debug(
             f"[CONFIG] ✅ public IP={EXOTEL_MEDIA_IP}, ports={RTP_PORT_START}-{RTP_PORT_END}"
         )
     return ok

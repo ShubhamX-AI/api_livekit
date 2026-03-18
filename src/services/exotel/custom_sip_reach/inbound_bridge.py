@@ -5,7 +5,6 @@ wires up RTP, and connects an agent via LiveKit.
 
 import asyncio
 import json
-import logging
 import uuid
 
 from livekit import rtc
@@ -29,8 +28,8 @@ from .rtp_bridge import RTPMediaBridge
 from .sip_client import format_exotel_number
 from src.core.db.db_schemas import Assistant, InboundSIP
 from src.services.livekit.livekit_svc import LiveKitService
-
-logger = logging.getLogger("sip_bridge_v3")
+from src.core.logger import logger, setup_logging
+setup_logging()
 
 
 def _extract_sip_number(header_value: str) -> str:
@@ -73,6 +72,17 @@ async def handle_inbound_call(
 ):
     if not validate_config():
         logger.error("[INBOUND] Config validation failed")
+        writer.write(
+            _build_sip_response(
+                status_line="SIP/2.0 503 Service Unavailable",
+                call_id=call_id,
+                cseq=cseq,
+                from_header=from_header,
+                to_header=to_header,
+                via_headers=via_headers,
+            )
+        )
+        await writer.drain()
         return
 
     livekit_service = LiveKitService()
@@ -98,12 +108,26 @@ async def handle_inbound_call(
         logger.error(
             f"[INBOUND] Failed to extract RTP info from SDP. call-id={call_id}"
         )
+        writer.write(
+            _build_sip_response(
+                status_line="SIP/2.0 400 Bad Request",
+                call_id=call_id,
+                cseq=cseq,
+                from_header=from_header,
+                to_header=to_header,
+                via_headers=via_headers,
+            )
+        )
+        await writer.drain()
         return
 
+    # Extract numbers from SIP headers
     dialed_number = _extract_sip_number(to_header)
     caller_number = _extract_sip_number(from_header)
     normalized_number = format_exotel_number(dialed_number)
-    logger.info(f"[INBOUND] call-id={call_id} phone={normalized_number}")
+    
+    # Log incoming call details
+    logger.info(f"[INBOUND] call-id={call_id} caller={caller_number} dialed={dialed_number} normalized={normalized_number}")
 
     inbound_mapping = await InboundSIP.find_one(
         InboundSIP.phone_number_normalized == normalized_number,
@@ -112,7 +136,7 @@ async def handle_inbound_call(
     )
     if not inbound_mapping or not inbound_mapping.assistant_id:
         logger.warning(
-            f"[INBOUND] No active assistant mapping found for number {normalized_number}"
+            f"[INBOUND] No active assistant mapping found for number '{normalized_number}' (call-id={call_id}, caller={caller_number})"
         )
         writer.write(
             _build_sip_response(
