@@ -1,20 +1,18 @@
 # Inbound Calls
 
-This section covers inbound number management and the Exotel inbound SIP bridge.
-
 ## Overview
 
-Inbound calls are routed by looking up the dialed phone number in the `inbound_sip` collection and dispatching the mapped assistant into a new LiveKit room.
+Inbound routing maps normalized dialed numbers to assistants and dispatches the mapped assistant into a new LiveKit room.
 
 ## Current Behavior
 
-- Only `exotel` is supported by the `/inbound` API routes today.
-- The request schema still includes `twilio`, but `POST /inbound/assign` returns `400` for non-Exotel services.
-- Phone numbers are normalized before storage and lookup, so uniqueness is enforced on the normalized value.
-- A mapping can exist without an assistant after detach, but detached mappings do not receive inbound calls.
-- Deleting a mapping marks it inactive and releases the normalized number for reuse.
+- `/inbound` routes currently support `exotel` as the active provider.
+- Request schema may include `twilio`, but non-Exotel assign requests return `400`.
+- Number normalization is enforced before persistence and lookup.
+- Detached mappings remain stored but do not route inbound calls.
+- Deleting a mapping deactivates it and releases the number for reuse.
 
-## Endpoints
+## Endpoints and Guides
 
 - [Manage Numbers](manage.md)
 - [Inbound Call Flow](flow.md)

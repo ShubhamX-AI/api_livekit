@@ -76,8 +76,11 @@ nav:
   - Architecture: architecture.md
 
   - API Reference:
-    - Overview: api/errors.md
-    - Authentication: api/authentication.md
+    - API Response and Errors: api/errors.md
+    - Authentication and API Keys: api/authentication.md
+    - Operations:
+      - Health Check: api/health.md
+      - Documentation Endpoint: api/documentation.md
 
     - Assistants:
       - Overview: api/assistant/index.md

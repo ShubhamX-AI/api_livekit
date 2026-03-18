@@ -1,47 +1,51 @@
-# API Errors
+# API Response and Errors
 
-This section documents all HTTP status codes and error responses from the API.
+## Overview
 
-## Response Structure
+All endpoints return a standard envelope with `success`, `message`, and `data`.
 
-All API responses follow a consistent structure:
+## Response Envelope
 
 ```json
 {
-  "success": boolean,
-  "message": string,
-  "data": object | array | null
+  "success": true,
+  "message": "Human-readable result",
+  "data": {}
 }
 ```
 
-- **`success`**: `true` for successful operations, `false` for errors
-- **`message`**: Human-readable description of the result
-- **`data`**: Contains response payload on success, `null` on error
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `success` | boolean | `true` for successful operations, `false` for failures. |
+| `message` | string | Human-readable status description. |
+| `data` | object \| array \| null | Endpoint payload; error responses may return `null` or `{}`. |
 
 ## HTTP Status Codes
 
-### 2xx Success Codes
+### Success
 
-| Code | Name | Description |
+| Code | Meaning | Notes |
 | :--- | :--- | :--- |
-| `200` | OK | The request was successful. |
-| `201` | Created | A new resource was created successfully (also returns `200`). |
+| `200` | OK | Standard success response used by current routes. |
 
-### 4xx Client Errors
+### Client Errors
 
-| Code | Name | Description |
+| Code | Meaning | When Used |
 | :--- | :--- | :--- |
-| `400` | Bad Request | Invalid request format or missing required fields. |
-| `401` | Unauthorized | Invalid or missing API key. |
-| `404` | Not Found | Resource does not exist or is inactive. |
-| `422` | Unprocessable Entity | Validation error in request data (handled as `400`). |
+| `400` | Bad Request | Invalid request body, unsupported values, or failed validation in route logic. |
+| `401` | Unauthorized | Missing or invalid Bearer API key. |
+| `404` | Not Found | Requested resource does not exist or is not visible in user scope. |
+| `422` | Unprocessable Entity | FastAPI validation error for malformed input payloads. |
 
-### 5xx Server Errors
+### Server and Upstream Errors
 
-| Code | Name | Description |
+| Code | Meaning | When Used |
 | :--- | :--- | :--- |
-| `500` | Internal Server Error | Unexpected server error occurred. |
-| `502` | Bad Gateway | Upstream service (LiveKit, MongoDB) unavailable. |
-| `503` | Service Unavailable | Temporary overload or maintenance. |
+| `500` | Internal Server Error | Unhandled exception in API service logic. |
+| `502` | Bad Gateway | Upstream/provider integration error (for example SIP setup failure). |
+| `504` | Gateway Timeout | Upstream call setup timed out. |
 
----
+## Notes
+
+- Current routes generally return `200` on successful create/update/delete operations.
+- Route-specific pages should be treated as the source of truth for endpoint-specific statuses.

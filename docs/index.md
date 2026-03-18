@@ -1,34 +1,25 @@
 # LiveKit Agents API Documentation
 
----
+## Overview
 
-## Build Real-Time Voice AI Agents in Minutes
-
-A production-ready backend for deploying AI-powered voice agents with LiveKit, OpenAI, and enterprise-grade telephony integration.
+A production-ready backend for building and operating real-time voice AI agents with LiveKit, OpenAI, and SIP telephony integration.
 
 [Get Started](getting-started.md){ .md-button .md-button--primary }
-[View API Reference](api/authentication.md){ .md-button }
+[API Reference](api/authentication.md){ .md-button }
 
----
-
-## :material-chart-timeline: Architecture Overview
+## Platform Summary
 
 ```mermaid
 graph TD
-    Client[Client Application] -->|REST API| API[API Server<br/>FastAPI]
-    Client -->|WebSocket| LiveKit[LiveKit Server]
-    
+    Client[Client Application] -->|REST API| API[API Server\nFastAPI]
+    Client -->|WebRTC| LiveKit[LiveKit Server]
+
     API -->|CRUD| DB[(MongoDB)]
-    
+
     Worker[Agent Worker] -->|Connect| LiveKit
     Worker -->|Fetch Config| DB
-    Worker -->|STT/TTS| AI[OpenAI + TTS]
-    
+    Worker -->|LLM + TTS| AI[OpenAI + TTS Providers]
     Worker -->|Webhook| External[External Services]
 ```
 
-For detailed architecture information, see the [Architecture](architecture.md) page.
-
----
-
-**Ready to build?** [Start with the Getting Started guide :octicons-arrow-right-24:](getting-started.md)
+See [Architecture](architecture.md) for full call-flow diagrams and integration modes.

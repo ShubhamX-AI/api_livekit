@@ -42,7 +42,6 @@ setup_logging()
 
 async def run_bridge(
     phone_number: str,
-    # agent_type: str = "invoice",
     room_name: str | None = None,
     sip_config: dict | None = None,
     result_signal: asyncio.Queue | None = None,
@@ -226,7 +225,6 @@ async def run_bridge(
             rtp_bridge.stop()
 
         await room.disconnect()
-        # ← This is the critical step that was missing before
         await pool.release(port)
         logger.info(f"[BRIDGE] Port {port} released")
         if sip_client:

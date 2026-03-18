@@ -1,19 +1,17 @@
-# Tool Management
-
-This section covers creating, updating, and managing tools for your assistants.
+# Tools
 
 ## Overview
 
-Tools are custom functions that extend your assistant's capabilities. When the LLM determines a tool should be called, the system executes it and returns the result to continue the conversation.
+Tools extend assistant capabilities by executing either webhook calls or static-return actions during a conversation.
 
-### Execution Types
+## Execution Types
 
-| Type              | Description                       | Use Case                                                     |
-| :---------------- | :-------------------------------- | :----------------------------------------------------------- |
-| **Webhook**       | HTTP POST request to external URL | Fetch live data (weather, stock prices, user info)           |
-| **Static Return** | Return a fixed value              | Provide constant information (support email, business hours) |
+| Type | Description | Typical Use |
+| :--- | :--- | :--- |
+| `webhook` | Executes an HTTP POST to an external endpoint. | Fetch live data or trigger external systems. |
+| `static` | Returns a fixed payload without external HTTP. | Constant answers such as support hours or policy text. |
 
-Explore the sub-sections to interact with the Tools API:
+## Endpoints
 
 - [Create Tool](create.md)
 - [List Tools](list.md)
@@ -22,5 +20,5 @@ Explore the sub-sections to interact with the Tools API:
 - [Delete Tool](delete.md)
 - [Attach Tools](attach.md)
 - [Detach Tools](detach.md)
-- [Webhook Payload format](webhook.md)
+- [Webhook Payload Format](webhook.md)
 - [Design Guidelines](design.md)

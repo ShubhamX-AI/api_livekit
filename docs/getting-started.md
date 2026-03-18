@@ -1,15 +1,18 @@
 # Getting Started
 
-## Next Steps
+## Overview
 
-- Explore the [Architecture](architecture.md) to understand the system.
-- Check out [Tool Usage](api/tools/index.md) to add functionality.
+This quick start walks through creating an API key, creating an assistant, creating a SIP trunk, and placing a first outbound call.
 
----
+## Prerequisites
+
+- A deployed API base URL.
+- LiveKit configured for your environment.
+- Valid credentials for the SIP provider you will use.
 
 ## Quick Start
 
-### 1. Create Your First API Key
+### 1. Create an API Key
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key" \
@@ -44,8 +47,6 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
 
 ### 3. Create a SIP Trunk
 
-Before you can make calls, you need to configure a SIP trunk (e.g., Twilio).
-
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -60,7 +61,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbo
   }'
 ```
 
-_Note: Store the returned `trunk_id` for the next step._
+Store the returned `trunk_id` for call initiation.
 
 ### 4. Trigger an Outbound Call
 
@@ -75,3 +76,9 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
     "call_service": "twilio"
   }'
 ```
+
+## Next Steps
+
+- Review [Architecture](architecture.md) for integration patterns.
+- Use [Assistant APIs](api/assistant/index.md) to tune behavior.
+- Use [Tools APIs](api/tools/index.md) to add external actions.

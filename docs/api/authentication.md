@@ -1,60 +1,57 @@
-# Authentication
-
-This section covers the authentication endpoints for the LiveKit Agents API.
+# Authentication and API Keys
 
 ## Overview
 
-All API endpoints (except creating an API key) require authentication via the `Authorization` header with a `Bearer` token. API keys are scoped to individual users and provide access to all resources created by that user.
+All protected endpoints require `Authorization: Bearer <api_key>`. API keys are user-scoped.
 
 ## Create API Key
 
-Generate a new API key for a user. This endpoint does **not** require authentication and is typically used for initial setup.
+### Endpoint
 
 - **URL**: `/auth/create-key`
 - **Method**: `POST`
-- **Content-Type**: `application/json`
+- **Authentication**: Not required
 
-### Request Body
+### Request
 
-| Field        | Type   | Required | Description                                        |
-| :----------- | :----- | :------- | :------------------------------------------------- |
-| `user_name`  | string | Yes      | The name of the user (1-100 characters).           |
-| `user_email` | string | Yes      | The email address of the user.                     |
-| `org_name`   | string | No       | The name of the organization (max 100 characters). |
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `user_name` | string | Yes | Name of the user. |
+| `user_email` | string | Yes | Email of the user. |
+| `org_name` | string | No | Organization name. |
 
 ### Response Schema
 
-| Field             | Type    | Description                                                                    |
-| :---------------- | :------ | :----------------------------------------------------------------------------- |
-| `success`         | boolean | Indicates if the operation was successful.                                     |
-| `message`         | string  | Human-readable success message.                                                |
-| `data`            | object  | Contains the API key details.                                                  |
-| `data.api_key`    | string  | The generated API key. **Store this securely - it cannot be retrieved later.** |
-| `data.user_name`  | string  | The user's name.                                                               |
-| `data.org_name`   | string  | The organization name (if provided).                                           |
-| `data.user_email` | string  | The user's email address.                                                      |
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `success` | boolean | Operation status. |
+| `message` | string | Result message. |
+| `data.api_key` | string | Generated API key (store securely). |
+| `data.user_name` | string | User name. |
+| `data.org_name` | string | Organization name, if provided. |
+| `data.user_email` | string | User email. |
 
 ### HTTP Status Codes
 
-| Code | Description                                                                |
-| :--- | :------------------------------------------------------------------------- |
-| 200  | Success - API key created successfully.                                    |
-| 400  | Bad Request - Invalid input data (missing required fields, invalid email). |
-| 500  | Server Error - Internal server error during key creation.                  |
+| Code | Description |
+| :--- | :--- |
+| 200 | API key created. |
+| 400 | User already exists or request invalid. |
+| 500 | Internal error during key creation. |
 
 ### Example Request
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "user_name": "John Doe",
-           "org_name": "Acme Corp",
-           "user_email": "john@example.com"
-         }'
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_name": "John Doe",
+    "org_name": "Acme Corp",
+    "user_email": "john@example.com"
+  }'
 ```
 
-### Example Response (200 OK)
+### Example Response
 
 ```json
 {
@@ -69,60 +66,47 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key"
 }
 ```
 
-### Example Error Response (400 Bad Request)
-
-```json
-{
-  "success": false,
-  "message": "Invalid email address",
-  "data": null
-}
-```
-
----
-
 ## Check API Key
 
-Verify if an API key is valid and retrieve the associated user details.
+### Endpoint
 
 - **URL**: `/auth/check-key`
 - **Method**: `GET`
-- **Headers**: `Authorization: Bearer <your_api_key>`
+- **Authentication**: Required
 
-### Request Headers
+### Request
 
-| Header          | Required | Description                                                            |
-| :-------------- | :------- | :--------------------------------------------------------------------- |
-| `Authorization` | Yes      | The Bearer token (API key) to verify. Format: `Bearer <your_api_key>`. |
+| Header | Required | Description |
+| :--- | :--- | :--- |
+| `Authorization` | Yes | `Bearer <your_api_key>` |
 
 ### Response Schema
 
-| Field             | Type    | Description                                     |
-| :---------------- | :------ | :---------------------------------------------- |
-| `success`         | boolean | Indicates if the operation was successful.      |
-| `message`         | string  | Human-readable status message.                  |
-| `data`            | object  | Contains user details if key is valid.          |
-| `data.user_name`  | string  | The user's name.                                |
-| `data.org_name`   | string  | The organization name (if set).                 |
-| `data.user_email` | string  | The user's email address.                       |
-| `data.created_at` | string  | ISO 8601 timestamp of when the key was created. |
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `success` | boolean | Operation status. |
+| `message` | string | Result message. |
+| `data.user_name` | string | User name. |
+| `data.org_name` | string | Organization name, if present. |
+| `data.user_email` | string | User email. |
+| `data.created_at` | string | API key creation timestamp. |
 
 ### HTTP Status Codes
 
-| Code | Description                                             |
-| :--- | :------------------------------------------------------ |
-| 200  | Success - API key is valid.                             |
-| 401  | Unauthorized - Invalid or missing Bearer token.         |
-| 500  | Server Error - Internal server error during validation. |
+| Code | Description |
+| :--- | :--- |
+| 200 | API key is valid. |
+| 401 | Invalid or missing Bearer token. |
+| 500 | Internal validation error. |
 
 ### Example Request
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/auth/check-key" \
-     -H "Authorization: Bearer your_api_key_here"
+  -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-### Example Response (200 OK)
+### Example Response
 
 ```json
 {
@@ -137,50 +121,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/auth/check-key" \
 }
 ```
 
-### Example Error Response (401 Unauthorized)
+## Notes
 
-```json
-{
-  "success": false,
-  "message": "Invalid Bearer token",
-  "data": null
-}
-```
-
----
-
-## Security Best Practices
-
-!!! warning "Important"
-
-    - **Store API keys securely** - never commit them to version control
-    - **Rotate keys regularly** - create new keys and deprecate old ones
-    - **Use environment variables** - never hardcode keys in your application
-    - **Monitor usage** - check the `created_at` timestamp to track key age
-
-### Example: Using Environment Variables
-
-```python
-import os
-import requests
-
-# Load API key from environment
-API_KEY = os.getenv("LIVEKIT_API_KEY")
-if not API_KEY:
-    raise ValueError("LIVEKIT_API_KEY environment variable not set")
-
-# Use in requests
-headers = {"Authorization": f"Bearer {API_KEY}"}
-response = requests.get("https://api-livekit-vyom.indusnettechnologies.com/assistant/list", headers=headers)
-```
-
----
-
-## Next Steps
-
-Once you have your API key, you can:
-
-1. [Create an Assistant](assistant/index.md) - Configure your AI agent
-2. [Set up Tools](tools/index.md) - Add custom capabilities
-3. [Configure SIP Trunks](sip/index.md) - Enable telephony
-4. [Make Outbound Calls](calls/index.md) - Start voice conversations
+- Keep API keys in environment variables or a secure secret manager.
+- Treat API keys as credentials with full access to that user scope.
