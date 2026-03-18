@@ -19,6 +19,7 @@ from .config import (
     LK_API_SECRET,
     LK_URL,
     PCMA_PAYLOAD_TYPE,
+    PCMU_PAYLOAD_TYPE,
     RTP_SILENCE_TIMEOUT_SECONDS,
     validate_config,
 )
@@ -77,15 +78,21 @@ async def handle_inbound_call(
     livekit_service = LiveKitService()
 
     # Extract remote RTP endpoint from Exotel's SDP
-    remote_ip, remote_port, pt = None, 0, 8
+    remote_ip, remote_port, pt = None, 0, PCMA_PAYLOAD_TYPE
     for line in sdp_body.splitlines():
         if line.startswith("c=IN IP4 "):
             remote_ip = line.split("c=IN IP4 ")[1].strip()
         elif line.startswith("m=audio "):
             parts = line.split()
             remote_port = int(parts[1])
-            if len(parts) > 3:
-                pt = int(parts[3])
+            # Pick a real audio codec (8=PCMA, 0=PCMU), never 101 (DTMF)
+            offered_pts = [int(p) for p in parts[3:] if p.isdigit()]
+            for preferred in (PCMA_PAYLOAD_TYPE, PCMU_PAYLOAD_TYPE):
+                if preferred in offered_pts:
+                    pt = preferred
+                    break
+            else:
+                logger.warning(f"[INBOUND] No supported audio PT in SDP: {offered_pts}")
 
     if not remote_ip or not remote_port:
         logger.error(

@@ -19,8 +19,6 @@ from openai.types.realtime import AudioTranscription
 import os
 import asyncio
 import json
-import random
-from typing import Optional
 
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
@@ -94,22 +92,25 @@ async def entrypoint(ctx: JobContext):
     livekit_services = LiveKitService()
     s3_url = None
 
-    # Start Recording
-    try:
-        recording_info = await livekit_services.start_room_recording(
-            room_name=ctx.room.name, 
-            assistant_id=assistant_id
-        )
-        if recording_info and recording_info.get("success"):
-            logger.info(f"Recording started: {recording_info}")
-            recording_data = recording_info.get("data")
-            if isinstance(recording_data, dict):
-                s3_url = recording_data.get("s3_url")
-                logger.info(f"S3 URL: {s3_url}")
-        else:
-            logger.warning(f"Recording start returned failure or empty: {recording_info}")
-    except Exception as e:
-        logger.error(f"Failed to start recording: {e}", exc_info=True)
+    # Start recording in background — no need to block agent boot
+    async def _start_recording():
+        nonlocal s3_url
+        try:
+            recording_info = await livekit_services.start_room_recording(
+                room_name=ctx.room.name, 
+                assistant_id=assistant_id
+            )
+            if recording_info and recording_info.get("success"):
+                recording_data = recording_info.get("data")
+                if isinstance(recording_data, dict):
+                    s3_url = recording_data.get("s3_url")
+                    logger.info(f"Recording started | S3: {s3_url}")
+            else:
+                logger.warning(f"Recording start returned failure or empty: {recording_info}")
+        except Exception as e:
+            logger.error(f"Failed to start recording: {e}", exc_info=True)
+
+    asyncio.create_task(_start_recording())
 
     # Load tools attached to this assistant
     tools = []

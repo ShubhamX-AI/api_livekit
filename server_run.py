@@ -10,10 +10,10 @@ def main():
         "src.api.server:app",                     # your ASGI/FastAPI app
         "-k",
         "uvicorn.workers.UvicornWorker",    
-        "--workers", "2",
+        "--workers", "1",
         "--bind", f"0.0.0.0:{port}",
         "--keep-alive", "20",
-        "--timeout", "120",  # TTS can be slow
+        "--timeout", "60",  # TTS can be slow
         "--max-requests", "1000",  # Restart workers to prevent memory leaks
         "--max-requests-jitter", "100",
     ]

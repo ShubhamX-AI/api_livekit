@@ -20,26 +20,29 @@ setup_logging()
 
 
 class LiveKitService:
+    # Shared client reused across all operations to avoid per-call connection overhead
+    _shared_client: LiveKitAPI | None = None
+
     def __init__(self):
         self.api_key = settings.LIVEKIT_API_KEY
         self.api_secret = settings.LIVEKIT_API_SECRET
         self.url = settings.LIVEKIT_URL
         self.transcripts: List[Dict] = []
 
+    def _get_client(self) -> LiveKitAPI:
+        """Return shared LiveKitAPI client, creating it on first use."""
+        if LiveKitService._shared_client is None:
+            LiveKitService._shared_client = LiveKitAPI(
+                self.url,
+                self.api_key,
+                self.api_secret,
+            )
+        return LiveKitService._shared_client
+
     @asynccontextmanager
     async def get_livekit_api(self):
-        """
-        Context manager for LiveKitAPI that handles initialization and cleanup.
-        """
-        lkapi = LiveKitAPI(
-            self.url,
-            self.api_key,
-            self.api_secret,
-        )
-        try:
-            yield lkapi
-        finally:
-            await lkapi.aclose()
+        """Context manager kept for backward compatibility — returns shared client."""
+        yield self._get_client()
 
     # Create livekit room
     async def create_room(self, assistant_id: str) -> str:

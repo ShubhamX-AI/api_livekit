@@ -25,6 +25,7 @@ from .config import (
     EXOTEL_SIP_HOST,
     EXOTEL_SIP_PORT,
     PCMA_PAYLOAD_TYPE,
+    PCMU_PAYLOAD_TYPE,
 )
 from .digest_auth import calculate_digest_auth
 from src.core.logger import logger, setup_logging
@@ -273,8 +274,14 @@ class ExotelSipClient:
                             if line.startswith("m=audio"):
                                 parts = line.split()
                                 rport = int(parts[1])
-                                if len(parts) > 3:
-                                    rpt = int(parts[3])
+                                # Pick a real audio codec (8=PCMA, 0=PCMU), never 101 (DTMF)
+                                offered_pts = [int(p) for p in parts[3:] if p.isdigit()]
+                                for preferred in (PCMA_PAYLOAD_TYPE, PCMU_PAYLOAD_TYPE):
+                                    if preferred in offered_pts:
+                                        rpt = preferred
+                                        break
+                                else:
+                                    logger.warning(f"[SIP] No supported audio PT in SDP: {offered_pts}")
                         logger.info(f"[SIP] Remote RTP: {rip}:{rport} PT={rpt}")
                         return {"remote_ip": rip, "remote_port": rport, "pt": rpt}
 
