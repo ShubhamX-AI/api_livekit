@@ -28,6 +28,7 @@ from .config import (
 )
 from .digest_auth import calculate_digest_auth
 from src.core.logger import logger, setup_logging
+
 setup_logging()
 
 
@@ -156,14 +157,18 @@ class ExotelSipClient:
         ).encode()
 
     @staticmethod
-    def _response_200_ok(hdrs: dict) -> bytes:
+    def _response_200_ok(hdrs: dict, via_headers: list[str] | None = None) -> bytes:
         def _get(name: str) -> str | None:
             return hdrs.get(name)
 
         h = ["SIP/2.0 200 OK"]
-        via = _get("via")
-        if via:
-            h.append(f"Via: {via}")
+        if via_headers:
+            for via in via_headers:
+                h.append(f"Via: {via}")
+        else:
+            via = _get("via")
+            if via:
+                h.append(f"Via: {via}")
         frm = _get("from")
         if frm:
             h.append(f"From: {frm}")

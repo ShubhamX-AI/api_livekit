@@ -1,7 +1,15 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from src.core.config import settings
-from src.core.db.db_schemas import APIKey, Assistant, OutboundSIP, CallRecord, Tool, ActivityLog
+from src.core.db.db_schemas import (
+    APIKey,
+    Assistant,
+    OutboundSIP,
+    InboundSIP,
+    CallRecord,
+    Tool,
+    ActivityLog,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,20 +17,20 @@ logger = logging.getLogger(__name__)
 
 class Database:
     """Database connection manager for MongoDB with Beanie"""
-    
+
     client: AsyncIOMotorClient = None
-    
+
     @classmethod
     async def connect_db(cls):
         """Initialize database connection and Beanie ODM"""
         try:
             # Create Motor client
             cls.client = AsyncIOMotorClient(settings.MONGODB_URL, tz_aware=True)
-            
+
             # Test connection
-            await cls.client.admin.command('ping')
+            await cls.client.admin.command("ping")
             logger.info(f"Successfully connected to MongoDB at {settings.MONGODB_URL}")
-            
+
             # Initialize Beanie with document models
             await init_beanie(
                 database=cls.client[settings.DATABASE_NAME],
@@ -30,17 +38,18 @@ class Database:
                     APIKey,
                     Assistant,
                     OutboundSIP,
+                    InboundSIP,
                     CallRecord,
                     Tool,
-                    ActivityLog
-                ]
+                    ActivityLog,
+                ],
             )
             logger.info(f"Beanie initialized with database: {settings.DATABASE_NAME}")
-            
+
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
             raise
-    
+
     @classmethod
     async def close_db(cls):
         """Close database connection"""

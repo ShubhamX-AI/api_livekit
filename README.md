@@ -7,6 +7,7 @@ FastAPI backend and LiveKit worker for running real-time voice assistants with O
 - **Real-time AI Agents**: Powered by OpenAI Realtime API (GPT-4o) and Cartesia/Sarvam/ElevenLabs TTS.
 - **SIP Support**: Create and manage SIP outbound trunks (Twilio/Exotel) for telephony integration.
 - **Outbound Calls**: Trigger programmatic outbound calls to phone numbers (currently supporting Twilio).
+- **Inbound Number Routing**: Assign Exotel inbound numbers to assistants and route inbound calls from database mappings.
 - **Dynamic Assistants**: Create and configure assistants with custom prompts, typed TTS configuration (Cartesia/Sarvam/ElevenLabs), and start instructions.
 - **Custom Tools**: Extend assistant capabilities with custom tools (Webhooks, Static Responses) that can be attached/detached dynamically.
 - **Call Recording**: Automatic call recording with LiveKit Egress to AWS S3.
@@ -123,7 +124,7 @@ api_livekit/
 │   │   ├── server.py
 │   │   ├── dependencies/  # Auth middleware
 │   │   ├── models/        # Request/response schemas
-│   │   └── routes/        # Endpoints: assistant, auth, call, logs, sip, tool, web_call
+│   │   └── routes/        # Endpoints: assistant, auth, call, inbound, logs, sip, tool, web_call
 │   ├── core/
 │   │   ├── config.py      # Settings loaded from .env
 │   │   ├── logger.py
@@ -197,6 +198,13 @@ Assistant create and update requests support these flags:
 
 These settings are stored on the assistant and applied in the worker at session startup.
 
+## Inbound Number Routing
+
+- Users can assign one active Exotel inbound number to one assistant at a time.
+- Number matching is global, so the same active inbound number cannot be claimed by another user.
+- Twilio is reserved in the API schema for future inbound support, but inbound routing currently supports only Exotel.
+- Detached numbers stay in the user's list without an attached assistant, and deleted numbers become reusable.
+
 ## Key Runtime Flow
 
 1. API receives assistant or call requests.
@@ -209,10 +217,12 @@ These settings are stored on the assistant and applied in the worker at session 
 
 - `/auth`
 - `/assistant`
-- `/sip`
-- `/call`
+- `/sip` (Outbound SIP trunks)
+- `/call` (Trigger outbound calls)
+- `/inbound` (Manage inbound number mappings)
 - `/tool`
 - `/web_call/get_token`
+- `/logs`
 - `/documentation`
 
 ## Project Structure

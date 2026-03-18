@@ -58,15 +58,9 @@ class Assistant(Document):
         name = "assistants"  # Collection name in MongoDB
         indexes = [
             IndexModel(
-                [("assistant_name", 1)],
-                collation=Collation(
-                    locale="en",
-                    strength=2
-                )
+                [("assistant_name", 1)], collation=Collation(locale="en", strength=2)
             )
         ]
-
-
 
 
 class OutboundSIP(Document):
@@ -75,7 +69,7 @@ class OutboundSIP(Document):
     trunk_id: Indexed(str, unique=True)
     trunk_name: str
     trunk_type: str = "twilio"  # "twilio" or "exotel"
-    trunk_config: Dict = {}   # Stores Twilio or Exotel specific config
+    trunk_config: Dict = {}  # Stores Twilio or Exotel specific config
     trunk_created_by_email: EmailStr
     trunk_updated_by_email: EmailStr
     trunk_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -84,6 +78,32 @@ class OutboundSIP(Document):
 
     class Settings:
         name = "outbound_sip"  # Collection name in MongoDB
+
+
+class InboundSIP(Document):
+    """Inbound number to assistant mapping."""
+
+    inbound_id: Indexed(str, unique=True)
+    phone_number: str
+    phone_number_normalized: str
+    inbound_config: Dict = Field(default_factory=dict)
+    assistant_id: Optional[str] = None
+    service: Literal["exotel", "twilio"] = "exotel"
+    created_by_email: EmailStr
+    updated_by_email: EmailStr
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_active: bool = True
+
+    class Settings:
+        name = "inbound_sip"
+        indexes = [
+            IndexModel(
+                [("phone_number_normalized", 1)],
+                unique=True,
+                partialFilterExpression={"is_active": True},
+            )
+        ]
 
 
 class CallRecord(Document):
@@ -139,7 +159,7 @@ class ActivityLog(Document):
     room_name: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: Literal["success", "error"]
-    request_data: Optional[Dict] = None   # what was sent outbound
+    request_data: Optional[Dict] = None  # what was sent outbound
     response_data: Optional[Dict] = None  # what came back
     latency_ms: Optional[int] = None
     message: str  # human-readable one-liner

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, model_validator
-from typing import Optional, Literal, Union, Annotated, List
+from typing import Optional, Literal, Union, Annotated, List, Any
 
 
 # Model for creating API key
@@ -44,7 +44,7 @@ class ElevenLabsTTSConfig(BaseModel):
 # Discriminated union type
 TTSConfig = Annotated[
     Union[CartesiaTTSConfig, SarvamTTSConfig, ElevenLabsTTSConfig],
-    Field(discriminator="type")  # discriminated by type field in parent
+    Field(discriminator="type"),  # discriminated by type field in parent
 ]
 
 
@@ -98,7 +98,7 @@ class CreateAssistant(BaseModel):
                     "filler_words": True,
                     "silence_reprompts": True,
                     "silence_reprompt_interval": 10.0,
-                    "silence_max_reprompts": 2
+                    "silence_max_reprompts": 2,
                 },
                 "assistant_end_call_enabled": True,
                 "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
@@ -143,17 +143,17 @@ class UpdateAssistant(BaseModel):
                 "assistant_interaction_config": {
                     "speaks_first": False,
                     "filler_words": True,
-                    "silence_reprompts": False
+                    "silence_reprompts": False,
                 },
                 "assistant_end_call_enabled": True,
                 "assistant_end_call_trigger_phrase": "Okay bye, please end the call.",
-                "assistant_end_call_agent_message": "Goodbye, and thank you for speaking with us."
+                "assistant_end_call_agent_message": "Goodbye, and thank you for speaking with us.",
             }
         }
 
     @model_validator(mode="before")
     @classmethod
-    def inject_tts_type(cls, data: dict):   
+    def inject_tts_type(cls, data: dict):
         """Same injection for updates."""
         if isinstance(data, dict):
             model = data.get("assistant_tts_model")
@@ -174,10 +174,16 @@ class UpdateAssistant(BaseModel):
 
 # ── SIP Trunk Config sub-models ────────────────────────
 class TwilioTrunkConfig(BaseModel):
-    address: str = Field(..., min_length=1, max_length=100, description="SIP trunk address")
+    address: str = Field(
+        ..., min_length=1, max_length=100, description="SIP trunk address"
+    )
     numbers: List[str] = Field(..., description="SIP trunk numbers")
-    username: str = Field(..., min_length=1, max_length=100, description="SIP auth username")
-    password: str = Field(..., min_length=1, max_length=100, description="SIP auth password")
+    username: str = Field(
+        ..., min_length=1, max_length=100, description="SIP auth username"
+    )
+    password: str = Field(
+        ..., min_length=1, max_length=100, description="SIP auth password"
+    )
 
 
 class ExotelTrunkConfig(BaseModel):
@@ -191,7 +197,7 @@ class ExotelTrunkConfig(BaseModel):
 # Discriminated union type for Trunks
 TrunkConfig = Annotated[
     Union[TwilioTrunkConfig, ExotelTrunkConfig],
-    Field(discriminator=None)  # discriminated by trunk_type in parent
+    Field(discriminator=None),  # discriminated by trunk_type in parent
 ]
 
 
@@ -209,9 +215,7 @@ class CreateOutboundTrunk(BaseModel):
             "example": {
                 "trunk_name": "My Exotel Trunk",
                 "trunk_type": "exotel",
-                "trunk_config": {
-                    "exotel_number": "08044319240"
-                }
+                "trunk_config": {"exotel_number": "08044319240"},
             }
         }
 
@@ -222,9 +226,7 @@ class CreateOutboundTrunk(BaseModel):
             "exotel": ExotelTrunkConfig,
         }
         if not isinstance(self.trunk_config, expected[self.trunk_type]):
-            raise ValueError(
-                f"trunk_config must match trunk_type '{self.trunk_type}'"
-            )
+            raise ValueError(f"trunk_config must match trunk_type '{self.trunk_type}'")
         return self
 
 
@@ -264,6 +266,76 @@ class TriggerWebCall(BaseModel):
             "example": {
                 "assistant_id": "Test Assistant ID",
                 "metadata": {"extra": "value about the call"},
+            }
+        }
+
+
+# Incoming Call Config
+
+class InboundTwilioConfig(BaseModel):
+    type: Literal["twilio"]
+    phone_number: str = Field(..., min_length=1, max_length=30, description="Twilio inbound phone number")
+
+class InboundExotelConfig(BaseModel):
+    type: Literal["exotel"]
+    phone_number: str = Field(..., min_length=1, max_length=30, description="Exotel inbound phone number")
+
+InboundConfig = Annotated[
+    Union[InboundTwilioConfig, InboundExotelConfig],
+    Field(discriminator="type"),
+]
+
+class AssignInboundNumber(BaseModel):
+    assistant_id: str = Field(
+        ..., min_length=1, max_length=100, description="Assistant ID"
+    )
+    service: Literal["exotel", "twilio"] = Field(..., description="Inbound service")
+    inbound_config: InboundConfig = Field(..., description="Configuration object based on service type")
+
+    class Config:
+        str_strip_whitespace = True
+        json_schema_extra = {
+            "example": {
+                "assistant_id": "Test Assistant ID",
+                "service": "exotel",
+                "inbound_config": {
+                    "type": "exotel",
+                    "phone_number": "+918044319240"
+                }
+            }
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def inject_type_into_config(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            service = data.get("service")
+            config = data.get("inbound_config")
+            
+            if service and isinstance(config, dict) and "type" not in config:
+                # Mirror the top-level service to the config object's type
+                config["type"] = service
+                
+        return data
+
+    @model_validator(mode="after")
+    def validate_service_matches_config(self):
+        # We check again after parsing to ensure everything is consistent
+        if self.service != self.inbound_config.type:
+            raise ValueError(f"service '{self.service}' must match inbound_config.type '{self.inbound_config.type}'")
+        return self
+
+
+class UpdateInboundMapping(BaseModel):
+    assistant_id: str = Field(
+        ..., min_length=1, max_length=100, description="Assistant ID"
+    )
+
+    class Config:
+        str_strip_whitespace = True
+        json_schema_extra = {
+            "example": {
+                "assistant_id": "Updated Assistant ID",
             }
         }
 
