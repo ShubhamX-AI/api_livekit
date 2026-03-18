@@ -14,3 +14,5 @@ Explore the sub-sections to interact with the Outbound Calls API:
 - [End Call Webhook](webhook.md)
 - [Call Status Tracking](tracking.md)
 - [Best Practices](best-practices.md)
+
+For Exotel inbound number routing and inbound SIP call handling, see the [Inbound Calls](../inbound/index.md) section.

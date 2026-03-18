@@ -110,6 +110,11 @@ nav:
       - Status Tracking: api/calls/tracking.md
       - Best Practices: api/calls/best-practices.md
 
+    - Inbound Calls:
+      - Overview: api/inbound/index.md
+      - Manage Numbers: api/inbound/manage.md
+      - Call Flow: api/inbound/flow.md
+
     - SIP Trunks:
       - Overview: api/sip/index.md
       - Create Trunk: api/sip/create.md

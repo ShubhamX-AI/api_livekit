@@ -200,10 +200,14 @@ These settings are stored on the assistant and applied in the worker at session 
 
 ## Inbound Number Routing
 
-- Users can assign one active Exotel inbound number to one assistant at a time.
-- Number matching is global, so the same active inbound number cannot be claimed by another user.
-- Twilio is reserved in the API schema for future inbound support, but inbound routing currently supports only Exotel.
-- Detached numbers stay in the user's list without an attached assistant, and deleted numbers become reusable.
+- Each active inbound number maps to zero or one assistant, and routing looks up the normalized number globally.
+- Active number reuse is blocked across all users until the existing mapping is deleted.
+- `POST /inbound/assign` currently accepts only `service="exotel"`; Twilio remains in the schema for future support.
+- `POST /inbound/detach/{inbound_id}` keeps the number in the user's list without an attached assistant.
+- `DELETE /inbound/delete/{inbound_id}` marks the mapping inactive and makes the number reusable again.
+- The Exotel inbound bridge sends `call_type`, `service`, `assistant_id`, `assistant_name`, `inbound_number`, and `caller_number` into the LiveKit dispatch metadata.
+
+Detailed API docs are available in MkDocs under the `Inbound Calls` section.
 
 ## Key Runtime Flow
 
