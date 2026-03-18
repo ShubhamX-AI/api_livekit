@@ -1,12 +1,10 @@
 # Outbound Calls
 
-This section covers how to trigger outbound calls using your configured assistants and SIP trunks.
-
 ## Overview
 
-Outbound calls allow your AI assistants to call phone numbers. When triggered, the system initiates a call via your configured SIP trunk and connects the AI assistant to the recipient.
+Outbound calls initiate a LiveKit room, dispatch an assistant, and place a call through the selected SIP service.
 
-Explore the sub-sections to interact with the Outbound Calls API:
+## Endpoints and Guides
 
 - [Trigger Outbound Call](trigger.md)
 - [Generate Web Call Token](web-call.md)
@@ -15,4 +13,4 @@ Explore the sub-sections to interact with the Outbound Calls API:
 - [Call Status Tracking](tracking.md)
 - [Best Practices](best-practices.md)
 
-For Exotel inbound number routing and inbound SIP call handling, see the [Inbound Calls](../inbound/index.md) section.
+For inbound number routing, see [Inbound Calls](../inbound/index.md).

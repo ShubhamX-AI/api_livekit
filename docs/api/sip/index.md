@@ -1,12 +1,10 @@
-# SIP Trunk Management
-
-This section covers the management of SIP trunks for outbound calling.
+# SIP Trunks
 
 ## Overview
 
-SIP trunks connect your LiveKit agents to telephony providers (Twilio, Exotel), enabling outbound calls to phone numbers. Each trunk contains authentication credentials and configuration for a specific provider.
+SIP trunks connect assistants to telephony providers for outbound calling.
 
-Explore the sub-sections to interact with the SIP Trunks API and configure providers:
+## Endpoints and Guides
 
 - [Create Outbound Trunk](create.md)
 - [List SIP Trunks](list.md)

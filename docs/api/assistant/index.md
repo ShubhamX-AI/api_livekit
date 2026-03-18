@@ -1,12 +1,10 @@
-# Assistant Management
-
-This section covers the management of AI assistants, including creation, updates, and deletion.
+# Assistants
 
 ## Overview
 
-Assistants are AI agents configured with specific prompts, TTS (Text-to-Speech) settings, and capabilities. Each assistant can have tools attached to extend its functionality.
+Assistants define the voice agent behavior, prompt, TTS model/config, interaction settings, and optional end-call behavior.
 
-Explore the sub-sections to interact with the Assistants API:
+## Endpoints
 
 - [Create Assistant](create.md)
 - [List Assistants](list.md)

@@ -25,23 +25,9 @@ You think like a senior engineer. That means one thing above all else:
 - One function = one job. If you need "and" to describe it, split it.
 - Handle errors explicitly. Never silently ignore them.
 - Delete anything that isn't used.
-- Add short comments only when they clarify non-obvious logic.
+- Provide simple short one line comments to explain the code.
 - **Do not output unnecessary code.** Only provide the code that is strictly required for the task.
 - **Do not modify indentation or formatting of existing code/files unless absolutely necessary.**
-
----
-
-## Process Guardrails (Strict)
-
-These actions are **not part of the process** unless the user explicitly asks for them:
-
-- Do not touch unrelated files, modules, routes, configs, or tests.
-- Do not rewrite project structure, folder layout, or naming conventions.
-- Do not re-indent entire files or run formatting-only edits that create noise.
-- Do not stop early, exit midway, or hand back partial work when the task can be completed.
-- Do not "clean up" code outside the requested scope.
-
-If any of the above seems necessary, pause and ask the user first.
 
 ---
 
