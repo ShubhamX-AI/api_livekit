@@ -200,6 +200,7 @@ These settings are stored on the assistant and applied in the worker at session 
 
 ## Inbound Number Routing
 
+- **Note**: The inbound SIP listener is started automatically when the API boots (if `INBOUND_SIP_LISTEN=true`), ensuring the application actively listens for incoming SIP calls on the local `EXOTEL_CUSTOMER_SIP_PORT`.
 - Each active inbound number maps to zero or one assistant, and routing looks up the normalized number globally.
 - Active number reuse is blocked across all users until the existing mapping is deleted.
 - `POST /inbound/assign` currently accepts only `service="exotel"`; Twilio remains in the schema for future support.

@@ -29,6 +29,11 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan events"""
     # Startup
     await init_db()
+    
+    # Start the inbound SIP listener at boot so it's always actively listening for incoming calls
+    from src.services.exotel.custom_sip_reach.inbound_listener import ensure_inbound_server
+    await ensure_inbound_server()
+    
     yield
     # Shutdown
     await close_db()
