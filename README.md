@@ -265,3 +265,4 @@ api_livekit/
 - `/documentation` is served from the built MkDocs site when the `site/` directory exists.
 - Assistant details endpoints expose the stored voice behavior settings.
 - Outbound call metadata is still supported for prompt placeholder rendering.
+- Exotel call teardown order is: SIP BYE on outbound TCP, then SIP BYE on inbound listener, then RTP silence timeout fallback.

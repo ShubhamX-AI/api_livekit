@@ -36,16 +36,22 @@ from .port_pool import get_port_pool
 from .rtp_bridge import RTPMediaBridge
 from .sip_client import ExotelSipClient
 from src.core.logger import logger, setup_logging
+
 setup_logging()
+
 
 async def run_bridge(
     phone_number: str,
-    agent_type: str = "invoice",
+    # agent_type: str = "invoice",
     room_name: str | None = None,
     sip_config: dict | None = None,
     result_signal: asyncio.Queue | None = None,
 ):
     if not validate_config():
+        return
+
+    if not LK_URL or not LK_API_KEY or not LK_API_SECRET:
+        logger.error("[BRIDGE] Missing LiveKit configuration")
         return
 
     if not room_name:
@@ -63,8 +69,9 @@ async def run_bridge(
 
     rtp_bridge = None
     sip_client = None
-    forward_task = None
+    forward_task: asyncio.Task | None = None
     inbound_bye = None
+    ended_by_remote_bye = False
     room = rtc.Room()
 
     try:
@@ -149,12 +156,14 @@ async def run_bridge(
             # ── Signal 2: SIP BYE on outbound TCP (same connection as INVITE) ──
             if sip_mon.done():
                 disconnect_reason = "sip_bye_outbound_tcp"
+                ended_by_remote_bye = True
                 logger.info("[BRIDGE] SIP BYE received on outbound TCP")
                 break
 
             # ── Signal 3: SIP BYE on inbound TCP listener (new connection from Exotel) ──
             if inbound_bye and inbound_bye.is_set():
                 disconnect_reason = "sip_bye_inbound_tcp"
+                ended_by_remote_bye = True
                 logger.info("[BRIDGE] SIP BYE received on inbound TCP listener")
                 break
 
@@ -201,7 +210,7 @@ async def run_bridge(
                 pass  # already signaled
 
     finally:
-        if forward_task:
+        if forward_task is not None:
             forward_task.cancel()
             try:
                 await forward_task
@@ -209,7 +218,7 @@ async def run_bridge(
                 pass
 
         if sip_client:
-            if not (inbound_bye and inbound_bye.is_set()):
+            if not ended_by_remote_bye:
                 await sip_client.send_bye()
             await sip_client.close()
 
