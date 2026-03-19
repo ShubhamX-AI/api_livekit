@@ -91,6 +91,11 @@ nav:
       - Delete Assistant: api/assistant/delete.md
       - Call Logs: api/assistant/logs.md
       - Using Placeholders: api/assistant/placeholders.md
+      - TTS Humanization Prompting:
+        - Overview: api/assistant/tts-humanization.md
+        - Sarvam Prompt (Exact): api/assistant/humanization/tts_humanification_sarvam.md
+        - Cartesia Prompt (Exact): api/assistant/humanization/tts_humanification_cartesia.md
+        - ElevenLabs Prompt (Exact): api/assistant/humanization/tts_humanificaiton_elevnlabs.md
 
     - Tools:
       - Overview: api/tools/index.md
