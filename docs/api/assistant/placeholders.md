@@ -1,6 +1,8 @@
 # Using Placeholders
 
-Both `assistant_prompt` and `assistant_start_instruction` support dynamic placeholders that are replaced at call time using the `metadata` field in the outbound call request.
+Both `assistant_prompt` and `assistant_start_instruction` support dynamic placeholders that are rendered at call time.
+
+This applies to both outbound and inbound calls.
 
 ### Syntax
 
@@ -13,7 +15,24 @@ Use `{{key}}` syntax to define placeholders:
 }
 ```
 
-### Triggering with Metadata
+## Data Sources Available at Render Time
+
+The worker renders templates using:
+
+- Top-level call metadata keys for backward compatibility.
+- `call.*` namespace with call metadata.
+- Optional `context.*` namespace for inbound caller-context lookup results.
+
+## Backward Compatibility
+
+Older templates like `{{name}}` continue to work.
+
+Recommended for new templates:
+
+- Use `{{call.name}}` for call metadata.
+- Use `{{context.customer_name}}` for inbound webhook context.
+
+## Outbound Example (Metadata Only)
 
 When triggering an outbound call, provide the values:
 
@@ -29,16 +48,67 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
            "metadata": {
              "name": "John Doe",
              "company": "Acme Corp",
-             "agent_name": "Sarah"
+             "agent_name": "Sarah",
+             "plan": "Enterprise"
            }
          }'
 ```
 
+Template example:
+
+```json
+{
+  "assistant_prompt": "Hello {{call.name}}, I can see your plan is {{call.plan}}.",
+  "assistant_start_instruction": "Hi {{name}}, this is {{agent_name}} from {{company}}."
+}
+```
+
+## Inbound Example (Call Metadata + Context)
+
+If inbound mapping has an attached context strategy and lookup succeeds, context data becomes available as `context.*`.
+
+Template example:
+
+```json
+{
+  "assistant_prompt": "Hi {{context.customer_name}}, I see your caller number is {{call.caller_number}}.",
+  "assistant_start_instruction": "Welcome back {{context.customer_name}}. Your open ticket is {{context.ticket_id}}."
+}
+```
+
+Possible inbound metadata keys include:
+
+- `call.call_type`
+- `call.service`
+- `call.assistant_id`
+- `call.assistant_name`
+- `call.inbound_id`
+- `call.inbound_context_strategy_id`
+- `call.inbound_number`
+- `call.caller_number`
+
+## Optionality and Failure Behavior
+
+If no inbound strategy is attached:
+
+- `context.*` values are unavailable.
+- Prompt rendering still runs using metadata.
+
+If lookup fails (timeout/HTTP/invalid response):
+
+- `context.*` values are unavailable for that call.
+- The assistant still starts and call handling continues.
+- Lookup attempts are visible in activity logs as `inbound_context_lookup`.
+
 !!! tip "Best Practice"
 
-    Always provide default values in your prompts for cases where metadata might be missing:
+    Missing keys render as empty strings. Write prompts that still read naturally when optional fields are absent.
+
     ```json
     {
-      "assistant_prompt": "Hello {{name|there}}, welcome to {{company|our service}}!"
+      "assistant_prompt": "Hello {{context.customer_name}}, welcome back."
     }
     ```
+
+    If `context.customer_name` is missing, this can render as `Hello , welcome back.`.
+    Prefer phrasing that remains safe when optional values are empty.

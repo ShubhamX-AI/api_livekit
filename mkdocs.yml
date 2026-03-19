@@ -117,6 +117,13 @@ nav:
       - Overview: api/inbound/index.md
       - Manage Numbers: api/inbound/manage.md
       - Call Flow: api/inbound/flow.md
+    - Inbound Context Strategies:
+      - Overview: api/inbound-context-strategy/index.md
+      - Create Strategy: api/inbound-context-strategy/create.md
+      - Update Strategy: api/inbound-context-strategy/update.md
+      - List Strategies: api/inbound-context-strategy/list.md
+      - Get Strategy Details: api/inbound-context-strategy/details.md
+      - Delete Strategy: api/inbound-context-strategy/delete.md
 
     - SIP Trunks:
       - Overview: api/sip/index.md
