@@ -53,6 +53,7 @@ If `inbound_context_strategy_id` is present:
 
 - The worker tries to load the strategy and call the configured webhook.
 - The webhook must return JSON with a top-level `context` object.
+- Full request/response contract is documented in [Inbound Context Strategies](../inbound-context-strategy/index.md#webhook-request-payload).
 
 If strategy loading or webhook lookup fails:
 

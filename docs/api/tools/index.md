@@ -9,7 +9,7 @@ Tools extend assistant capabilities by executing either webhook calls or static-
 | Type | Description | Typical Use |
 | :--- | :--- | :--- |
 | `webhook` | Executes an HTTP POST to an external endpoint. | Fetch live data or trigger external systems. |
-| `static` | Returns a fixed payload without external HTTP. | Constant answers such as support hours or policy text. |
+| `static_return` | Returns a fixed payload without external HTTP. | Constant answers such as support hours or policy text. |
 
 ## Endpoints
 

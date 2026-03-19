@@ -67,6 +67,8 @@ Template example:
 
 If inbound mapping has an attached context strategy and lookup succeeds, context data becomes available as `context.*`.
 
+See the exact webhook request and response contract in [Inbound Context Strategies](../inbound-context-strategy/index.md#webhook-request-payload).
+
 Template example:
 
 ```json
