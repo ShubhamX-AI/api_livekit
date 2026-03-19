@@ -47,6 +47,12 @@ These settings control how the assistant interacts with the user during a sessio
 
 ### TTS Configuration
 
+!!! warning "Use One Humanization Style Per Provider"
+
+    If you use TTS humanization prompts, use only the template that matches `assistant_tts_model`.
+    Do not combine rules/tags from multiple providers in one prompt.
+    Mixed templates can generate malformed output and lead to TTS runtime errors.
+
 === "Cartesia Configuration"
 
     Use this when `assistant_tts_model` is set to `"cartesia"`.
