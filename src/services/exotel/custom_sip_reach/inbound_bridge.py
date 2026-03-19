@@ -201,6 +201,8 @@ async def handle_inbound_call(
             "service": "exotel",
             "assistant_id": assistant.assistant_id,
             "assistant_name": assistant.assistant_name,
+            "inbound_id": inbound_mapping.inbound_id,
+            "inbound_context_strategy_id": inbound_mapping.inbound_context_strategy_id,
             "inbound_number": normalized_number,
             "caller_number": caller_number,
         }

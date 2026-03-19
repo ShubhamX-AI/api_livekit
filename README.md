@@ -8,6 +8,7 @@ FastAPI backend and LiveKit worker for running real-time voice assistants with O
 - **SIP Support**: Create and manage SIP outbound trunks (Twilio/Exotel) for telephony integration.
 - **Outbound Calls**: Trigger programmatic outbound calls to phone numbers (currently supporting Twilio).
 - **Inbound Number Routing**: Assign Exotel inbound numbers to assistants and route inbound calls from database mappings.
+- **Inbound Caller Context**: Optionally resolve caller-specific CRM/context data through reusable inbound context strategies attached to inbound number mappings.
 - **Dynamic Assistants**: Create and configure assistants with custom prompts, typed TTS configuration (Cartesia/Sarvam/ElevenLabs), and start instructions.
 - **Custom Tools**: Extend assistant capabilities with custom tools (Webhooks, Static Responses) that can be attached/detached dynamically.
 - **Call Recording**: Automatic call recording with LiveKit Egress to AWS S3.
@@ -152,11 +153,12 @@ uv run python src/api/server.py
 
 1. Connects to the LiveKit room.
 2. Fetches the assistant configuration from MongoDB using the `assistant_id` (derived from room name).
-3. Injects `metadata` values into the prompt and start instruction.
-4. Loads and attaches configured tools (webhooks/static) to the assistant. Each webhook tool call writes an activity log to MongoDB.
-5. Initializes OpenAI Realtime API and Cartesia/Sarvam TTS (based on typed configuration).
-6. Listens for `transcription` events and saves them to MongoDB.
-7. Triggers the `end_call` webhook upon participant disconnection. The webhook fire result (success/error) is also written as an activity log.
+3. Injects dispatch `metadata` values into the prompt and start instruction.
+4. For inbound calls, can optionally resolve caller-specific context from the inbound mapping's configured strategy and expose it to prompt templates as `{{context.*}}`.
+5. Loads and attaches configured tools (webhooks/static) to the assistant. Each webhook tool call writes an activity log to MongoDB.
+6. Initializes OpenAI Realtime API and Cartesia/Sarvam TTS (based on typed configuration).
+7. Listens for `transcription` events and saves them to MongoDB.
+8. Triggers the `end_call` webhook upon participant disconnection. The webhook fire result (success/error) is also written as an activity log.
 
 ## 📊 Activity Logs
 
@@ -171,7 +173,7 @@ Users can query their own activity logs via the API to observe tool calls and we
 
 | Param | Default | Description |
 |---|---|---|
-| `log_type` | — | Filter by `tool_call` or `end_call_webhook` |
+| `log_type` | — | Filter by `tool_call`, `end_call_webhook`, or `inbound_context_lookup` |
 | `assistant_id` | — | Filter to a specific assistant |
 | `room_name` | — | Filter to a specific call |
 | `page` | `1` | Page number |
@@ -183,6 +185,7 @@ Users can query their own activity logs via the API to observe tool calls and we
 |---|---|
 | `tool_call` | Every time the agent calls a webhook tool — includes URL, arguments, response, latency |
 | `end_call_webhook` | When post-call data is sent to `assistant_end_call_url` — includes URL, latency, success/error |
+| `inbound_context_lookup` | When an inbound caller-context webhook is attempted before the assistant starts speaking |
 
 ```bash
 docker-compose up --build
@@ -198,6 +201,14 @@ Assistant create and update requests support these flags:
 
 These settings are stored on the assistant and applied in the worker at session startup.
 
+## Inbound Context Strategies
+
+- Inbound caller-context resolution is configured as a standalone strategy resource, not on the assistant.
+- Each inbound number mapping can optionally reference one `inbound_context_strategy_id`.
+- Current strategy type support:
+  - `webhook`: POST fixed inbound call details to a customer endpoint and expect `{ "context": { ... } }` in response.
+- Strategy routes are exposed under `"/inbound_context_strategy"` for create, update, list, details, and delete operations.
+
 ## Inbound Number Routing
 
 - **Note**: The inbound SIP listener is started automatically when the API boots (if `INBOUND_SIP_LISTEN=true`), ensuring the application actively listens for incoming SIP calls on the local `EXOTEL_CUSTOMER_SIP_PORT`.
@@ -206,7 +217,10 @@ These settings are stored on the assistant and applied in the worker at session 
 - `POST /inbound/assign` currently accepts only `service="exotel"`; Twilio remains in the schema for future support.
 - `POST /inbound/detach/{inbound_id}` keeps the number in the user's list without an attached assistant.
 - `DELETE /inbound/delete/{inbound_id}` marks the mapping inactive and makes the number reusable again.
-- The Exotel inbound bridge sends `call_type`, `service`, `assistant_id`, `assistant_name`, `inbound_number`, and `caller_number` into the LiveKit dispatch metadata.
+- Inbound mappings can optionally store an `inbound_context_strategy_id` alongside `assistant_id`.
+- The Exotel inbound bridge sends `call_type`, `service`, `assistant_id`, `assistant_name`, `inbound_id`, `inbound_context_strategy_id`, `inbound_number`, and `caller_number` into the LiveKit dispatch metadata.
+- If the mapping has an active strategy, the worker resolves caller context before rendering the prompt and merges the returned `context` object into prompt rendering.
+- If strategy resolution fails, the worker falls back to the assistant's saved prompt and continues the call normally.
 
 Detailed API docs are available in MkDocs under the `Inbound Calls` section.
 
