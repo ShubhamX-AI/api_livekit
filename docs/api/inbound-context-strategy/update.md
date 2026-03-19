@@ -25,6 +25,8 @@ Update strategy metadata and/or strategy configuration.
 | `strategy_config.headers` | object | No | Replaces stored headers when sent. |
 | `strategy_config.timeout_seconds` | number | No | New timeout value (`0.5` to `10.0`). |
 
+Header keys are not restricted. Use any keys required by your webhook endpoint.
+
 ## Important Merge Behavior
 
 The update merges top-level `strategy_config` keys with existing config.

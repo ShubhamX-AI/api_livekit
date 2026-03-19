@@ -22,6 +22,8 @@ Creates a strategy that can later be attached to one or more inbound number mapp
 | `strategy_config.headers` | object | No | Optional request headers for webhook auth/customization. |
 | `strategy_config.timeout_seconds` | number | No | Timeout in seconds. Defaults to `2.0`. Allowed range: `0.5` to `10.0`. |
 
+`strategy_config.headers` can contain any header keys your webhook expects (for example `Authorization`, `X-API-Key`, `X-Tenant-Id`).
+
 ## Example Request
 
 ```bash
