@@ -82,3 +82,5 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 - Review [Architecture](architecture.md) for integration patterns.
 - Use [Assistant APIs](api/assistant/index.md) to tune behavior.
 - Use [Tools APIs](api/tools/index.md) to add external actions.
+- Use [Inbound APIs](api/inbound/index.md) to route inbound numbers.
+- Use [Inbound Context Strategies](api/inbound-context-strategy/index.md) to add optional caller-context enrichment before prompt rendering.

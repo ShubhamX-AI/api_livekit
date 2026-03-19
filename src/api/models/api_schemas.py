@@ -286,9 +286,8 @@ InboundConfig = Annotated[
 ]
 
 class AssignInboundNumber(BaseModel):
-    assistant_id: str = Field(
-        ..., min_length=1, max_length=100, description="Assistant ID"
-    )
+    assistant_id: str = Field(..., min_length=1, max_length=100, description="Assistant ID")
+    inbound_context_strategy_id: Optional[str] = Field(None, min_length=1, max_length=100, description="Optional inbound context strategy ID")
     service: Literal["exotel", "twilio"] = Field(..., description="Inbound service")
     inbound_config: InboundConfig = Field(..., description="Configuration object based on service type")
 
@@ -297,6 +296,7 @@ class AssignInboundNumber(BaseModel):
         json_schema_extra = {
             "example": {
                 "assistant_id": "Test Assistant ID",
+                "inbound_context_strategy_id": "strategy-123",
                 "service": "exotel",
                 "inbound_config": {
                     "type": "exotel",
@@ -327,17 +327,121 @@ class AssignInboundNumber(BaseModel):
 
 
 class UpdateInboundMapping(BaseModel):
-    assistant_id: str = Field(
-        ..., min_length=1, max_length=100, description="Assistant ID"
-    )
+    assistant_id: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant ID")
+    inbound_context_strategy_id: Optional[str] = Field( None, min_length=1, max_length=100, description="Optional inbound context strategy ID; send null to detach")
 
     class Config:
         str_strip_whitespace = True
         json_schema_extra = {
             "example": {
                 "assistant_id": "Updated Assistant ID",
+                "inbound_context_strategy_id": "strategy-123",
             }
         }
+
+    @model_validator(mode="after")
+    def validate_update_fields(self):
+        if not self.model_fields_set:
+            raise ValueError("Provide at least one field to update.")
+        return self
+
+
+# Inbound Context Strategy Schemas
+class WebhookInboundContextStrategyConfigSchema(BaseModel):
+    type: Literal["webhook"] = "webhook"
+    url: str = Field(..., min_length=1, max_length=500, description="Webhook URL used to fetch inbound caller context")
+    headers: dict[str, str] = Field(default_factory=dict, description="Optional headers sent with the inbound context webhook")
+    timeout_seconds: float = Field(2.0, ge=0.5, le=10.0, description="Webhook timeout in seconds")
+
+
+class UpdateWebhookInboundContextStrategyConfigSchema(BaseModel):
+    type: Literal["webhook"] = "webhook"
+    url: Optional[str] = Field(None, min_length=1, max_length=500, description="Webhook URL used to fetch inbound caller context")
+    headers: Optional[dict[str, str]] = Field(None, description="Optional headers sent with the inbound context webhook")
+    timeout_seconds: Optional[float] = Field(None, ge=0.5, le=10.0, description="Webhook timeout in seconds")
+
+
+InboundContextStrategyConfig = Annotated[
+    WebhookInboundContextStrategyConfigSchema,
+    Field(discriminator="type"),
+]
+
+
+UpdateInboundContextStrategyConfig = Annotated[
+    UpdateWebhookInboundContextStrategyConfigSchema,
+    Field(discriminator="type"),
+]
+
+
+class CreateInboundContextStrategy(BaseModel):
+    strategy_name: str = Field(..., min_length=1, max_length=100, description="Strategy name")
+    strategy_type: Literal["webhook"] = Field(..., description="Strategy type")
+    strategy_config: InboundContextStrategyConfig = Field(..., description="Typed strategy config")
+
+    class Config:
+        str_strip_whitespace = True
+        json_schema_extra = {
+            "example": {
+                "strategy_name": "CRM lookup",
+                "strategy_type": "webhook",
+                "strategy_config": {
+                    "url": "https://example.com/caller-context",
+                    "headers": {
+                        "Authorization": "Bearer demo-token"
+                    },
+                    "timeout_seconds": 2.0
+                },
+            }
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def inject_strategy_type(cls, data: dict):
+        if isinstance(data, dict):
+            strategy_type = data.get("strategy_type")
+            config = data.get("strategy_config")
+            if strategy_type and isinstance(config, dict):
+                config["type"] = strategy_type
+        return data
+
+
+class UpdateInboundContextStrategy(BaseModel):
+    strategy_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Strategy name")
+    strategy_type: Optional[Literal["webhook"]] = Field(None, description="Strategy type")
+    strategy_config: Optional[UpdateInboundContextStrategyConfig] = Field(None, description="Typed strategy config")
+
+    class Config:
+        str_strip_whitespace = True
+        json_schema_extra = {
+            "example": {
+                "strategy_name": "CRM lookup v2",
+                "strategy_type": "webhook",
+                "strategy_config": {
+                    "url": "https://example.com/caller-context-v2",
+                    "timeout_seconds": 2.0
+                },
+            }
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def inject_strategy_type(cls, data: dict):
+        if isinstance(data, dict):
+            strategy_type = data.get("strategy_type")
+            config = data.get("strategy_config")
+            if strategy_type and isinstance(config, dict):
+                config["type"] = strategy_type
+        return data
+
+    @model_validator(mode="after")
+    def validate_strategy_update(self):
+        if not self.model_fields_set:
+            raise ValueError("No fields provided for update")
+        if bool(self.strategy_type) != bool(self.strategy_config):
+            raise ValueError(
+                "Provide both `strategy_type` and `strategy_config` together, or neither."
+            )
+        return self
 
 
 # ---- Tool Schemas ----

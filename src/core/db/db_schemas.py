@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional, Literal, Text, List, Dict
+from typing import Optional, Literal, List, Dict
 from beanie import Document, Indexed
 from pydantic import BaseModel, Field, EmailStr
 from pymongo import IndexModel
@@ -88,6 +88,7 @@ class InboundSIP(Document):
     phone_number_normalized: str
     inbound_config: Dict = Field(default_factory=dict)
     assistant_id: Optional[str] = None
+    inbound_context_strategy_id: Optional[str] = None
     service: Literal["exotel", "twilio"] = "exotel"
     created_by_email: EmailStr
     updated_by_email: EmailStr
@@ -102,6 +103,28 @@ class InboundSIP(Document):
                 [("phone_number_normalized", 1)],
                 unique=True,
                 partialFilterExpression={"is_active": True},
+            )
+        ]
+
+
+class InboundContextStrategy(Document):
+    """Reusable inbound caller-context resolution strategy."""
+
+    strategy_id: Indexed(str, unique=True)
+    strategy_name: str
+    strategy_type: Literal["webhook"] = "webhook"
+    strategy_config: Dict = Field(default_factory=dict)
+    strategy_created_by_email: EmailStr
+    strategy_updated_by_email: EmailStr
+    strategy_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    strategy_updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    strategy_is_active: bool = True
+
+    class Settings:
+        name = "inbound_context_strategies"
+        indexes = [
+            IndexModel(
+                [("strategy_name", 1)], collation=Collation(locale="en", strength=2)
             )
         ]
 
@@ -154,7 +177,7 @@ class ActivityLog(Document):
     """User-visible activity log — one record per notable event (tool call, webhook fire)."""
 
     user_email: Indexed(str)  # used to scope logs to the owning user
-    log_type: Literal["tool_call", "end_call_webhook"]
+    log_type: Literal["tool_call", "end_call_webhook", "inbound_context_lookup"]
     assistant_id: Optional[str] = None
     room_name: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

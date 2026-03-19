@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.dependencies import get_current_user
 from src.api.models.api_schemas import AssignInboundNumber, UpdateInboundMapping
 from src.api.models.response_models import apiResponse
-from src.core.db.db_schemas import APIKey, Assistant, InboundSIP
+from src.core.db.db_schemas import APIKey, Assistant, InboundContextStrategy, InboundSIP
 from src.core.logger import logger, setup_logging
 from src.services.exotel.custom_sip_reach.sip_client import format_exotel_number
 
@@ -40,6 +40,19 @@ async def get_user_inbound_mapping(inbound_id: str, user_email: str) -> InboundS
     return inbound_mapping
 
 
+async def get_user_inbound_context_strategy(
+    strategy_id: str, user_email: str
+) -> InboundContextStrategy:
+    strategy = await InboundContextStrategy.find_one(
+        InboundContextStrategy.strategy_id == strategy_id,
+        InboundContextStrategy.strategy_created_by_email == user_email,
+        InboundContextStrategy.strategy_is_active == True,
+    )
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Inbound context strategy not found")
+    return strategy
+
+
 @router.post("/assign")
 async def assign_inbound_number(
     request: AssignInboundNumber, current_user: APIKey = Depends(get_current_user)
@@ -53,6 +66,13 @@ async def assign_inbound_number(
         )
 
     await get_user_assistant(request.assistant_id, current_user.user_email)
+    strategy_name = None
+    if request.inbound_context_strategy_id:
+        strategy = await get_user_inbound_context_strategy(
+            request.inbound_context_strategy_id,
+            current_user.user_email,
+        )
+        strategy_name = strategy.strategy_name
     
     actual_phone = request.inbound_config.phone_number
     normalized_number = normalize_inbound_number(actual_phone)
@@ -72,6 +92,7 @@ async def assign_inbound_number(
         phone_number_normalized=normalized_number,
         inbound_config=request.inbound_config.model_dump(),
         assistant_id=request.assistant_id,
+        inbound_context_strategy_id=request.inbound_context_strategy_id,
         service=request.service,
         created_by_email=current_user.user_email,
         updated_by_email=current_user.user_email,
@@ -86,6 +107,8 @@ async def assign_inbound_number(
             "phone_number": inbound_mapping.phone_number,
             "phone_number_normalized": inbound_mapping.phone_number_normalized,
             "assistant_id": inbound_mapping.assistant_id,
+            "inbound_context_strategy_id": inbound_mapping.inbound_context_strategy_id,
+            "inbound_context_strategy_name": strategy_name,
             "service": inbound_mapping.service,
             "inbound_config": inbound_mapping.inbound_config,
         },
@@ -103,9 +126,23 @@ async def update_inbound_mapping(
     inbound_mapping = await get_user_inbound_mapping(
         inbound_id, current_user.user_email
     )
-    await get_user_assistant(request.assistant_id, current_user.user_email)
+    if "assistant_id" in request.model_fields_set:
+        if request.assistant_id is None:
+            inbound_mapping.assistant_id = None
+        else:
+            await get_user_assistant(request.assistant_id, current_user.user_email)
+            inbound_mapping.assistant_id = request.assistant_id
 
-    inbound_mapping.assistant_id = request.assistant_id
+    if "inbound_context_strategy_id" in request.model_fields_set:
+        if request.inbound_context_strategy_id is None:
+            inbound_mapping.inbound_context_strategy_id = None
+        else:
+            await get_user_inbound_context_strategy(
+                request.inbound_context_strategy_id,
+                current_user.user_email,
+            )
+            inbound_mapping.inbound_context_strategy_id = request.inbound_context_strategy_id
+
     inbound_mapping.updated_at = datetime.now(timezone.utc)
     inbound_mapping.updated_by_email = current_user.user_email
     await inbound_mapping.save()
@@ -116,6 +153,7 @@ async def update_inbound_mapping(
         data={
             "inbound_id": inbound_mapping.inbound_id,
             "assistant_id": inbound_mapping.assistant_id,
+            "inbound_context_strategy_id": inbound_mapping.inbound_context_strategy_id,
         },
     )
 
@@ -130,6 +168,7 @@ async def detach_inbound_number(
         inbound_id, current_user.user_email
     )
     inbound_mapping.assistant_id = None
+    inbound_mapping.inbound_context_strategy_id = None
     inbound_mapping.updated_at = datetime.now(timezone.utc)
     inbound_mapping.updated_by_email = current_user.user_email
     await inbound_mapping.save()
@@ -140,6 +179,7 @@ async def detach_inbound_number(
         data={
             "inbound_id": inbound_mapping.inbound_id,
             "assistant_id": inbound_mapping.assistant_id,
+            "inbound_context_strategy_id": inbound_mapping.inbound_context_strategy_id,
         },
     )
 
@@ -155,6 +195,7 @@ async def delete_inbound_number(
     )
     inbound_mapping.is_active = False
     inbound_mapping.assistant_id = None
+    inbound_mapping.inbound_context_strategy_id = None
     inbound_mapping.updated_at = datetime.now(timezone.utc)
     inbound_mapping.updated_by_email = current_user.user_email
     await inbound_mapping.save()
@@ -182,6 +223,7 @@ async def list_inbound_numbers(current_user: APIKey = Depends(get_current_user))
     data = []
     for inbound_mapping in inbound_mappings:
         assistant_name = None
+        strategy_name = None
         if inbound_mapping.assistant_id:
             assistant = await Assistant.find_one(
                 Assistant.assistant_id == inbound_mapping.assistant_id,
@@ -191,6 +233,15 @@ async def list_inbound_numbers(current_user: APIKey = Depends(get_current_user))
             if assistant:
                 assistant_name = assistant.assistant_name
 
+        if inbound_mapping.inbound_context_strategy_id:
+            strategy = await InboundContextStrategy.find_one(
+                InboundContextStrategy.strategy_id == inbound_mapping.inbound_context_strategy_id,
+                InboundContextStrategy.strategy_created_by_email == current_user.user_email,
+                InboundContextStrategy.strategy_is_active == True,
+            )
+            if strategy:
+                strategy_name = strategy.strategy_name
+
         data.append(
             {
                 "inbound_id": inbound_mapping.inbound_id,
@@ -199,6 +250,8 @@ async def list_inbound_numbers(current_user: APIKey = Depends(get_current_user))
                 "inbound_config": inbound_mapping.inbound_config,
                 "assistant_id": inbound_mapping.assistant_id,
                 "assistant_name": assistant_name,
+                "inbound_context_strategy_id": inbound_mapping.inbound_context_strategy_id,
+                "inbound_context_strategy_name": strategy_name,
                 "service": inbound_mapping.service,
                 "created_at": inbound_mapping.created_at,
                 "updated_at": inbound_mapping.updated_at,

@@ -9,8 +9,10 @@ Inbound calling currently uses the custom Exotel SIP bridge.
 3. The number is normalized with the same formatter used by the `/inbound` API.
 4. The bridge looks up an active `InboundSIP` mapping by `phone_number_normalized`.
 5. If the mapping is missing or detached, the bridge returns `480 Temporarily Unavailable`.
-6. If the mapped assistant is inactive or missing, the bridge also returns `480 Temporarily Unavailable`.
-7. When routing succeeds, the bridge creates a LiveKit room, dispatches the assistant, and connects RTP audio.
+6. The bridge loads the assistant from `assistant_id` on the mapping.
+7. If the mapped assistant is inactive or missing, the bridge returns `480 Temporarily Unavailable`.
+8. When routing succeeds, the bridge creates a LiveKit room, dispatches the assistant, and connects RTP audio.
+9. The agent session optionally runs inbound context lookup before rendering prompt templates.
 
 ## Dispatch Metadata
 
@@ -22,8 +24,41 @@ The bridge creates the LiveKit dispatch with these metadata keys:
 | `service` | `exotel` |
 | `assistant_id` | Assistant selected from the mapping |
 | `assistant_name` | Assistant display name |
+| `inbound_id` | Inbound mapping identifier |
+| `inbound_context_strategy_id` | Optional strategy attached to the mapping |
 | `inbound_number` | Normalized dialed number |
 | `caller_number` | Parsed caller number from the SIP `From` header |
+
+## Agent Prompt Rendering Phase
+
+After dispatch, the worker loads metadata and renders:
+
+- `assistant_prompt`
+- `assistant_start_instruction`
+
+Render inputs are:
+
+- Existing top-level metadata keys.
+- `call.*` namespace containing the call metadata.
+- Optional `context.*` namespace when inbound context lookup succeeds.
+
+## Optional Strategy and Fallback Behavior
+
+If `inbound_context_strategy_id` is not present:
+
+- No lookup is attempted.
+- Prompt rendering continues using call metadata only.
+
+If `inbound_context_strategy_id` is present:
+
+- The worker tries to load the strategy and call the configured webhook.
+- The webhook must return JSON with a top-level `context` object.
+
+If strategy loading or webhook lookup fails:
+
+- Timeout, HTTP error, invalid JSON, invalid payload shape, missing URL, or inactive strategy all fall back to default prompt behavior.
+- The call continues and the assistant still starts.
+- An `inbound_context_lookup` activity log is written for attempted lookups.
 
 ## Runtime Notes
 
@@ -39,19 +74,37 @@ sequenceDiagram
     participant Bridge as Exotel Inbound Bridge
     participant DB as MongoDB
     participant LK as LiveKit
-    participant Agent
+    participant Agent as Agent Worker
+    participant Webhook as Context Webhook
 
     Caller->>Exotel: Dial Exotel number
     Exotel->>Bridge: SIP INVITE
     Bridge->>Bridge: Normalize dialed number
     Bridge->>DB: Lookup active inbound mapping
-    DB-->>Bridge: assistant_id or no match
+    DB-->>Bridge: mapping (assistant_id + optional strategy_id) or no match
     alt No mapping or detached mapping
         Bridge-->>Exotel: 480 Temporarily Unavailable
     else Mapping found
         Bridge->>DB: Load assistant
         Bridge->>LK: Create room and dispatch agent
         Bridge-->>Exotel: 200 OK
+        LK->>Agent: Start session with dispatch metadata
+        alt strategy_id exists
+            Agent->>DB: Load active strategy
+            alt Strategy found
+                Agent->>Webhook: POST caller/context lookup
+                alt Valid response {context: {...}}
+                    Webhook-->>Agent: context payload
+                else Timeout or invalid response
+                    Webhook-->>Agent: error or invalid payload
+                end
+            else Strategy missing/inactive
+                Agent->>Agent: Skip lookup and continue
+            end
+        else No strategy
+            Agent->>Agent: Continue without lookup
+        end
+        Agent->>Agent: Render prompt/start instruction
         Bridge->>Agent: Publish call_answered event
         Exotel->>Bridge: RTP audio
         Agent->>Bridge: RTP audio

@@ -23,11 +23,12 @@ import json
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
 from src.core.agents.dynamic_assistant import DynamicAssistant
+from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
-from src.core.db.db_schemas import Assistant
+from src.core.db.db_schemas import Assistant, InboundContextStrategy
 from src.services.livekit.livekit_svc import LiveKitService
 from src.services.elevenlabs.v3_nonstream import ElevenLabsNonStreamingTTS
 
@@ -64,23 +65,55 @@ async def entrypoint(ctx: JobContext):
     # Extract metadata from job metadata (reliable way to pass data to agent)
     to_number = "Unknown | Web Call"
     job_metadata = {}
+    render_data = {}
     if ctx.job.metadata:
         try:
             job_metadata = json.loads(ctx.job.metadata)
             to_number = job_metadata.get("to_number", "Unknown | Web Call")
             logger.info(f"Extracted to_number from job metadata: {to_number}")
-            
-            # Update Assistant Prompt and Start Instruction with metadata placeholders {{key}}
-            if assistant.assistant_prompt:
-                assistant.assistant_prompt = render_prompt(assistant.assistant_prompt, job_metadata)
-            
-            if assistant.assistant_start_instruction:
-                assistant.assistant_start_instruction = render_prompt(assistant.assistant_start_instruction, job_metadata)
-            
-            logger.info("Successfully processed metadata placeholders in assistant instructions")
-
         except Exception as e:
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")
+
+    if job_metadata:
+        # Keep current top-level placeholders working and add namespaced access for new templates.
+        render_data = {**job_metadata, "call": job_metadata}
+
+    if job_metadata.get("call_type") == "inbound":
+        strategy_id = job_metadata.get("inbound_context_strategy_id")
+        if strategy_id:
+            strategy = await InboundContextStrategy.find_one(
+                InboundContextStrategy.strategy_id == strategy_id,
+                InboundContextStrategy.strategy_created_by_email == assistant.assistant_created_by_email,
+                InboundContextStrategy.strategy_is_active == True,
+            )
+            if strategy:
+                context = await resolve_inbound_context(
+                    strategy=strategy,
+                    assistant_id=assistant.assistant_id,
+                    assistant_name=assistant.assistant_name,
+                    user_email=assistant.assistant_created_by_email,
+                    room_name=room_name,
+                    job_metadata=job_metadata,
+                )
+                if context is not None:
+                    render_data = {**render_data, "context": context}
+            else:
+                logger.warning(
+                    f"Inbound context strategy '{strategy_id}' not found or inactive; continuing with default prompt"
+                )
+
+    # Update Assistant Prompt and Start Instruction with metadata placeholders {{key}}
+    if assistant.assistant_prompt:
+        assistant.assistant_prompt = render_prompt(assistant.assistant_prompt, render_data)
+
+    if assistant.assistant_start_instruction:
+        assistant.assistant_start_instruction = render_prompt(
+            assistant.assistant_start_instruction,
+            render_data,
+        )
+
+    if render_data:
+        logger.info("Successfully processed metadata placeholders in assistant instructions")
 
     interaction_config = assistant.assistant_interaction_config
     filler_words_enabled = bool(interaction_config.filler_words)
