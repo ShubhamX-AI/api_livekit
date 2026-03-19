@@ -1,8 +1,8 @@
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
-from src.api.models.api_schemas import CreateAssistant, UpdateAssistant, CallRecord
+from src.api.models.api_schemas import CreateAssistant, UpdateAssistant
 from src.api.models.response_models import apiResponse
-from src.core.db.db_schemas import Assistant, APIKey
+from src.core.db.db_schemas import Assistant, APIKey, CallRecord
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
 import uuid
