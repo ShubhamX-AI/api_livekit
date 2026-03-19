@@ -209,7 +209,7 @@ class FillerController:
                 text = await generate_filler(list(self._context_turns))
                 if text:
                     await self._session.say(text, allow_interruptions=True)
-                await asyncio.sleep(random.uniform(5.0, 8.0))
+                await asyncio.sleep(random.uniform(4.0, 6.0))
         except asyncio.CancelledError:
             raise
         except Exception:
