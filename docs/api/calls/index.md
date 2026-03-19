@@ -19,4 +19,6 @@ Outbound calls initiate a LiveKit room, dispatch an assistant, and place a call 
 - [Call Status Tracking](tracking.md)
 - [Best Practices](best-practices.md)
 
+The exact post-call webhook payload contract is documented in [End Call Webhook](webhook.md).
+
 For inbound number routing, see [Inbound Calls](../inbound/index.md).
