@@ -176,7 +176,7 @@ requires-dist = [
     { name = "chevron", specifier = ">=0.14.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.128.6" },
     { name = "gunicorn", specifier = ">=25.0.3" },
-    { name = "livekit-agents", extras = ["cartesia", "openai", "sarvam", "turn-detector"], specifier = "~=1.3" },
+    { name = "livekit-agents", extras = ["cartesia", "openai", "sarvam", "turn-detector"], specifier = "~=1.4" },
     { name = "mkdocs", specifier = ">=1.6.1,<2.0.0" },
     { name = "mkdocs-material", specifier = ">=9.7.1,<10.0.0" },
     { name = "motor", specifier = ">=3.3.2" },
