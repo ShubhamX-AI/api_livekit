@@ -21,6 +21,8 @@ theme:
     - navigation.top
     - navigation.indexes
     - navigation.prune
+    - navigation.path
+    - navigation.sections
     - toc.follow
     - search.suggest
     - search.highlight
@@ -30,17 +32,20 @@ theme:
     - content.tabs.link
   palette:
     - scheme: default
-      primary: black
-      accent: indigo
+      primary: slate
+      accent: deep purple
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: black
-      accent: indigo
+      primary: slate
+      accent: deep purple
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+
+extra_css:
+  - stylesheets/premium.css
 
 plugins:
   - search

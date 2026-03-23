@@ -12,6 +12,6 @@ This section contains exact copy-paste versions of the humanization prompt sourc
 
 - [Sarvam Prompt (exact)](humanization/tts_humanification_sarvam.md)
 - [Cartesia Prompt (exact)](humanization/tts_humanification_cartesia.md)
-- [ElevenLabs Prompt (exact)](humanization/tts_humanificaiton_elevnlabs.md)
+- [ElevenLabs Prompt (exact)](humanization/tts_humanification_elevenlabs.md)
 
 Each page is a direct markdown mirror of the corresponding Python file under `assets/humanization/`.
