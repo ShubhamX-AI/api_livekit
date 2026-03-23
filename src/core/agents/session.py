@@ -299,9 +299,13 @@ async def entrypoint(ctx: JobContext):
         thinking_sound=AudioConfig(typing_path, volume=0.5),
     )
 
+    # Enable text input only for web calls; keep SIP/inbound voice behavior unchanged.
+    is_web_call = job_metadata.get("call_type") == "web"
+    logger.info(f"Session input mode | call_type={job_metadata.get('call_type')} | text_input={is_web_call}")
+
     # Configure room options
     room_options = room_io.RoomOptions(
-        text_input=False,
+        text_input=is_web_call,
         audio_input=True,
         audio_output=True,
         close_on_disconnect=False, # Imp or else it will not send the the details of call end to the call end url

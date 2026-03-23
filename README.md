@@ -6,6 +6,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 
 - Manages assistants, tools, SIP trunks, API keys, and call workflows.
 - Runs voice agents in LiveKit rooms.
+- Supports web calls with both text (`lk.chat`) and voice input.
 - Supports outbound calling and Exotel inbound routing.
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.

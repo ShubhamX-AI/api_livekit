@@ -34,6 +34,20 @@ Create a LiveKit room and return a participant token for browser or mobile web c
 | 404 | Not Found - Assistant not found for the authenticated user. |
 | 500 | Server Error - Internal error while generating the token. |
 
+### Frontend Text + Voice Usage
+
+Web calls support both typed chat and microphone audio in the same room.
+
+Use the standard LiveKit text stream topic `lk.chat`:
+
+```ts
+import { useLocalParticipant } from "@livekit/components-react";
+
+await localParticipant.sendText("Hello", { topic: "lk.chat" });
+```
+
+The assistant will process this text input and respond normally while audio input/output continues to work in parallel.
+
 ### Example Request
 
 ```bash

@@ -29,13 +29,16 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
         logger.info(f"Creating room for assistant: {request.assistant_id}")
         room_name = await livekit_services.create_room(request.assistant_id)
 
+        # Force web sessions to be tagged as call_type=web while preserving custom metadata.
+        job_metadata = {**(request.metadata or {}), "call_type": "web"}
+
         # Create agent dispatch
         logger.info(f"Creating dispatch for room: {room_name}")
-        agent_dispatch = await livekit_services.create_agent_dispatch(room_name, request.metadata)
+        agent_dispatch = await livekit_services.create_agent_dispatch(room_name, job_metadata)
 
         # Generate join token (agent dispatch embedded via RoomConfiguration)
         logger.info(f"Creating token for room: {room_name}")
-        token = await livekit_services.create_token(room_name, request.metadata)
+        token = await livekit_services.create_token(room_name, job_metadata)
         if not token:
             raise HTTPException(status_code=500, detail="Failed to generate token")
 
