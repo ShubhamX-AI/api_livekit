@@ -22,7 +22,6 @@ theme:
     - navigation.indexes
     - navigation.prune
     - toc.follow
-    - toc.integrate
     - search.suggest
     - search.highlight
     - search.share
@@ -95,7 +94,7 @@ nav:
         - Overview: api/assistant/tts-humanization.md
         - Sarvam Prompt (Exact): api/assistant/humanization/tts_humanification_sarvam.md
         - Cartesia Prompt (Exact): api/assistant/humanization/tts_humanification_cartesia.md
-        - ElevenLabs Prompt (Exact): api/assistant/humanization/tts_humanificaiton_elevnlabs.md
+        - ElevenLabs Prompt (Exact): api/assistant/humanization/tts_humanification_elevenlabs.md
 
     - Tools:
       - Overview: api/tools/index.md
