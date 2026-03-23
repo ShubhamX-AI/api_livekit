@@ -16,4 +16,4 @@ Assistants define the voice agent behavior, prompt, TTS model/config, interactio
 - [TTS Humanization Prompting Guide](tts-humanization.md)
 - [Sarvam Prompt (Exact)](humanization/tts_humanification_sarvam.md)
 - [Cartesia Prompt (Exact)](humanization/tts_humanification_cartesia.md)
-- [ElevenLabs Prompt (Exact)](humanization/tts_humanificaiton_elevnlabs.md)
+- [ElevenLabs Prompt (Exact)](humanization/tts_humanification_elevenlabs.md)

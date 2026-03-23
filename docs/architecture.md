@@ -72,12 +72,14 @@ graph TD
     subgraph Custom SIP Bridge
         SIP[SIP Signaling Client]
         RTP[RTP Media Bridge]
+        Mixer[Audio Mixer]
         Port[Dynamic Port Pool]
     end
 
     subgraph AI Core
         LKR[LiveKit Room]
         Agent[AI Agent Worker]
+        BG[Background Audio Player]
     end
 
     Exo -->|1. SIP INVITE| SIP
@@ -85,8 +87,12 @@ graph TD
     Port -.->|3. Bind UDP| RTP
     SIP -->|4. SIP 200 OK| Exo
 
-    Exo <-->|RTP G711 PCMU| RTP
-    RTP <-->|WebRTC Track Opus| LKR
+    Exo <-->|RTP G711 PCMA/PCMU| RTP
+    Agent -->|Voice Track| LKR
+    BG -->|Background Track| LKR
+    LKR -->|All Audio Tracks| Mixer
+    Mixer -->|Mixed PCM| RTP
+    RTP -->|User Audio| LKR
     LKR <-->|Audio| Agent
 ```
 

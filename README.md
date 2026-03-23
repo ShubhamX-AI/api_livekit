@@ -48,7 +48,7 @@ Create `.env` in the project root.
 
 ```ini
 PORT=8000
-BACKEND_URL=http://localhost:8000
+BACKEND_URL=http://localhost:8000  # Worker callback URL for webhook routing
 
 MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
 DATABASE_NAME=livekit_db
@@ -61,6 +61,14 @@ OPENAI_API_KEY=<your-openai-api-key>
 CARTESIA_API_KEY=<optional>
 SARVAM_API_KEY=<optional>
 ELEVENLABS_API_KEY=<optional>
+
+# Email (optional — needed for email tool)
+SMTP_HOST=smtp.sendgrid.net
+SMTP_PORT=587
+SMTP_USER=apikey
+SMTP_PASSWORD=<your-sendgrid-api-key>
+FROM_EMAIL=noreply@yourdomain.com
+FROM_NAME=Your App Name
 
 AWS_ACCESS_KEY_ID=<optional-for-recording-upload>
 AWS_SECRET_ACCESS_KEY=<optional-for-recording-upload>
@@ -153,6 +161,9 @@ api_livekit/
 ├── docker-compose.yml
 ├── mkdocs.yml
 ├── server_run.py
+├── .agents/
+│   ├── workflows/
+│   └── skills/
 ├── assets/
 │   └── audio/
 ├── docs/
@@ -165,6 +176,8 @@ api_livekit/
 │   │   └── server.py
 │   ├── core/
 │   │   ├── agents/
+│   │   │   ├── session.py
+│   │   │   └── voice_features.py
 │   │   ├── db/
 │   │   ├── config.py
 │   │   └── logger.py
@@ -172,6 +185,11 @@ api_livekit/
 │       ├── elevenlabs/
 │       ├── email/
 │       ├── exotel/
+│       │   └── custom_sip_reach/
+│       │       ├── bridge.py
+│       │       ├── rtp_bridge.py
+│       │       ├── sip_client.py
+│       │       └── inbound_listener.py
 │       └── livekit/
 └── scripts/
 ```

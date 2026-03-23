@@ -1,0 +1,159 @@
+/* 
+ * Premium UI/UX Override for MkDocs Material 
+ * Applies refined spacing, softer geometry, and subtle glassmorphism 
+ * while respecting the base theme and color system.
+ */
+
+:root {
+  /* Softer shadows and geometry */
+  --md-shadow-z1: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --md-shadow-z2: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --md-shadow-z3: 0 16px 48px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.04);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-shadow-z1: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --md-shadow-z2: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --md-shadow-z3: 0 16px 48px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* =========================================================================
+   1. Typography & Readability
+   ========================================================================= */
+
+body {
+  /* Slightly increase line-height for better breathability */
+  line-height: 1.65;
+  letter-spacing: -0.01em;
+}
+
+.md-content h1, 
+.md-content h2, 
+.md-content h3 {
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+.md-typeset h1 { margin-bottom: 1.5rem; }
+.md-typeset h2 { margin-top: 2.5em; border-bottom: 1px solid var(--md-default-fg-color--lightest); padding-bottom: 0.5em; }
+.md-typeset h3 { margin-top: 2em; }
+
+/* =========================================================================
+   2. Header Glassmorphism
+   ========================================================================= */
+
+.md-header {
+  /* Make header semi-transparent and blur the background */
+  background-color: hsla(var(--md-hue), 15%, 25%, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* Remove harsh separator line and replace with subtle shadow */
+  box-shadow: inset 0 -1px 0 hsla(0,0%,100%,.1), 0 4px 20px rgba(0,0,0,.08);
+}
+
+[data-md-color-scheme="slate"] .md-header {
+  background-color: hsla(var(--md-hue), 15%, 15%, 0.85) !important;
+  box-shadow: inset 0 -1px 0 hsla(0,0%,100%,.05), 0 4px 20px rgba(0,0,0,.3);
+}
+
+.md-tabs {
+  background-color: hsla(var(--md-hue), 15%, 25%, 0) !important;
+  border-bottom: 1px solid hsla(0,0%,100%,.1);
+}
+
+[data-md-color-scheme="slate"] .md-tabs {
+  border-bottom: 1px solid hsla(0,0%,100%,.05);
+}
+
+/* =========================================================================
+   3. Geometry (Rounded Corners)
+   ========================================================================= */
+
+/* Code Blocks */
+.md-typeset pre > code {
+  border-radius: 8px;
+  /* A refined inner shadow to give depth to code blocks */
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lightest);
+}
+
+/* Admonitions (Info/Warning boxes) */
+.md-typeset .admonition, 
+.md-typeset details {
+  border-radius: 8px;
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lightest), var(--md-shadow-z1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.md-typeset .admonition:hover, 
+.md-typeset details:hover {
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--light), var(--md-shadow-z2);
+}
+
+.md-typeset .admonition-title {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+/* Content Tabs */
+.md-typeset .tabbed-set {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lightest);
+}
+
+/* Buttons */
+.md-typeset .md-button {
+  border-radius: 6px;
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: all 0.2s ease;
+}
+
+.md-typeset .md-button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--md-shadow-z2);
+}
+
+/* =========================================================================
+   4. Tables
+   ========================================================================= */
+
+.md-typeset table:not([class]) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lightest);
+  border: none;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--md-default-bg-color--light);
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset table:not([class]) td, 
+.md-typeset table:not([class]) th {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Remove bottom border from last row */
+.md-typeset table:not([class]) tr:last-child td {
+  border-bottom: none;
+}
+
+/* =========================================================================
+   5. Search Box Refinement
+   ========================================================================= */
+
+.md-search__input {
+  border-radius: 6px !important;
+  background-color: hsla(0,0%,100%,.1) !important;
+  border: 1px solid transparent !important;
+}
+
+.md-search__input:focus {
+  background-color: var(--md-default-bg-color) !important;
+  color: var(--md-default-fg-color) !important;
+  box-shadow: 0 0 0 3px hsla(var(--md-hue), 100%, 75%, 0.3) !important;
+}
