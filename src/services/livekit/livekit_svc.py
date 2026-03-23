@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import json
 import time
@@ -327,7 +328,9 @@ class LiveKitService:
                 return
 
             if call_record.recording_egress_id:
-                await self.stop_room_recording(call_record.recording_egress_id)
+                asyncio.create_task(
+                    self.stop_room_recording(call_record.recording_egress_id)
+                    )
 
             call_record.ended_at = datetime.now(timezone.utc)
             duration_start = call_record.answered_at or call_record.started_at
