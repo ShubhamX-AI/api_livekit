@@ -137,5 +137,6 @@ For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-ca
 
 - `202 Accepted` means call setup has started, not that the user has answered.
 - Exotel setup outcomes (`busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`) are delivered through the end-call webhook.
+- Assistant speech/transcript processing starts only after bridge readiness (`call_answered`), not merely after `202 Accepted`.
 - The assistant starts Exotel outbound recording only after the bridge signals `call_answered` (post SIP `200 OK`).
 - If trunk type and `call_service` do not match (for example, Twilio trunk with `call_service="exotel"`), the API returns `400`.

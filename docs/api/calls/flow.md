@@ -17,7 +17,13 @@ When you trigger an outbound call, the flow differs slightly based on the provid
 3. **Custom Bridge**: API starts a background task running the `custom_sip_reach` bridge.
 4. **Exotel Connection**: The bridge connects to Exotel via SIP/TCP.
 5. **RTP Relay**: The bridge relays media between Exotel and the LiveKit room.
-6. **Agent Connection**: The AI assistant joins the room.
+6. **Agent Connection**: The AI assistant joins the room and waits for bridge readiness before speaking.
+
+### Exotel Runtime Gating
+
+- The assistant waits for the bridge `call_answered` event before sending the start instruction.
+- Runtime activity (assistant speech-side behavior and transcript processing) is held until readiness is confirmed.
+- Recording starts through a managed retry flow after readiness for Exotel outbound calls.
 
 ```mermaid
 sequenceDiagram

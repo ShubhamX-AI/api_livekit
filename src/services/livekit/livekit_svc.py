@@ -312,6 +312,7 @@ class LiveKitService:
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
             if call_record.call_status in {
+                "completed",
                 "busy",
                 "no_answer",
                 "rejected",
@@ -325,9 +326,13 @@ class LiveKitService:
                 )
                 return
 
+            if call_record.recording_egress_id:
+                await self.stop_room_recording(call_record.recording_egress_id)
+
             call_record.ended_at = datetime.now(timezone.utc)
+            duration_start = call_record.answered_at or call_record.started_at
             call_record.call_duration_minutes = (
-                call_record.ended_at - call_record.started_at
+                call_record.ended_at - duration_start
             ).total_seconds() / 60
             call_record.call_status = "completed"
             await call_record.save()
@@ -372,6 +377,7 @@ class LiveKitService:
                 call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
                 if call_record:
                     call_record.recording_path = s3_url
+                    call_record.recording_egress_id = egress_info.egress_id
                     await call_record.save()
 
                 payload = {
@@ -388,6 +394,17 @@ class LiveKitService:
         except Exception as e:
             logger.error(f"Failed to start recording: {e}", exc_info=True)
             return None
+
+    async def stop_room_recording(self, egress_id: str) -> bool:
+        """Stop an active LiveKit egress recording by egress id."""
+        try:
+            async with self.get_livekit_api() as lkapi:
+                await lkapi.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
+                logger.info(f"Recording stopped: {egress_id}")
+                return True
+        except Exception as e:
+            logger.warning(f"Failed to stop recording {egress_id}: {e}")
+            return False
 
 
     # Create token for web call — user joins room, agent is auto-dispatched via RoomConfiguration

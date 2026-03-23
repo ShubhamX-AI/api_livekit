@@ -142,6 +142,8 @@ Content-Type: application/json
     - Current runtime sends a single webhook request with a 10s timeout
     - Current runtime treats non-2xx HTTP status as failed delivery in runtime logging
     - Current runtime does not parse webhook response body
+    - `recording_path` can be empty/null when recording fails after runtime retries
+    - Empty `recording_path` does not block terminal webhook delivery
     - Ensure your webhook endpoint responds quickly (< 10 seconds)
     - Store the `room_name` to correlate with call initiation
 
