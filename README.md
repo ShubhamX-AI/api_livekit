@@ -22,7 +22,9 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 
 - Exotel outbound API calls return `202 Accepted` while SIP setup continues asynchronously.
 - Final call outcomes are delivered through end-call webhook payloads (`completed`, `busy`, `no_answer`, `timeout`, `failed`, etc.).
-- Exotel outbound recording starts only after the bridge signals `call_answered` (after successful answer path).
+- Exotel outbound recording starts only after the bridge signals `call_answered` and the worker confirms egress start.
+- Exotel recordings are explicitly stopped on call end using the stored egress id.
+- Exotel completed-call duration is measured from `answered_at` to `ended_at`.
 - Trunk/provider mismatch is rejected at API level (`trunk_type` must match `call_service`).
 
 ## Architecture

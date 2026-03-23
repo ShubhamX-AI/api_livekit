@@ -151,6 +151,7 @@ class CallRecord(Document):
     sip_status_text: Optional[str] = None
     answered_at: Optional[datetime] = None
     recording_path: Optional[str] = None
+    recording_egress_id: Optional[str] = None
     transcripts: List[Dict] = []  # [{speaker, text, timestamp}]
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: Optional[datetime] = None

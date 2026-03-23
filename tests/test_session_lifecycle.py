@@ -1,7 +1,8 @@
 import unittest
 import asyncio
+from unittest.mock import AsyncMock
 
-from src.core.agents.session_lifecycle import CallReadinessGate
+from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 
 
 class TestCallReadinessGate(unittest.IsolatedAsyncioTestCase):
@@ -39,6 +40,39 @@ class TestCallReadinessGate(unittest.IsolatedAsyncioTestCase):
         asyncio.create_task(mark_answered_later())
         is_ready = await gate.wait_until_ready(timeout=0.2)
         self.assertTrue(is_ready)
+
+
+class TestRecordingManager(unittest.IsolatedAsyncioTestCase):
+    async def test_ensure_started_waits_until_recording_ready(self):
+        fake_lk = AsyncMock()
+        fake_lk.start_room_recording = AsyncMock(
+            return_value={
+                "success": True,
+                "data": {"s3_url": "https://s3/foo.ogg", "egress_id": "EG_123"},
+            }
+        )
+        recorder = RecordingManager(fake_lk, room_name="room-1", assistant_id="assistant-1")
+
+        ok = await recorder.ensure_started(timeout=1.0)
+
+        self.assertTrue(ok)
+        self.assertEqual(recorder.s3_url, "https://s3/foo.ogg")
+        self.assertEqual(recorder.egress_id, "EG_123")
+        self.assertEqual(fake_lk.start_room_recording.await_count, 1)
+
+    async def test_ensure_started_returns_false_on_timeout(self):
+        fake_lk = AsyncMock()
+
+        async def slow_start(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            return {"success": True, "data": {"s3_url": "late", "egress_id": "EG_late"}}
+
+        fake_lk.start_room_recording = AsyncMock(side_effect=slow_start)
+        recorder = RecordingManager(fake_lk, room_name="room-1", assistant_id="assistant-1")
+
+        ok = await recorder.ensure_started(timeout=0.05)
+
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":

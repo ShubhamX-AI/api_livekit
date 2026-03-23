@@ -308,6 +308,8 @@ async def entrypoint(ctx: JobContext):
     # Wait for participant
     logger.info("Waiting for participant...")
     participant = await ctx.wait_for_participant()
+    primary_participant_identity = participant.identity
+    call_end_triggered = False
 
     is_sip = participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
     is_exotel_bridge = False
@@ -345,6 +347,11 @@ async def entrypoint(ctx: JobContext):
                     logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
                     answered = await gate.wait_until_ready(timeout=60.0)
                     if answered:
+                        recording_ready = await recorder.ensure_started(timeout=8.0)
+                        if not recording_ready:
+                            logger.warning(
+                                "[EXOTEL] Recording did not become ready before first reply; proceeding"
+                            )
                         logger.info("[EXOTEL] call_answered confirmed — sleeping 0.5s for RTP stabilization")
                         await asyncio.sleep(0.5)
                     else:
@@ -366,11 +373,22 @@ async def entrypoint(ctx: JobContext):
     # --- Wait for Disconnect ---
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
+        nonlocal call_end_triggered
         if filler_controller:
             filler_controller.stop()
         if silence_watchdog:
             silence_watchdog.stop()
         logger.info(f"Participant disconnected: {participant.identity}")
+        if participant.identity != primary_participant_identity:
+            logger.info(
+                f"Ignoring non-primary disconnect: {participant.identity} "
+                f"(primary={primary_participant_identity})"
+            )
+            return
+        if call_end_triggered:
+            logger.info(f"Call end already triggered for room: {ctx.room.name}")
+            return
+        call_end_triggered = True
         asyncio.create_task(livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id))
         logger.info(f"Agent session ended for room: {ctx.room.name}")
 
