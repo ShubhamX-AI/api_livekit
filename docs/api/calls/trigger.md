@@ -57,13 +57,14 @@ Then your metadata should be:
 
 ### HTTP Status Codes
 
-| Code | Description                                                  |
-| :--- | :----------------------------------------------------------- |
-| 200  | Success - Call triggered successfully.                       |
-| 400  | Bad Request - Invalid input data or missing required fields. |
-| 401  | Unauthorized - Invalid or missing Bearer token.              |
-| 404  | Not Found - Assistant or trunk not found.                    |
-| 500  | Server Error - Internal server error during call initiation. |
+| Code | Description                                                                                |
+| :--- | :----------------------------------------------------------------------------------------- |
+| 200  | Success - Twilio call triggered successfully.                                              |
+| 202  | Accepted - Exotel call accepted for asynchronous setup; final outcome is delivered later. |
+| 400  | Bad Request - Invalid input data or missing required fields.                               |
+| 401  | Unauthorized - Invalid or missing Bearer token.                                            |
+| 404  | Not Found - Assistant or trunk not found.                                                  |
+| 500  | Server Error - Internal server error during call initiation.                               |
 
 ### Example: Basic Outbound Call
 
@@ -118,13 +119,16 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 ```json
 {
   "success": true,
-  "message": "Outbound call triggered successfully via Exotel bridge",
+  "message": "Outbound call accepted via Exotel bridge",
   "data": {
     "room_name": "exotel-+918044319240-abc123",
     "agent_dispatch": {
       "id": "agent_123",
       "state": "JOINING"
-    }
+    },
+    "status": "initiated"
   }
 }
 ```
+
+For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-call webhook payload for final status (`answered`, `busy`, `no_answer`, `rejected`, etc.).

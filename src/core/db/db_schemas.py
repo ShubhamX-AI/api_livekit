@@ -134,6 +134,22 @@ class CallRecord(Document):
     assistant_id: str
     assistant_name: str
     to_number: str
+    call_status: Literal[
+        "initiated",
+        "answered",
+        "completed",
+        "failed",
+        "busy",
+        "no_answer",
+        "rejected",
+        "cancelled",
+        "unreachable",
+        "timeout",
+    ] = "initiated"
+    call_status_reason: Optional[str] = None
+    sip_status_code: Optional[int] = None
+    sip_status_text: Optional[str] = None
+    answered_at: Optional[datetime] = None
     recording_path: Optional[str] = None
     transcripts: List[Dict] = []  # [{speaker, text, timestamp}]
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -19,6 +19,7 @@ from openai.types.realtime import AudioTranscription
 import os
 import asyncio
 import json
+from datetime import datetime, timezone
 
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
@@ -124,10 +125,14 @@ async def entrypoint(ctx: JobContext):
     # Initialize Services per session
     livekit_services = LiveKitService()
     s3_url = None
+    is_exotel_outbound = job_metadata.get("call_service") == "exotel"
+    recording_started = False
 
-    # Start recording in background — no need to block agent boot
-    async def _start_recording():
-        nonlocal s3_url
+    async def _start_recording_once():
+        nonlocal s3_url, recording_started
+        if recording_started:
+            return
+        recording_started = True
         try:
             recording_info = await livekit_services.start_room_recording(
                 room_name=ctx.room.name, 
@@ -143,7 +148,9 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"Failed to start recording: {e}", exc_info=True)
 
-    asyncio.create_task(_start_recording())
+    # Keep existing behavior for non-Exotel calls.
+    if not is_exotel_outbound:
+        asyncio.create_task(_start_recording_once())
 
     # Load tools attached to this assistant
     tools = []
@@ -373,6 +380,16 @@ async def entrypoint(ctx: JobContext):
                 if msg.get("event") == "call_answered":
                     logger.info("Bridge reported call answered via data message (SIP 200 OK)")
                     audio_ready.set()
+                    if is_exotel_outbound:
+                        asyncio.create_task(_start_recording_once())
+                        asyncio.create_task(
+                            livekit_services.update_call_status(
+                                room_name=ctx.room.name,
+                                call_status="answered",
+                                call_status_reason=None,
+                                answered_at=datetime.now(timezone.utc),
+                            )
+                        )
             except (json.JSONDecodeError, TypeError):
                 pass
 

@@ -16,6 +16,11 @@ Content-Type: application/json
     "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
     "assistant_name": "Support Agent",
     "to_number": "+15550200000",
+    "call_status": "completed",
+    "call_status_reason": null,
+    "sip_status_code": null,
+    "sip_status_text": null,
+    "answered_at": "2024-01-15T10:00:02.000Z",
     "recording_path": "https://your-bucket.s3.us-east-1.amazonaws.com/recordings/call_abc123.ogg",
     "transcripts": [
       {
@@ -52,6 +57,11 @@ Content-Type: application/json
 | `data.assistant_id`            | string  | ID of the assistant used.                  |
 | `data.assistant_name`          | string  | Name of the assistant.                     |
 | `data.to_number`               | string  | Phone number that was called.              |
+| `data.call_status`             | string  | Call lifecycle status (`initiated`, `answered`, `completed`) or SIP outcome (`busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`). |
+| `data.call_status_reason`      | string  | Optional detailed reason for non-success outcomes. |
+| `data.sip_status_code`         | number  | SIP response code for failed/not-answered outcomes (if available). |
+| `data.sip_status_text`         | string  | SIP response reason text for failed/not-answered outcomes (if available). |
+| `data.answered_at`             | string  | Timestamp when the user answered (if answered). |
 | `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
 | `data.transcripts`             | array   | List of conversation messages.             |
 | `data.transcripts[].speaker`   | string  | Who spoke (`agent` or `user`).             |
@@ -69,6 +79,11 @@ The webhook payload is generated from the stored call record and currently inclu
 - `assistant_id`
 - `assistant_name`
 - `to_number`
+- `call_status`
+- `call_status_reason`
+- `sip_status_code`
+- `sip_status_text`
+- `answered_at`
 - `recording_path`
 - `transcripts`
 - `started_at`

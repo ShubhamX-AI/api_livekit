@@ -3,7 +3,7 @@ import json
 import time
 import httpx
 from contextlib import asynccontextmanager
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Literal
 from datetime import datetime, timezone
 from livekit import api
 from livekit.api import LiveKitAPI, AccessToken, VideoGrants
@@ -153,84 +153,177 @@ class LiveKitService:
             )
             await call_record.insert()
 
-    # Update And send Details at the end of the call
-    async def end_call(self, room_name: str, assistant_id: str):
-        """Update the call record with the end time"""
+    async def initialize_call_record(
+        self,
+        room_name: str,
+        assistant_id: str,
+        assistant_name: str,
+        to_number: str,
+        call_status: Literal[
+            "initiated",
+            "answered",
+            "completed",
+            "failed",
+            "busy",
+            "no_answer",
+            "rejected",
+            "cancelled",
+            "unreachable",
+            "timeout",
+        ] = "initiated",
+        call_status_reason: Optional[str] = None,
+    ):
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
-            call_record.ended_at = datetime.now(timezone.utc)
-            # Call clculate the call duration
-            call_record.call_duration_minutes = (
-                call_record.ended_at - call_record.started_at
-            ).total_seconds() / 60
+            call_record.assistant_id = assistant_id
+            call_record.assistant_name = assistant_name
+            call_record.to_number = to_number
+            call_record.call_status = call_status
+            call_record.call_status_reason = call_status_reason
             await call_record.save()
-            logger.info(f"Call record ended for room: {room_name}")
+            return call_record
 
-        # Get End call url from assistant
+        call_record = CallRecord(
+            room_name=room_name,
+            assistant_id=assistant_id,
+            assistant_name=assistant_name,
+            to_number=to_number,
+            call_status=call_status,
+            call_status_reason=call_status_reason,
+            started_at=datetime.now(timezone.utc),
+        )
+        await call_record.insert()
+        return call_record
+
+    async def update_call_status(
+        self,
+        room_name: str,
+        call_status: Literal[
+            "initiated",
+            "answered",
+            "completed",
+            "failed",
+            "busy",
+            "no_answer",
+            "rejected",
+            "cancelled",
+            "unreachable",
+            "timeout",
+        ],
+        call_status_reason: Optional[str] = None,
+        sip_status_code: Optional[int] = None,
+        sip_status_text: Optional[str] = None,
+        answered_at: Optional[datetime] = None,
+        ended_at: Optional[datetime] = None,
+        call_duration_minutes: Optional[float] = None,
+    ):
+        call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if not call_record:
+            return None
+
+        call_record.call_status = call_status
+        call_record.call_status_reason = call_status_reason
+        if sip_status_code is not None:
+            call_record.sip_status_code = sip_status_code
+        if sip_status_text is not None:
+            call_record.sip_status_text = sip_status_text
+        if answered_at is not None:
+            call_record.answered_at = answered_at
+        if ended_at is not None:
+            call_record.ended_at = ended_at
+        if call_duration_minutes is not None:
+            call_record.call_duration_minutes = call_duration_minutes
+        await call_record.save()
+        return call_record
+
+    async def send_end_call_webhook(self, room_name: str, assistant_id: str):
+        call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if not call_record:
+            logger.info(f"No call record found for room: {room_name}; skipping webhook")
+            return
+
         assistant = await Assistant.find_one(
             Assistant.assistant_id == assistant_id,
             Assistant.assistant_end_call_url != None,
-            Assistant.assistant_end_call_url != ""
+            Assistant.assistant_end_call_url != "",
         )
-        
         logger.info(f"Assistant found with assistant_id: {assistant_id}")
 
-        if assistant and call_record and assistant.assistant_end_call_url:
-            end_call_url = assistant.assistant_end_call_url
-            
-            # Serialize the Call record and format the data
-            full_data = json.loads(call_record.model_dump_json())
-            
-            # Filter the data to include only requested fields
-            # Exclude: id
-            filtered_data = {
-                key: value
-                for key, value in full_data.items()
-                if key not in ["id"]
-            }
-            
-            payload = {
-                "success": True,
-                "message": "Call details fetched successfully",
-                "data": filtered_data
-            }
-            
-            # Send the Call record to the end call url
-            start_ms = time.monotonic()
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    _ = await client.post(end_call_url, json=payload)
-                    latency = int((time.monotonic() - start_ms) * 1000)
-                    logger.info(f"Call details sent to end call url: {end_call_url}")
-                    try:
-                        await ActivityLog(
-                            user_email=assistant.assistant_created_by_email,
-                            log_type="end_call_webhook",
-                            assistant_id=assistant_id,
-                            room_name=room_name,
-                            status="success",
-                            request_data={"url": end_call_url},
-                            latency_ms=latency,
-                            message=f"Post-call data sent to {end_call_url}",
-                        ).insert()
-                    except Exception as log_err:
-                        logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
-            except Exception as e:
+        if not (assistant and assistant.assistant_end_call_url):
+            return
+
+        end_call_url = assistant.assistant_end_call_url
+        full_data = json.loads(call_record.model_dump_json())
+        filtered_data = {key: value for key, value in full_data.items() if key not in ["id"]}
+        payload = {
+            "success": True,
+            "message": "Call details fetched successfully",
+            "data": filtered_data,
+        }
+
+        start_ms = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                _ = await client.post(end_call_url, json=payload)
                 latency = int((time.monotonic() - start_ms) * 1000)
-                logger.error(f"Failed to send call details to webhook: {e}")
+                logger.info(f"Call details sent to end call url: {end_call_url}")
                 try:
                     await ActivityLog(
                         user_email=assistant.assistant_created_by_email,
                         log_type="end_call_webhook",
                         assistant_id=assistant_id,
                         room_name=room_name,
-                        status="error",
+                        status="success",
                         request_data={"url": end_call_url},
                         latency_ms=latency,
-                        message=f"Failed to send post-call data to {end_call_url}: {str(e)}",
+                        message=f"Post-call data sent to {end_call_url}",
                     ).insert()
                 except Exception as log_err:
-                    logger.warning(f"Failed to write activity log: {log_err}")
+                    logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
+        except Exception as e:
+            latency = int((time.monotonic() - start_ms) * 1000)
+            logger.error(f"Failed to send call details to webhook: {e}")
+            try:
+                await ActivityLog(
+                    user_email=assistant.assistant_created_by_email,
+                    log_type="end_call_webhook",
+                    assistant_id=assistant_id,
+                    room_name=room_name,
+                    status="error",
+                    request_data={"url": end_call_url},
+                    latency_ms=latency,
+                    message=f"Failed to send post-call data to {end_call_url}: {str(e)}",
+                ).insert()
+            except Exception as log_err:
+                logger.warning(f"Failed to write activity log: {log_err}")
+
+    # Update And send Details at the end of the call
+    async def end_call(self, room_name: str, assistant_id: str):
+        """Update the call record with the end time"""
+        call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if call_record:
+            if call_record.call_status in {
+                "busy",
+                "no_answer",
+                "rejected",
+                "cancelled",
+                "unreachable",
+                "timeout",
+                "failed",
+            }:
+                logger.info(
+                    f"Call already ended with status={call_record.call_status} for room: {room_name}; skipping duplicate webhook"
+                )
+                return
+
+            call_record.ended_at = datetime.now(timezone.utc)
+            call_record.call_duration_minutes = (
+                call_record.ended_at - call_record.started_at
+            ).total_seconds() / 60
+            call_record.call_status = "completed"
+            await call_record.save()
+            logger.info(f"Call record ended for room: {room_name}")
+            await self.send_end_call_webhook(room_name=room_name, assistant_id=assistant_id)
 
 
     async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[dict]:
@@ -267,6 +360,10 @@ class LiveKitService:
 
                 # Create S3 URL
                 s3_url = f"https://{settings.S3_BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{filepath}"
+                call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+                if call_record:
+                    call_record.recording_path = s3_url
+                    await call_record.save()
 
                 payload = {
                     "success": True,
