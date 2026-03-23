@@ -6,6 +6,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 
 - Manages assistants, tools, SIP trunks, API keys, and call workflows.
 - Runs voice agents in LiveKit rooms.
+- Supports web calls with both text (`lk.chat`) and voice input.
 - Supports outbound calling and Exotel inbound routing.
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
@@ -16,6 +17,13 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 - Outbound calls: `twilio` and `exotel`.
 - Inbound calls: `exotel` only.
 - Twilio inbound is not implemented.
+
+## Exotel Outbound Lifecycle
+
+- Exotel outbound API calls return `202 Accepted` while SIP setup continues asynchronously.
+- Final call outcomes are delivered through end-call webhook payloads (`completed`, `busy`, `no_answer`, `timeout`, `failed`, etc.).
+- Exotel outbound recording starts only after the bridge signals `call_answered` (after successful answer path).
+- Trunk/provider mismatch is rejected at API level (`trunk_type` must match `call_service`).
 
 ## Architecture
 
@@ -91,6 +99,12 @@ Optional Docker flow:
 docker-compose up --build
 ```
 
+Run unit tests:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
 ## Documentation
 
 - MkDocs source lives in `docs/`.
@@ -140,6 +154,7 @@ api_livekit/
 ├── assets/
 │   └── audio/
 ├── docs/
+├── tests/
 ├── src/
 │   ├── api/
 │   │   ├── dependencies/

@@ -84,6 +84,23 @@ class ExotelSipClient:
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self.last_sip_error: str | None = None  # set when INVITE gets a ≥400 response
+        self.last_sip_status_code: int | None = None
+        self.last_sip_status_reason: str | None = None
+        self.last_call_status: str | None = None
+
+    @staticmethod
+    def _map_call_status_from_sip(code: int) -> str:
+        if code in (486, 600):
+            return "busy"
+        if code in (408, 480):
+            return "no_answer"
+        if code in (603, 403):
+            return "rejected"
+        if code == 487:
+            return "cancelled"
+        if code in (404, 410, 484):
+            return "unreachable"
+        return "failed"
 
     # ── SDP / Message Builders ───────────────────────────────────────────
 
@@ -322,13 +339,24 @@ class ExotelSipClient:
                     if code >= 400:
                         logger.error(f"[SIP] ❌ {status}")
                         self.last_sip_error = status  # e.g. "SIP/2.0 400 Bad Request"
+                        self.last_sip_status_code = code
+                        self.last_sip_status_reason = status.split(" ", 2)[2] if len(status.split(" ", 2)) > 2 else "Unknown SIP error"
+                        self.last_call_status = self._map_call_status_from_sip(code)
                         return None
 
             except asyncio.TimeoutError:
                 logger.error("[SIP] Timeout")
+                self.last_sip_error = "SIP timeout"
+                self.last_sip_status_code = None
+                self.last_sip_status_reason = "SIP timeout"
+                self.last_call_status = "timeout"
                 return None
             except Exception as e:
                 logger.error(f"[SIP] Error: {e}")
+                self.last_sip_error = str(e)
+                self.last_sip_status_code = None
+                self.last_sip_status_reason = str(e)
+                self.last_call_status = "failed"
                 return None
 
     async def wait_for_disconnection(self):

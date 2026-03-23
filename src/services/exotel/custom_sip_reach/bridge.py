@@ -121,12 +121,26 @@ async def run_bridge(
             logger.error("[BRIDGE] SIP failed")
             if result_signal:
                 error = sip_client.last_sip_error or "SIP INVITE failed"
-                await result_signal.put({"success": False, "error": error})
+                await result_signal.put(
+                    {
+                        "success": False,
+                        "call_status": sip_client.last_call_status or "failed",
+                        "sip_status_code": sip_client.last_sip_status_code,
+                        "sip_status_text": sip_client.last_sip_status_reason,
+                        "error": error,
+                    }
+                )
             return
 
         # Signal the API that the call is established; bridge loop continues below
         if result_signal:
-            await result_signal.put({"success": True, "room_name": room_name})
+            await result_signal.put(
+                {
+                    "success": True,
+                    "call_status": "answered",
+                    "room_name": room_name,
+                }
+            )
 
         # Flush buffered agent audio + open RTP path
         rtp_bridge.set_remote_endpoint(res["remote_ip"], res["remote_port"], res["pt"])
@@ -204,7 +218,22 @@ async def run_bridge(
         # Signal failure if crash happened before the INVITE resolved
         if result_signal:
             try:
-                result_signal.put_nowait({"success": False, "error": str(e)})
+                call_status = "failed"
+                sip_status_code = None
+                sip_status_text = str(e)
+                if sip_client:
+                    call_status = sip_client.last_call_status or "failed"
+                    sip_status_code = sip_client.last_sip_status_code
+                    sip_status_text = sip_client.last_sip_status_reason or str(e)
+                result_signal.put_nowait(
+                    {
+                        "success": False,
+                        "call_status": call_status,
+                        "sip_status_code": sip_status_code,
+                        "sip_status_text": sip_status_text,
+                        "error": str(e),
+                    }
+                )
             except asyncio.QueueFull:
                 pass  # already signaled
 
