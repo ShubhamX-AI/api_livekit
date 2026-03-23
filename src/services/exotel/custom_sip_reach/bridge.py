@@ -68,7 +68,6 @@ async def run_bridge(
 
     rtp_bridge = None
     sip_client = None
-    forward_task: asyncio.Task | None = None
     inbound_bye = None
     ended_by_remote_bye = False
     room = rtc.Room()
@@ -90,18 +89,16 @@ async def run_bridge(
         sip_client = ExotelSipClient(**sip_client_kwargs)
         inbound_bye = register_call_id(sip_client.call_id)
 
+        # Subscribe to ALL audio tracks (agent voice + background/thinking sounds)
         @room.on("track_subscribed")
         def on_track(track, publication, participant):
-            nonlocal forward_task
-            if (
-                track.kind == rtc.TrackKind.KIND_AUDIO
-                and publication.source == rtc.TrackSource.SOURCE_MICROPHONE
-                and forward_task is None
-            ):
+            if track.kind == rtc.TrackKind.KIND_AUDIO:
                 logger.info(
-                    f"[BRIDGE] Agent audio from {participant.identity} — buffering"
+                    f"[BRIDGE] Audio track from {participant.identity} "
+                    f"(source={publication.source}) — adding to mixer"
                 )
-                forward_task = asyncio.create_task(_forward_audio(track, rtp_bridge))
+                rtp_bridge.add_outbound_track(track)
+                rtp_bridge.start_outbound_mixer()
 
         token = (
             AccessToken(LK_API_KEY, LK_API_SECRET)
@@ -238,13 +235,6 @@ async def run_bridge(
                 pass  # already signaled
 
     finally:
-        if forward_task is not None:
-            forward_task.cancel()
-            try:
-                await forward_task
-            except asyncio.CancelledError:
-                pass
-
         if sip_client:
             if not ended_by_remote_bye:
                 await sip_client.send_bye()
@@ -258,9 +248,3 @@ async def run_bridge(
         logger.info(f"[BRIDGE] Port {port} released")
         if sip_client:
             unregister_call_id(sip_client.call_id)
-
-
-async def _forward_audio(track: rtc.Track, bridge: RTPMediaBridge):
-    stream = rtc.AudioStream(track, sample_rate=48000, num_channels=1)
-    async for event in stream:
-        await bridge.send_to_rtp(event.frame)
