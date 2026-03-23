@@ -5,6 +5,7 @@ Handles:
   • Binding a UDP socket for RTP
   • Receiving inbound RTP, decoding G.711, resampling to 48 kHz, pushing to LiveKit
   • Receiving LiveKit audio, resampling to 8 kHz, encoding G.711, sending as RTP
+  • Mixing multiple outbound audio tracks (agent voice + background sounds)
   • Buffering agent audio while SIP INVITE is in progress
 """
 
@@ -15,6 +16,7 @@ import socket
 import struct
 import time
 import warnings
+from collections.abc import AsyncIterator
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
@@ -86,8 +88,15 @@ class RTPMediaBridge:
         # At 8kHz, 16-bit mono: 20ms = 160 samples = 320 bytes of PCM.
         # G.711 encodes 1:1, so payload = 160 bytes. Total RTP = 172 bytes.
         # LiveKit sends 10ms frames, so we pack 2 frames → 1 RTP packet.
-        self._PTIME_BYTES = 160  # 10ms at 8kHz 16-bit
+        self._PTIME_BYTES = 320  # 20ms at 8kHz 16-bit mono (160 samples * 2 bytes)
         self._pcm_accumulator = b""
+
+        # Multi-track mixer: combines agent voice + background/thinking sounds
+        self._mixer = rtc.AudioMixer(
+            SAMPLE_RATE_LK, 1, blocksize=960, stream_timeout_ms=200, capacity=50
+        )
+        self._mixer_task: asyncio.Task | None = None
+        self._track_streams: list[rtc.AudioStream] = []
 
     def set_remote_endpoint(self, ip: str, port: int, pt: int = PCMA_PAYLOAD_TYPE):
         self._remote_addr = (ip, port)
@@ -213,8 +222,37 @@ class RTPMediaBridge:
             except Exception as e:
                 logger.error(f"[RTP] Decode error: {e}", exc_info=True)
 
+    def add_outbound_track(self, track: rtc.Track):
+        """Subscribe to an audio track and feed it into the mixer."""
+        stream = rtc.AudioStream(track, sample_rate=SAMPLE_RATE_LK, num_channels=1)
+        self._track_streams.append(stream)
+
+        # Wrap AudioStream (yields AudioFrameEvent) as AsyncIterator[AudioFrame]
+        async def _frame_iter() -> AsyncIterator[rtc.AudioFrame]:
+            async for event in stream:
+                yield event.frame
+
+        self._mixer.add_stream(_frame_iter())
+        logger.info(f"[RTP] Added track to outbound mixer (total={len(self._track_streams)})")
+
+    def start_outbound_mixer(self):
+        """Start the task that reads mixed audio and sends it as RTP."""
+        if self._mixer_task is None:
+            self._mixer_task = asyncio.create_task(self._mixer_to_rtp_loop())
+            logger.info("[RTP] Outbound mixer loop started")
+
+    async def _mixer_to_rtp_loop(self):
+        """Read mixed frames from AudioMixer and forward them to RTP."""
+        try:
+            async for frame in self._mixer:
+                await self.send_to_rtp(frame)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"[RTP] Mixer loop error: {e}", exc_info=True)
+
     async def send_to_rtp(self, frame: rtc.AudioFrame):
-        """Send agent audio to remote RTP. Buffers if SIP not yet answered."""
+        """Send mixed audio to remote RTP. Buffers if SIP not yet answered."""
         if not self._remote_addr:
             self._frame_buffer.append(frame)
             return
@@ -278,6 +316,9 @@ class RTPMediaBridge:
 
     def stop(self):
         self._running = False
+        # Cancel the mixer output loop
+        if self._mixer_task and not self._mixer_task.done():
+            self._mixer_task.cancel()
         try:
             loop = asyncio.get_event_loop()
             loop.remove_reader(self._sock.fileno())
