@@ -118,6 +118,16 @@ class CreateAssistant(BaseModel):
                 config["type"] = model  # inject discriminator key
         return data
 
+    @model_validator(mode="after")
+    def validate_end_call_fields(self):
+        """Validate that required end call fields are present when enabled."""
+        if self.assistant_end_call_enabled:
+            if not self.assistant_end_call_trigger_phrase:
+                raise ValueError("assistant_end_call_trigger_phrase is required when assistant_end_call_enabled is True")
+            if not self.assistant_end_call_agent_message:
+                raise ValueError("assistant_end_call_agent_message is required when assistant_end_call_enabled is True")
+        return self
+
 
 # For Assistant update
 class UpdateAssistant(BaseModel):

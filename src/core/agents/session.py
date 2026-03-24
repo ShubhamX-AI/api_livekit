@@ -150,10 +150,15 @@ async def entrypoint(ctx: JobContext):
 
         end_instructions = getattr(assistant, "assistant_end_call_agent_message", None) or "say goodbye to the user"
         try:
+
+            async def _on_call_ended_completed(_event):
+                await livekit_services.end_call(room_name, assistant_id)
+
             end_call_tool = EndCallTool(
                 extra_description=extra_description,
                 delete_room=True,
                 end_instructions=end_instructions,
+                on_tool_completed=_on_call_ended_completed,
             )
             tools.extend(end_call_tool.tools)
             logger.info(f"EndCallTool enabled for assistant {assistant.assistant_id}")

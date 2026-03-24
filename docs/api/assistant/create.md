@@ -19,8 +19,8 @@ Create a new AI assistant configuration.
 | `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
 | `assistant_interaction_config` | object | No | Interaction settings (see below). |
 | `assistant_end_call_enabled`  | boolean | No       | If `true`, enables built-in `end_call` tool for graceful call ending. Default: `false`. |
-| `assistant_end_call_trigger_phrase` | string | No | Example user phrase that should signal the assistant to trigger `end_call` (max 300 chars). Default when omitted: generic instruction to end only after clear user confirmation. |
-| `assistant_end_call_agent_message` | string | No | What the assistant should say just before ending the call (max 300 chars). Default when omitted: `say goodbye to the user`. |
+| `assistant_end_call_trigger_phrase` | string | Conditional | Example user phrase that should signal the assistant to trigger `end_call` (max 300 chars). **Required if `assistant_end_call_enabled` is `true`.** |
+| `assistant_end_call_agent_message` | string | Conditional | What the assistant should say just before ending the call (max 300 chars). **Required if `assistant_end_call_enabled` is `true`.** |
 | `assistant_end_call_url`      | string | No       | URL to POST call details when the call ends.                                      |
 
 ### Interaction Configuration
@@ -39,11 +39,10 @@ These settings control how the assistant interacts with the user during a sessio
 
     If `assistant_interaction_config` is omitted, the assistant uses the default values listed above. You can provide only the fields you wish to override within the object.
 
-!!! note "End call defaults"
+!!! note "End call requirements"
 
+    If `assistant_end_call_enabled` is `true`, both `assistant_end_call_trigger_phrase` and `assistant_end_call_agent_message` must be provided.
     If `assistant_end_call_enabled` is not provided, it defaults to `false`.
-    If enabled but `assistant_end_call_trigger_phrase` is not provided, the assistant uses a generic trigger rule (end only after clear user confirmation).
-    If enabled but `assistant_end_call_agent_message` is not provided, the final message falls back to `say goodbye to the user`.
 
 ### TTS Configuration
 
