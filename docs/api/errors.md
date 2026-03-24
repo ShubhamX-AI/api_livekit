@@ -42,10 +42,11 @@ All endpoints return a standard envelope with `success`, `message`, and `data`.
 | Code | Meaning | When Used |
 | :--- | :--- | :--- |
 | `500` | Internal Server Error | Unhandled exception in API service logic. |
-| `502` | Bad Gateway | Upstream/provider integration error (for example SIP setup failure). |
-| `504` | Gateway Timeout | Upstream call setup timed out. |
+| `502` | Bad Gateway | Integration-level upstream/provider failure. Availability depends on endpoint implementation. |
+| `504` | Gateway Timeout | Integration-level upstream timeout. Availability depends on endpoint implementation. |
 
 ## Notes
 
 - Current routes generally return `200` on successful create/update/delete operations.
-- Route-specific pages should be treated as the source of truth for endpoint-specific statuses.
+- Route-specific pages are the source of truth for endpoint-specific statuses.
+- `502` and `504` are not guaranteed on every route. For example, asynchronous flows such as `POST /call/outbound` with Exotel can return `202 Accepted` first and later report final provider outcome via webhook `data.call_status`.

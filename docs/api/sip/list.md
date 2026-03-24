@@ -2,6 +2,8 @@
 
 List all active SIP trunks created by the current user.
 
+### Endpoint
+
 - **URL**: `/sip/list`
 - **Method**: `GET`
 - **Headers**: `Authorization: Bearer <your_api_key>`
@@ -37,7 +39,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/sip/list" \
      -H "Authorization: Bearer <your_api_key>"
 ```
 
-**Response:**
+### Example Response
 
 ```json
 {
@@ -59,3 +61,8 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/sip/list" \
   ]
 }
 ```
+
+### Operational Notes
+
+- Use this endpoint for inventory views and trunk pickers.
+- Fetch details from the trunk detail API when full provider configuration is required.

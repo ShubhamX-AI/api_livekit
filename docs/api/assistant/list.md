@@ -2,6 +2,8 @@
 
 List assistants created by the current user with support for pagination, sorting, and date filtering.
 
+### Endpoint
+
 - **URL**: `/assistant/list`
 - **Method**: `GET`
 - **Headers**: `Authorization: Bearer <your_api_key>`
@@ -53,7 +55,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/list?pa
      -H "Authorization: Bearer <your_api_key>"
 ```
 
-**Response:**
+### Example Response
 
 ```json
 {
@@ -88,3 +90,8 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/list?pa
   }
 }
 ```
+
+### Operational Notes
+
+- Use `page` + `limit` for deterministic paging in dashboard and admin views.
+- For large datasets, prefer narrow date filters with stable sorting.

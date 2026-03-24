@@ -131,7 +131,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 }
 ```
 
-For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-call webhook payload for final status (`answered`, `busy`, `no_answer`, `rejected`, etc.).
+For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-call webhook payload (`data.call_status`) for lifecycle updates and terminal outcomes.
 
 ### Exotel Async Lifecycle Notes
 
@@ -140,3 +140,17 @@ For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-ca
 - Assistant speech/transcript processing starts only after bridge readiness (`call_answered`), not merely after `202 Accepted`.
 - The assistant starts Exotel outbound recording only after the bridge signals `call_answered` (post SIP `200 OK`).
 - If trunk type and `call_service` do not match (for example, Twilio trunk with `call_service="exotel"`), the API returns `400`.
+
+### Exotel Outcome Mapping (SIP to Final `call_status`)
+
+`POST /call/outbound` with `call_service="exotel"` returns `202 Accepted` once setup starts. Final outcomes are asynchronous and delivered through the end-call webhook (`data.call_status`).
+
+| SIP/Runtime Outcome | Final `call_status` | Meaning |
+| :--- | :--- | :--- |
+| `486 Busy Here`, `600 Busy Everywhere` | `busy` | Callee line is busy. |
+| `408 Request Timeout`, `480 Temporarily Unavailable` | `no_answer` | Callee did not answer in time. |
+| `403 Forbidden`, `603 Decline` | `rejected` | Call was explicitly rejected. |
+| `487 Request Terminated` | `cancelled` | Call setup was cancelled/terminated before answer. |
+| `404 Not Found`, `410 Gone`, `484 Address Incomplete` | `unreachable` | Destination number is unreachable or invalid. |
+| Bridge/SIP timeout path | `timeout` | Setup timed out before successful answer flow. |
+| Any other setup failure | `failed` | Generic setup failure; check `call_status_reason` and SIP fields if present. |

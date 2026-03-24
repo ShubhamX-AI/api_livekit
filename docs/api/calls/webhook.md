@@ -59,8 +59,8 @@ Content-Type: application/json
 | `data.to_number`               | string  | Phone number that was called.              |
 | `data.call_status`             | string  | Call lifecycle status (`initiated`, `answered`, `completed`) or terminal SIP outcome (`busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`). |
 | `data.call_status_reason`      | string  | Optional detailed reason for non-success outcomes. |
-| `data.sip_status_code`         | number  | SIP response code for failed/not-answered outcomes (if available). |
-| `data.sip_status_text`         | string  | SIP response reason text for failed/not-answered outcomes (if available). |
+| `data.sip_status_code`         | number  | SIP response code when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
+| `data.sip_status_text`         | string  | SIP reason text when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
 | `data.answered_at`             | string  | Timestamp when the user answered (if answered). |
 | `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
 | `data.transcripts`             | array   | List of conversation messages.             |
@@ -70,6 +70,24 @@ Content-Type: application/json
 | `data.started_at`              | string  | Call start time (ISO 8601).                |
 | `data.ended_at`                | string  | Call end time (ISO 8601).                  |
 | `data.call_duration_minutes`   | number  | Total call duration in minutes.            |
+
+### Call Status Glossary (Authoritative)
+
+Lifecycle statuses:
+
+- `initiated`: Call record created and setup started.
+- `answered`: Bridge signaled call answer and media path became ready.
+- `completed`: Call ended after an answered/active session.
+
+Terminal setup outcomes:
+
+- `busy`: Callee line is busy.
+- `no_answer`: Callee did not answer in time.
+- `rejected`: Callee/provider explicitly rejected the call.
+- `cancelled`: Setup was cancelled or terminated before answer.
+- `unreachable`: Destination number is unreachable/invalid for routing.
+- `timeout`: Setup timed out before completion.
+- `failed`: Generic setup/runtime failure not represented by the above outcomes.
 
 ## Current Runtime Payload Shape
 
@@ -152,6 +170,12 @@ Content-Type: application/json
 - Exotel outbound setup can complete asynchronously after the initial `202 Accepted` API response.
 - If SIP returns `200 OK` but no RTP arrives (`no_rtp_after_answer`), runtime surfaces final `call_status` as `failed`.
 - Final status is emitted once per call lifecycle in webhook delivery flow.
+
+### How to Read Outbound Outcomes
+
+- Outbound API response status (`200`/`202`/`4xx`/`5xx`) indicates request validation/acceptance at API time.
+- For asynchronous Exotel setup, webhook `data.call_status` is authoritative for lifecycle updates and terminal outcomes.
+- Treat terminal statuses (`completed`, `busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`) as final outcomes.
 
 ### Public Payload vs Internal Tracking
 

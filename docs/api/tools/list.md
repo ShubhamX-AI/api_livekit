@@ -2,6 +2,8 @@
 
 List all active tools created by the current user.
 
+### Endpoint
+
 - **URL**: `/tool/list`
 - **Method**: `GET`
 - **Headers**: `Authorization: Bearer <your_api_key>`
@@ -34,7 +36,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/list" \
      -H "Authorization: Bearer <your_api_key>"
 ```
 
-**Response:**
+### Example Response
 
 ```json
 {
@@ -58,3 +60,8 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/list" \
   ]
 }
 ```
+
+### Operational Notes
+
+- The endpoint returns only active tools visible to the authenticated user.
+- Use `tool_execution_type` to split webhook tools from static-return tools in UI clients.

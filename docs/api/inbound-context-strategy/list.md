@@ -2,18 +2,19 @@
 
 List active strategies owned by the authenticated user.
 
+### Endpoint
+
 - **URL**: `/inbound_context_strategy/list`
 - **Method**: `GET`
-- **Auth**: `Authorization: Bearer <your_api_key>`
+- **Headers**: `Authorization: Bearer <your_api_key>`
 
-## What You Get
+### Response Schema
 
-Returns all active strategies in descending creation order.
-
-## Response Fields
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
+| Field                    | Type    | Description                                          |
+| :----------------------- | :------ | :--------------------------------------------------- |
+| `success`                | boolean | Indicates whether the request succeeded.             |
+| `message`                | string  | Human-readable response message.                     |
+| `data`                   | array   | List of active inbound context strategies.           |
 | `data[].strategy_id` | string | Unique strategy ID. |
 | `data[].strategy_name` | string | Strategy display name. |
 | `data[].strategy_type` | string | Strategy type (`webhook`). |
@@ -21,14 +22,22 @@ Returns all active strategies in descending creation order.
 | `data[].strategy_created_at` | string | Creation timestamp (UTC). |
 | `data[].strategy_updated_at` | string | Last update timestamp (UTC). |
 
-## Example Request
+### HTTP Status Codes
+
+| Code | Description                                      |
+| :--- | :----------------------------------------------- |
+| 200  | Success - Strategies retrieved successfully.     |
+| 401  | Unauthorized - Invalid or missing Bearer token. |
+| 500  | Server Error - Internal server error.            |
+
+### Example Request
 
 ```bash
 curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/inbound_context_strategy/list" \
      -H "Authorization: Bearer <your_api_key>"
 ```
 
-## Example Response
+### Example Response
 
 ```json
 {
@@ -54,7 +63,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/inbound_context_s
 }
 ```
 
-## Notes
+### Operational Notes
 
-- Only active strategies are returned.
+- The endpoint returns only active strategies in descending creation order.
 - Header masking is for response safety only; stored values are not overwritten by masking.
