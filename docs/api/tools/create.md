@@ -11,7 +11,7 @@ Define a new tool that can be used by your assistants.
 
 | Field                   | Type   | Required | Description                                                                 |
 | :---------------------- | :----- | :------- | :-------------------------------------------------------------------------- |
-| `tool_name`             | string | Yes      | Snake*case name, e.g., `lookup_weather` (must match `^[a-z*][a-z0-9_]\*$`). |
+| `tool_name`             | string | Yes      | Snake_case name, e.g., `lookup_weather` (must match `^[a-z][a-z0-9_]*$`). |
 | `tool_description`      | string | Yes      | Description for the LLM explaining what the tool does (1-500 characters).   |
 | `tool_parameters`       | array  | No       | List of parameters (see schema below).                                      |
 | `tool_execution_type`   | string | Yes      | `webhook` or `static_return`.                                               |

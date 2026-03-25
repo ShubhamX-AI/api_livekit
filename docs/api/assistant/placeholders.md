@@ -104,13 +104,21 @@ If lookup fails (timeout/HTTP/invalid response):
 
 !!! tip "Best Practice"
 
-    Missing keys render as empty strings. Write prompts that still read naturally when optional fields are absent.
+    Missing keys render as empty strings. The template engine does **not** support conditionals (`if/else`). Write prompts that still read naturally when optional fields are absent.
 
-    ```json
-    {
-      "assistant_prompt": "Hello {{context.customer_name}}, welcome back."
-    }
+    **Risky** — renders as `Hello , welcome back.` when name is missing:
+    ```
+    Hello {{context.customer_name}}, welcome back.
     ```
 
-    If `context.customer_name` is missing, this can render as `Hello , welcome back.`.
-    Prefer phrasing that remains safe when optional values are empty.
+    **Safe** — reads naturally even when name is missing:
+    ```
+    Welcome back. I can see you're calling from {{call.caller_number}}.
+    ```
+
+    **Safe with fallback phrasing** — place the optional value mid-sentence where its absence is less noticeable:
+    ```
+    I have your account pulled up{{context.customer_name ? " for " + context.customer_name : ""}}. How can I help you today?
+    ```
+
+    When in doubt, keep the opening greeting independent of optional context fields and use those fields only in follow-up lines where omission is less noticeable.

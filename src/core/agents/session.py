@@ -59,13 +59,13 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"Loaded assistant config: {assistant.assistant_name} (ID: {assistant.assistant_id})")
 
     # Extract metadata from job metadata
-    to_number = "Unknown | Web Call"
+    to_number = "Web Call"
     job_metadata = {}
     render_data = {}
     if ctx.job.metadata:
         try:
             job_metadata = json.loads(ctx.job.metadata)
-            to_number = job_metadata.get("to_number", "Unknown | Web Call")
+            to_number = job_metadata.get("to_number", "Web Call")
             logger.info(f"Extracted to_number from job metadata: {to_number}")
         except Exception as e:
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")

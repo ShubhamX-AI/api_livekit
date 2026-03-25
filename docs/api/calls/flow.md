@@ -1,6 +1,45 @@
 # Call Flow
 
-When you trigger an outbound call, the flow differs slightly based on the provider:
+There are three distinct call flows depending on the integration type.
+
+## Web Call Flow
+
+Web calls use WebRTC directly. No SIP trunk is involved.
+
+1. **Token Request**: Client calls `POST /web_call/get_token` with an `assistant_id`.
+2. **Room Creation**: API creates a LiveKit room and returns a participant token.
+3. **Client Connects**: The browser or mobile app connects to LiveKit using the token.
+4. **Agent Joins**: The AI assistant joins the room automatically.
+5. **Real-time Session**: Audio and optional text input are exchanged in the room until disconnection.
+
+```mermaid
+sequenceDiagram
+    participant Client as Browser / Mobile
+    participant API
+    participant LK as LiveKit
+    participant Agent as AI Agent
+
+    Client->>API: POST /web_call/get_token
+    API->>LK: Create room
+    API-->>Client: token + room_name
+    Client->>LK: Connect with token (WebRTC)
+    LK->>Agent: Dispatch agent into room
+    Agent->>LK: Join room
+    loop Real-time session
+        Client->>LK: Audio / text input
+        LK->>Agent: Stream audio
+        Agent-->>LK: AI response audio
+        LK-->>Client: Playback
+    end
+    Client->>LK: Disconnect
+    LK->>Agent: Participant left
+```
+
+---
+
+## Outbound SIP Call Flows
+
+When you trigger an outbound call, the flow differs based on the provider.
 
 ### Twilio Flow (Managed SIP)
 
