@@ -118,6 +118,7 @@ async def entrypoint(ctx: JobContext):
     livekit_services = LiveKitService()
     gate = CallReadinessGate(is_exotel_outbound)
     recorder = RecordingManager(livekit_services, room_name, assistant_id)
+    pending_transcript_tasks: list[asyncio.Task] = []
 
     # Start recording immediately for non-Exotel calls
     if not is_exotel_outbound:
@@ -137,6 +138,23 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"Failed to load tools: {e}", exc_info=True)
 
+    # Single teardown path used by both EndCallTool and participant disconnect
+    async def _flush_and_end_call(delay: float = 0.0):
+        nonlocal call_end_triggered
+        call_end_triggered = True  # Block duplicate from disconnect handler
+        if delay > 0:
+            await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
+        # Wait for in-flight transcript saves before firing webhook (max 3s)
+        pending = [t for t in pending_transcript_tasks if not t.done()]
+        if pending:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending, return_exceptions=True), timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for pending transcript tasks")
+        await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
+
     # EndCallTool support
     if getattr(assistant, "assistant_end_call_enabled", False):
         trigger_phrase = (getattr(assistant, "assistant_end_call_trigger_phrase", None) or "").strip()
@@ -152,7 +170,7 @@ async def entrypoint(ctx: JobContext):
         try:
 
             async def _on_call_ended_completed(_event):
-                await livekit_services.end_call(room_name, assistant_id)
+                await _flush_and_end_call(delay=1.5)  # 1.5s lets TTS audio flush to egress
 
             end_call_tool = EndCallTool(
                 extra_description=extra_description,
@@ -256,7 +274,7 @@ async def entrypoint(ctx: JobContext):
         if silence_watchdog and event.item.role == "assistant" and not user_is_speaking:
             silence_watchdog.on_assistant_message(event.item.text_content)
 
-        asyncio.create_task(
+        task = asyncio.create_task(
             livekit_services.add_transcript(
                 room_name=ctx.room.name,
                 speaker=event.item.role,
@@ -267,6 +285,7 @@ async def entrypoint(ctx: JobContext):
                 recording_path=recorder.s3_url,
             )
         )
+        pending_transcript_tasks.append(task)
 
     # --- Start Session ---
     logger.info("Starting AgentSession...")
@@ -393,8 +412,8 @@ async def entrypoint(ctx: JobContext):
         if call_end_triggered:
             logger.info(f"Call end already triggered for room: {ctx.room.name}")
             return
-        call_end_triggered = True
-        asyncio.create_task(livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id))
+        call_end_triggered = True  # Immediate guard before task creation
+        asyncio.create_task(_flush_and_end_call(delay=0.0))  # No delay — user already gone
         logger.info(f"Agent session ended for room: {ctx.room.name}")
 
 if __name__ == "__main__":
