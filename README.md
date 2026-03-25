@@ -191,5 +191,5 @@ api_livekit/
 │       │       ├── sip_client.py
 │       │       └── inbound_listener.py
 │       └── livekit/
-└── scripts/
+└── scripts/ 
 ```
