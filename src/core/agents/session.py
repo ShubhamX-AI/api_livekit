@@ -144,8 +144,6 @@ async def entrypoint(ctx: JobContext):
         call_end_triggered = True  # Block duplicate from disconnect handler
         if delay > 0:
             await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
-        # Small buffer for end-message conversation_item_added to fire and queue its task
-        # await asyncio.sleep(0.5)
         # Wait for in-flight transcript saves before firing webhook (max 3s)
         pending = [t for t in pending_transcript_tasks if not t.done()]
         if pending:
@@ -172,11 +170,11 @@ async def entrypoint(ctx: JobContext):
         try:
 
             async def _on_call_ended_completed(_event):
-                await _flush_and_end_call(delay=1.5)  # 1.5s lets TTS audio flush to egress
+                await _flush_and_end_call(delay=3.0)  # 1.5s lets TTS audio flush to egress
 
             end_call_tool = EndCallTool(
                 extra_description=extra_description,
-                delete_room=False,
+                delete_room=True,
                 end_instructions=end_instructions,
                 on_tool_completed=_on_call_ended_completed,
             )
