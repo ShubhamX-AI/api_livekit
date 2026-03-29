@@ -15,7 +15,7 @@ from livekit.protocol.sip import (
 )
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
-from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog
+from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog, UsageRecord
 
 setup_logging()
 
@@ -128,6 +128,10 @@ class LiveKitService:
         assistant_name: str,
         to_number: str,
         recording_path: Optional[str],
+        created_by_email: Optional[str] = None,
+        call_type: Optional[str] = None,
+        call_service: Optional[str] = None,
+        platform_number: Optional[str] = None,
     ):
         """Append a transcript entry to an existing call record or create a new one."""
         # If room name present in call_records collection, update it
@@ -142,7 +146,7 @@ class LiveKitService:
             )
             await call_record.save()
         else:
-            # Create new call record
+            # Create new call record (fallback if initialize_call_record was not called)
             call_record = CallRecord(
                 room_name=room_name,
                 assistant_id=assistant_id,
@@ -157,6 +161,10 @@ class LiveKitService:
                     }
                 ],
                 started_at=datetime.now(timezone.utc),
+                created_by_email=created_by_email,
+                call_type=call_type,
+                call_service=call_service,
+                platform_number=platform_number,
             )
             await call_record.insert()
 
@@ -179,6 +187,10 @@ class LiveKitService:
             "timeout",
         ] = "initiated",
         call_status_reason: Optional[str] = None,
+        created_by_email: Optional[str] = None,
+        call_type: Optional[str] = None,
+        call_service: Optional[str] = None,
+        platform_number: Optional[str] = None,
     ):
         """Create a call record if missing, or refresh base call metadata if present."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
@@ -188,6 +200,14 @@ class LiveKitService:
             call_record.to_number = to_number
             call_record.call_status = call_status
             call_record.call_status_reason = call_status_reason
+            if created_by_email:
+                call_record.created_by_email = created_by_email
+            if call_type:
+                call_record.call_type = call_type
+            if call_service:
+                call_record.call_service = call_service
+            if platform_number:
+                call_record.platform_number = platform_number
             await call_record.save()
             return call_record
 
@@ -199,6 +219,10 @@ class LiveKitService:
             call_status=call_status,
             call_status_reason=call_status_reason,
             started_at=datetime.now(timezone.utc),
+            created_by_email=created_by_email,
+            call_type=call_type,
+            call_service=call_service,
+            platform_number=platform_number,
         )
         await call_record.insert()
         return call_record
@@ -265,6 +289,20 @@ class LiveKitService:
         end_call_url = assistant.assistant_end_call_url
         full_data = json.loads(call_record.model_dump_json())
         filtered_data = {key: value for key, value in full_data.items() if key not in ["id"]}
+
+        # Enrich with usage data if available
+        usage_record = await UsageRecord.find_one(UsageRecord.room_name == room_name)
+        if usage_record:
+            filtered_data["usage"] = {
+                "llm_input_audio_tokens": usage_record.llm_input_audio_tokens,
+                "llm_input_text_tokens": usage_record.llm_input_text_tokens,
+                "llm_output_audio_tokens": usage_record.llm_output_audio_tokens,
+                "llm_output_text_tokens": usage_record.llm_output_text_tokens,
+                "llm_total_tokens": usage_record.llm_total_tokens,
+                "tts_characters_count": usage_record.tts_characters_count,
+                "tts_audio_duration": usage_record.tts_audio_duration,
+            }
+
         payload = {
             "success": True,
             "message": "Call details fetched successfully",

@@ -1,4 +1,4 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from beanie import init_beanie
 from src.core.config import settings
 from src.core.db.db_schemas import (
@@ -10,6 +10,7 @@ from src.core.db.db_schemas import (
     CallRecord,
     Tool,
     ActivityLog,
+    UsageRecord,
 )
 import logging
 
@@ -19,14 +20,13 @@ logger = logging.getLogger(__name__)
 class Database:
     """Database connection manager for MongoDB with Beanie"""
 
-    client: AsyncIOMotorClient = None
+    client: AsyncMongoClient = None
 
     @classmethod
     async def connect_db(cls):
         """Initialize database connection and Beanie ODM"""
         try:
-            # Create Motor client
-            cls.client = AsyncIOMotorClient(settings.MONGODB_URL, tz_aware=True)
+            cls.client = AsyncMongoClient(settings.MONGODB_URL, tz_aware=True)
 
             # Test connection
             await cls.client.admin.command("ping")
@@ -44,6 +44,7 @@ class Database:
                     CallRecord,
                     Tool,
                     ActivityLog,
+                    UsageRecord,
                 ],
             )
             logger.info(f"Beanie initialized with database: {settings.DATABASE_NAME}")

@@ -16,6 +16,7 @@ class APIKey(Document):
     user_email: Indexed(EmailStr, unique=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
+    is_super_admin: bool = False
 
     class Settings:
         name = "api_keys"  # Collection name in MongoDB
@@ -156,9 +157,20 @@ class CallRecord(Document):
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: Optional[datetime] = None
     call_duration_minutes: Optional[float] = None
+    # Analytics fields
+    created_by_email: Optional[EmailStr] = None
+    call_type: Optional[Literal["outbound", "inbound", "web"]] = None
+    call_service: Optional[Literal["exotel", "twilio", "web"]] = None
+    platform_number: Optional[str] = None  # platform's own Exotel/Twilio number used
 
     class Settings:
         name = "call_records"
+        indexes = [
+            IndexModel([("created_by_email", 1), ("started_at", -1)]),
+            IndexModel([("created_by_email", 1), ("assistant_id", 1), ("started_at", -1)]),
+            IndexModel([("created_by_email", 1), ("to_number", 1), ("started_at", -1)]),
+            IndexModel([("started_at", -1)]),
+        ]
 
 
 class ToolParameter(BaseModel):
@@ -206,3 +218,38 @@ class ActivityLog(Document):
 
     class Settings:
         name = "activity_logs"
+
+
+class UsageRecord(Document):
+    """Per-call usage metrics for token and duration tracking."""
+
+    room_name: Indexed(str, unique=True)  # 1:1 with CallRecord
+    assistant_id: str
+    user_email: Indexed(str)
+    tts_provider: Optional[str] = None
+    call_service: Optional[str] = None
+
+    # LLM tokens (from SDK UsageCollector — exact values from OpenAI)
+    llm_input_audio_tokens: int = 0
+    llm_input_text_tokens: int = 0
+    llm_input_cached_audio_tokens: int = 0
+    llm_input_cached_text_tokens: int = 0
+    llm_output_audio_tokens: int = 0
+    llm_output_text_tokens: int = 0
+    llm_total_tokens: int = 0
+
+    # TTS usage (from SDK UsageCollector — exact values)
+    tts_characters_count: int = 0
+    tts_audio_duration: float = 0.0  # seconds
+
+    # Telephony duration (copied from CallRecord for aggregation convenience)
+    call_duration_minutes: float = 0.0
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "usage_records"
+        indexes = [
+            IndexModel([("user_email", 1), ("created_at", -1)]),
+            IndexModel([("user_email", 1), ("assistant_id", 1), ("created_at", -1)]),
+        ]

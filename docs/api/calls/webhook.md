@@ -41,7 +41,20 @@ Content-Type: application/json
     ],
     "started_at": "2024-01-15T10:00:00.000Z",
     "ended_at": "2024-01-15T10:05:30.000Z",
-    "call_duration_minutes": 5.5
+    "call_duration_minutes": 5.5,
+    "created_by_email": "user@example.com",
+    "call_type": "outbound",
+    "call_service": "exotel",
+    "platform_number": "08044319240",
+    "usage": {
+      "llm_input_audio_tokens": 12450,
+      "llm_input_text_tokens": 850,
+      "llm_output_audio_tokens": 0,
+      "llm_output_text_tokens": 1230,
+      "llm_total_tokens": 14530,
+      "tts_characters_count": 485,
+      "tts_audio_duration": 32.5
+    }
   }
 }
 ```
@@ -70,6 +83,18 @@ Content-Type: application/json
 | `data.started_at`              | string  | Call start time (ISO 8601).                |
 | `data.ended_at`                | string  | Call end time (ISO 8601).                  |
 | `data.call_duration_minutes`   | number  | Total call duration in minutes.            |
+| `data.created_by_email`        | string  | Email of the user who owns this call.      |
+| `data.call_type`               | string  | Call direction: `outbound`, `inbound`, or `web`. |
+| `data.call_service`            | string  | Telephony provider: `exotel`, `twilio`, or `web`. |
+| `data.platform_number`         | string  | Platform's own phone number used for this call. |
+| `data.usage`                   | object  | Token and TTS usage metrics (if available). |
+| `data.usage.llm_input_audio_tokens` | number | OpenAI Realtime audio input tokens.   |
+| `data.usage.llm_input_text_tokens`  | number | OpenAI Realtime text input tokens.    |
+| `data.usage.llm_output_audio_tokens`| number | OpenAI Realtime audio output tokens.  |
+| `data.usage.llm_output_text_tokens` | number | OpenAI Realtime text output tokens.   |
+| `data.usage.llm_total_tokens`       | number | Total LLM tokens for this call.       |
+| `data.usage.tts_characters_count`   | number | Characters sent to TTS provider.      |
+| `data.usage.tts_audio_duration`     | number | TTS audio duration in seconds.        |
 
 ### Call Status Glossary (Authoritative)
 
@@ -107,8 +132,11 @@ The webhook payload is generated from the stored call record and currently inclu
 - `started_at`
 - `ended_at`
 - `call_duration_minutes`
-
-Fields like `from_number` or custom `metadata` are not currently included by runtime unless they are persisted into the call record model.
+- `created_by_email`
+- `call_type`
+- `call_service`
+- `platform_number`
+- `usage` (object with LLM token counts and TTS usage, included when available)
 
 ### Quick Test with curl
 
@@ -138,7 +166,10 @@ curl -X POST "https://your-webhook-url" \
       ],
       "started_at": "2024-01-15T10:00:00.000Z",
       "ended_at": "2024-01-15T10:05:30.000Z",
-      "call_duration_minutes": 5.5
+      "call_duration_minutes": 5.5,
+      "call_type": "outbound",
+      "call_service": "exotel",
+      "platform_number": "08044319240"
     }
   }'
 ```

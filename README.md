@@ -11,6 +11,9 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
 - Writes activity logs for tool calls, inbound context lookup, and end-call webhook delivery.
+- Tracks per-call LLM token usage and TTS character counts via SDK metrics.
+- Provides analytics endpoints for call duration, volume, and usage monitoring.
+- Super-admin endpoints for cross-tenant analytics and token usage visibility.
 
 ## Provider Support
 
@@ -149,6 +152,8 @@ Use these pages as the canonical payload contracts:
 - `/inbound_context_strategy`
 - `/logs`
 - `/web_call/get_token`
+- `/analytics` — per-user call analytics (dashboard, by-assistant, by-phone-number, by-time, by-service)
+- `/admin` — super-admin cross-tenant analytics and token usage (requires `is_super_admin` flag)
 
 ## Project Structure
 
@@ -173,6 +178,8 @@ api_livekit/
 │   │   ├── dependencies/
 │   │   ├── models/
 │   │   ├── routes/
+│   │   │   ├── analytics.py
+│   │   │   └── admin.py
 │   │   └── server.py
 │   ├── core/
 │   │   ├── agents/

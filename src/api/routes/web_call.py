@@ -32,6 +32,18 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
         # Force web sessions to be tagged as call_type=web while preserving custom metadata.
         job_metadata = {**(request.metadata or {}), "call_type": "web"}
 
+        # Initialize call record for web call
+        await livekit_services.initialize_call_record(
+            room_name=room_name,
+            assistant_id=assistant.assistant_id,
+            assistant_name=assistant.assistant_name,
+            to_number="Web Call",
+            call_status="initiated",
+            created_by_email=current_user.user_email,
+            call_type="web",
+            call_service="web",
+        )
+
         # Create agent dispatch
         logger.info(f"Creating dispatch for room: {room_name}")
         agent_dispatch = await livekit_services.create_agent_dispatch(room_name, job_metadata)
