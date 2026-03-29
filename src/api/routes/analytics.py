@@ -1,0 +1,355 @@
+from typing import Optional, Literal
+from datetime import datetime, timezone, timedelta
+from fastapi import APIRouter, Depends, Query
+from src.api.dependencies import get_current_user
+from src.api.models.response_models import apiResponse
+from src.core.db.db_schemas import APIKey, CallRecord
+
+router = APIRouter()
+
+
+def _date_format_for_granularity(granularity: str) -> str:
+    """Return MongoDB $dateToString format for the given granularity."""
+    formats = {
+        "day": "%Y-%m-%d",
+        "week": "%Y-W%V",
+        "month": "%Y-%m",
+    }
+    return formats.get(granularity, "%Y-%m-%d")
+
+
+@router.get("/dashboard")
+async def get_dashboard(
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO 8601)"),
+    current_user: APIKey = Depends(get_current_user),
+):
+    """At-a-glance analytics dashboard for the authenticated user."""
+    now = datetime.now(timezone.utc)
+    if not end_date:
+        end_date = now
+    if not start_date:
+        start_date = now - timedelta(days=30)
+
+    match_filter = {
+        "created_by_email": current_user.user_email,
+        "started_at": {"$gte": start_date, "$lte": end_date},
+    }
+
+    # Summary aggregation
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$group": {
+                "_id": None,
+                "total_calls": {"$sum": 1},
+                "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
+                "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
+                "completed_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
+                },
+                "failed_calls": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": ["$call_status", ["failed", "busy", "no_answer", "rejected", "timeout", "unreachable"]]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+                "initiated_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "initiated"]}, 1, 0]}
+                },
+                "answered_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "answered"]}, 1, 0]}
+                },
+            }
+        },
+    ]
+    result = await CallRecord.aggregate(pipeline).to_list()
+    summary = result[0] if result else {}
+
+    # Period-based counts
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+
+    period_pipeline = [
+        {"$match": {"created_by_email": current_user.user_email}},
+        {
+            "$facet": {
+                "today": [
+                    {"$match": {"started_at": {"$gte": today_start}}},
+                    {"$count": "count"},
+                ],
+                "this_week": [
+                    {"$match": {"started_at": {"$gte": week_start}}},
+                    {"$count": "count"},
+                ],
+                "this_month": [
+                    {"$match": {"started_at": {"$gte": month_start}}},
+                    {"$count": "count"},
+                ],
+            }
+        },
+    ]
+    period_result = await CallRecord.aggregate(period_pipeline).to_list()
+    periods = period_result[0] if period_result else {}
+
+    total_minutes = summary.get("total_duration_minutes", 0) or 0
+
+    return apiResponse(
+        success=True,
+        message="Dashboard analytics fetched successfully",
+        data={
+            "total_calls": summary.get("total_calls", 0),
+            "total_duration_minutes": round(total_minutes, 2),
+            "total_duration_hours": round(total_minutes / 60, 2),
+            "avg_duration_minutes": round(summary.get("avg_duration_minutes", 0) or 0, 2),
+            "calls_by_status": {
+                "completed": summary.get("completed_calls", 0),
+                "failed": summary.get("failed_calls", 0),
+                "initiated": summary.get("initiated_calls", 0),
+                "answered": summary.get("answered_calls", 0),
+            },
+            "calls_today": periods.get("today", [{}])[0].get("count", 0) if periods.get("today") else 0,
+            "calls_this_week": periods.get("this_week", [{}])[0].get("count", 0) if periods.get("this_week") else 0,
+            "calls_this_month": periods.get("this_month", [{}])[0].get("count", 0) if periods.get("this_month") else 0,
+            "date_range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+        },
+    )
+
+
+@router.get("/calls/by-assistant")
+async def get_calls_by_assistant(
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO 8601)"),
+    current_user: APIKey = Depends(get_current_user),
+):
+    """Per-assistant call count and duration breakdown."""
+    now = datetime.now(timezone.utc)
+    if not end_date:
+        end_date = now
+    if not start_date:
+        start_date = now - timedelta(days=30)
+
+    pipeline = [
+        {
+            "$match": {
+                "created_by_email": current_user.user_email,
+                "started_at": {"$gte": start_date, "$lte": end_date},
+            }
+        },
+        {
+            "$group": {
+                "_id": {"assistant_id": "$assistant_id", "assistant_name": "$assistant_name"},
+                "total_calls": {"$sum": 1},
+                "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
+                "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
+                "completed_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
+                },
+                "failed_calls": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": ["$call_status", ["failed", "busy", "no_answer", "rejected", "timeout"]]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+            }
+        },
+        {"$sort": {"total_duration_minutes": -1}},
+        {
+            "$project": {
+                "_id": 0,
+                "assistant_id": "$_id.assistant_id",
+                "assistant_name": "$_id.assistant_name",
+                "total_calls": 1,
+                "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
+                "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
+                "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
+                "completed_calls": 1,
+                "failed_calls": 1,
+            }
+        },
+    ]
+
+    results = await CallRecord.aggregate(pipeline).to_list()
+
+    return apiResponse(
+        success=True,
+        message="Calls by assistant fetched successfully",
+        data={"assistants": results},
+    )
+
+
+@router.get("/calls/by-phone-number")
+async def get_calls_by_phone_number(
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO 8601)"),
+    assistant_id: Optional[str] = Query(None, description="Filter by assistant"),
+    current_user: APIKey = Depends(get_current_user),
+):
+    """Per phone number call count and duration breakdown — key for bill verification."""
+    now = datetime.now(timezone.utc)
+    if not end_date:
+        end_date = now
+    if not start_date:
+        start_date = now - timedelta(days=30)
+
+    match_filter = {
+        "created_by_email": current_user.user_email,
+        "started_at": {"$gte": start_date, "$lte": end_date},
+    }
+    if assistant_id:
+        match_filter["assistant_id"] = assistant_id
+
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$group": {
+                "_id": "$to_number",
+                "total_calls": {"$sum": 1},
+                "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
+                "completed_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
+                },
+                "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
+            }
+        },
+        {"$sort": {"total_duration_minutes": -1}},
+        {
+            "$project": {
+                "_id": 0,
+                "phone_number": "$_id",
+                "total_calls": 1,
+                "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
+                "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
+                "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
+                "completed_calls": 1,
+            }
+        },
+    ]
+
+    results = await CallRecord.aggregate(pipeline).to_list()
+
+    return apiResponse(
+        success=True,
+        message="Calls by phone number fetched successfully",
+        data={"phone_numbers": results},
+    )
+
+
+@router.get("/calls/by-time")
+async def get_calls_by_time(
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO 8601)"),
+    granularity: Literal["day", "week", "month"] = Query("day", description="Time bucket granularity"),
+    assistant_id: Optional[str] = Query(None, description="Filter by assistant"),
+    current_user: APIKey = Depends(get_current_user),
+):
+    """Time-series call count and duration data."""
+    now = datetime.now(timezone.utc)
+    if not end_date:
+        end_date = now
+    if not start_date:
+        start_date = now - timedelta(days=30)
+
+    match_filter = {
+        "created_by_email": current_user.user_email,
+        "started_at": {"$gte": start_date, "$lte": end_date},
+    }
+    if assistant_id:
+        match_filter["assistant_id"] = assistant_id
+
+    date_format = _date_format_for_granularity(granularity)
+
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$group": {
+                "_id": {"$dateToString": {"format": date_format, "date": "$started_at"}},
+                "total_calls": {"$sum": 1},
+                "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
+                "completed_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
+                },
+            }
+        },
+        {"$sort": {"_id": 1}},
+        {
+            "$project": {
+                "_id": 0,
+                "date": "$_id",
+                "total_calls": 1,
+                "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
+                "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
+                "completed_calls": 1,
+            }
+        },
+    ]
+
+    results = await CallRecord.aggregate(pipeline).to_list()
+
+    return apiResponse(
+        success=True,
+        message="Calls by time fetched successfully",
+        data={"time_series": results, "granularity": granularity},
+    )
+
+
+@router.get("/calls/by-service")
+async def get_calls_by_service(
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO 8601)"),
+    current_user: APIKey = Depends(get_current_user),
+):
+    """Per service (exotel/twilio/web) call count and duration breakdown."""
+    now = datetime.now(timezone.utc)
+    if not end_date:
+        end_date = now
+    if not start_date:
+        start_date = now - timedelta(days=30)
+
+    pipeline = [
+        {
+            "$match": {
+                "created_by_email": current_user.user_email,
+                "started_at": {"$gte": start_date, "$lte": end_date},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$call_service",
+                "total_calls": {"$sum": 1},
+                "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
+                "completed_calls": {
+                    "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
+                },
+            }
+        },
+        {"$sort": {"total_duration_minutes": -1}},
+        {
+            "$project": {
+                "_id": 0,
+                "service": {"$ifNull": ["$_id", "unknown"]},
+                "total_calls": 1,
+                "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
+                "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
+                "completed_calls": 1,
+            }
+        },
+    ]
+
+    results = await CallRecord.aggregate(pipeline).to_list()
+
+    return apiResponse(
+        success=True,
+        message="Calls by service fetched successfully",
+        data={"services": results},
+    )

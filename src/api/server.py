@@ -16,6 +16,8 @@ from src.api.routes import (
     web_call,
     inbound,
     inbound_context_strategy,
+    analytics,
+    admin,
 )
 from src.core.logger import setup_logging, logger
 from src.core.db.database import init_db, close_db
@@ -119,6 +121,8 @@ app.include_router(logs.router, prefix="/logs", tags=["Logs"])
 app.include_router(web_call.router, prefix="/web_call", tags=["Web Call"])
 app.include_router(inbound.router, prefix="/inbound", tags=["Inbound Call"])
 app.include_router(inbound_context_strategy.router,prefix="/inbound_context_strategy",tags=["Inbound Context Strategy"])
+app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 # Serve MkDocs documentation site
 if os.path.exists("site"):

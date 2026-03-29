@@ -189,6 +189,19 @@ async def handle_inbound_call(
         await writer.drain()
         return
 
+    # Initialize call record for inbound call
+    await livekit_service.initialize_call_record(
+        room_name=room_name,
+        assistant_id=assistant.assistant_id,
+        assistant_name=assistant.assistant_name,
+        to_number=caller_number,
+        call_status="initiated",
+        created_by_email=assistant.assistant_created_by_email,
+        call_type="inbound",
+        call_service="exotel",
+        platform_number=normalized_number,
+    )
+
     pool = get_port_pool()
     port = await pool.acquire()
     logger.info(

@@ -142,3 +142,21 @@ nav:
       - Provider Setup: api/sip/providers.md
 
     - Activity Logs: api/activity-logs.md
+
+    - Analytics:
+      - Overview: api/analytics/index.md
+      - Dashboard: api/analytics/dashboard.md
+      - By Assistant: api/analytics/by-assistant.md
+      - By Phone Number: api/analytics/by-phone-number.md
+      - By Time: api/analytics/by-time.md
+      - By Service: api/analytics/by-service.md
+
+    - Admin (Super-Admin):
+      - Overview: api/admin/index.md
+      - Dashboard: api/admin/dashboard.md
+      - Calls by User: api/admin/by-user.md
+      - Calls by Phone Number: api/admin/by-phone-number.md
+      - Calls by Service: api/admin/by-service.md
+      - Token Summary: api/admin/token-summary.md
+      - Tokens by User: api/admin/tokens-by-user.md
+      - Tokens by Assistant: api/admin/tokens-by-assistant.md

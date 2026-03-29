@@ -29,8 +29,9 @@ from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
-from src.core.db.db_schemas import Assistant, InboundContextStrategy
+from src.core.db.db_schemas import Assistant, InboundContextStrategy, UsageRecord, CallRecord
 from src.services.livekit.livekit_svc import LiveKitService
+from livekit.agents.metrics import UsageCollector
 
 
 setup_logging()
@@ -138,6 +139,48 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"Failed to load tools: {e}", exc_info=True)
 
+    # Persist usage metrics at call end
+    async def _persist_usage():
+        try:
+            summary = usage_collector.get_summary()
+            telephony_provider = job_metadata.get("call_service") or job_metadata.get("service")
+            if job_metadata.get("call_type") == "web":
+                telephony_provider = None
+
+            # Compute call duration from CallRecord
+            call_duration = 0.0
+            call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+            if call_record:
+                ended_at = datetime.now(timezone.utc)
+                duration_start = call_record.answered_at or call_record.started_at
+                call_duration = (ended_at - duration_start).total_seconds() / 60
+
+            usage = UsageRecord(
+                room_name=room_name,
+                assistant_id=assistant_id,
+                user_email=assistant.assistant_created_by_email,
+                tts_provider=assistant.assistant_tts_model,
+                call_service=telephony_provider,
+                llm_input_audio_tokens=summary.llm_input_audio_tokens,
+                llm_input_text_tokens=summary.llm_input_text_tokens,
+                llm_input_cached_audio_tokens=summary.llm_input_cached_audio_tokens,
+                llm_input_cached_text_tokens=summary.llm_input_cached_text_tokens,
+                llm_output_audio_tokens=summary.llm_output_audio_tokens,
+                llm_output_text_tokens=summary.llm_output_text_tokens,
+                llm_total_tokens=summary.llm_prompt_tokens + summary.llm_completion_tokens,
+                tts_characters_count=summary.tts_characters_count,
+                tts_audio_duration=summary.tts_audio_duration,
+                call_duration_minutes=call_duration,
+            )
+            await usage.insert()
+            logger.info(
+                f"Usage persisted | room={room_name} | "
+                f"llm_tokens={usage.llm_total_tokens} | "
+                f"tts_chars={usage.tts_characters_count}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist usage record: {e}", exc_info=True)
+
     # Single teardown path used by both EndCallTool and participant disconnect
     async def _flush_and_end_call(delay: float = 0.0):
         nonlocal call_end_triggered
@@ -153,6 +196,7 @@ async def entrypoint(ctx: JobContext):
                 )
             except asyncio.TimeoutError:
                 logger.warning("Timed out waiting for pending transcript tasks")
+        await _persist_usage()
         await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
 
     # EndCallTool support
@@ -224,6 +268,13 @@ async def entrypoint(ctx: JobContext):
         use_tts_aligned_transcript=True,
     )
 
+    # --- Usage Tracking ---
+    usage_collector = UsageCollector()
+
+    @session.on("metrics_collected")
+    def on_metrics(event):
+        usage_collector.collect(event.metrics)
+
     context_turns = deque(maxlen=4)
     user_is_speaking = False
     silence_watchdog = (
@@ -283,6 +334,10 @@ async def entrypoint(ctx: JobContext):
                 assistant_name=assistant.assistant_name,
                 to_number=to_number,
                 recording_path=recorder.s3_url,
+                created_by_email=assistant.assistant_created_by_email,
+                call_type=job_metadata.get("call_type"),
+                call_service=job_metadata.get("call_service") or job_metadata.get("service"),
+                platform_number=job_metadata.get("inbound_number"),
             )
         )
         pending_transcript_tasks.append(task)

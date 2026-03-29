@@ -56,6 +56,19 @@ async def trigger_outbound_call(
     agent_dispatch = await livekit_services.create_agent_dispatch(room_name, job_metadata)
 
     if request.call_service == "twilio":
+        # Initialize call record for Twilio outbound
+        await livekit_services.initialize_call_record(
+            room_name=room_name,
+            assistant_id=assistant.assistant_id,
+            assistant_name=assistant.assistant_name,
+            to_number=request.to_number,
+            call_status="initiated",
+            created_by_email=current_user.user_email,
+            call_type="outbound",
+            call_service="twilio",
+            platform_number=(trunk.trunk_config.get("numbers") or [None])[0],
+        )
+
         # Create SIP participant
         logger.info(f"Triggering Twilio SIP participant for number: {request.to_number}")
         participant = await livekit_services.create_sip_participant(
@@ -87,6 +100,10 @@ async def trigger_outbound_call(
             assistant_name=assistant.assistant_name,
             to_number=request.to_number,
             call_status="initiated",
+            created_by_email=current_user.user_email,
+            call_type="outbound",
+            call_service="exotel",
+            platform_number=sip_config.get("exotel_number"),
         )
 
         # Trunk config (Exotel number, etc.)

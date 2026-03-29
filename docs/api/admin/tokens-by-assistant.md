@@ -1,0 +1,94 @@
+# Tokens by Assistant
+
+## Overview
+
+Returns LLM token and TTS usage metrics grouped by assistant. Optionally filter by user.
+
+## Endpoint
+
+- **URL**: `/admin/analytics/tokens/by-assistant`
+- **Method**: `GET`
+- **Authentication**: Super-admin required
+
+## Request
+
+### Query Parameters
+
+| Parameter | Type | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `start_date` | datetime | No | 30 days ago | ISO 8601 start of range. |
+| `end_date` | datetime | No | Now | ISO 8601 end of range. |
+| `user_email` | string | No | -- | Narrow results to a specific user. |
+
+## Response Schema
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `success` | boolean | Operation status. |
+| `message` | string | Result message. |
+| `data.assistants` | array | List of per-assistant usage metrics. |
+| `data.assistants[].assistant_id` | string | Assistant identifier. |
+| `data.assistants[].total_calls` | integer | Number of calls with usage data. |
+| `data.assistants[].total_llm_tokens` | integer | Total LLM tokens consumed. |
+| `data.assistants[].total_llm_input_audio_tokens` | integer | Total LLM input audio tokens. |
+| `data.assistants[].total_llm_output_text_tokens` | integer | Total LLM output text tokens. |
+| `data.assistants[].total_tts_characters` | integer | Total TTS characters synthesized. |
+| `data.assistants[].total_tts_audio_duration` | float | Total TTS audio duration in seconds. |
+| `data.assistants[].total_call_duration_minutes` | float | Total call duration in minutes. |
+| `data.assistants[].total_call_duration_hours` | float | Total call duration in hours. |
+
+## HTTP Status Codes
+
+| Code | Description |
+| :--- | :--- |
+| 200 | Data returned successfully. |
+| 401 | Unauthorized (invalid or missing API key). |
+| 403 | Forbidden (API key is not a super-admin). |
+| 500 | Internal server error. |
+
+## Example Request
+
+```bash
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/admin/analytics/tokens/by-assistant?user_email=alice@example.com" \
+  -H "Authorization: Bearer YOUR_SUPER_ADMIN_API_KEY"
+```
+
+## Example Response
+
+```json
+{
+  "success": true,
+  "message": "Token usage by assistant fetched successfully",
+  "data": {
+    "assistants": [
+      {
+        "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
+        "total_calls": 210,
+        "total_llm_tokens": 980000,
+        "total_llm_input_audio_tokens": 350000,
+        "total_llm_output_text_tokens": 130000,
+        "total_tts_characters": 580000,
+        "total_tts_audio_duration": 4900.30,
+        "total_call_duration_minutes": 945.30,
+        "total_call_duration_hours": 15.76
+      },
+      {
+        "assistant_id": "661f9511-f3ac-52e5-b827-557766551111",
+        "total_calls": 132,
+        "total_llm_tokens": 620000,
+        "total_llm_input_audio_tokens": 220000,
+        "total_llm_output_text_tokens": 85000,
+        "total_tts_characters": 370000,
+        "total_tts_audio_duration": 3150.20,
+        "total_call_duration_minutes": 575.45,
+        "total_call_duration_hours": 9.59
+      }
+    ]
+  }
+}
+```
+
+## Notes
+
+- Results are sorted by total LLM tokens in descending order.
+- Without `user_email`, results include usage from all users.
