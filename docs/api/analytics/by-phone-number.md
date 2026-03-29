@@ -32,7 +32,6 @@ Returns call count and duration metrics grouped by destination phone number. Opt
 | `data.phone_numbers[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.phone_numbers[].total_duration_hours` | float | Total duration in hours. |
 | `data.phone_numbers[].avg_duration_minutes` | float | Average call duration in minutes. |
-| `data.phone_numbers[].completed_calls` | integer | Count of completed calls. |
 
 ## HTTP Status Codes
 
@@ -62,16 +61,14 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
         "total_calls": 15,
         "total_duration_minutes": 67.50,
         "total_duration_hours": 1.13,
-        "avg_duration_minutes": 4.50,
-        "completed_calls": 14
+        "avg_duration_minutes": 4.50
       },
       {
         "phone_number": "+918765432109",
         "total_calls": 8,
         "total_duration_minutes": 32.20,
         "total_duration_hours": 0.54,
-        "avg_duration_minutes": 4.03,
-        "completed_calls": 7
+        "avg_duration_minutes": 4.03
       }
     ]
   }

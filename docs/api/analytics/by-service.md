@@ -30,7 +30,6 @@ Returns call count and duration metrics grouped by telephony service (exotel, tw
 | `data.services[].total_calls` | integer | Total calls via this service. |
 | `data.services[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.services[].total_duration_hours` | float | Total duration in hours. |
-| `data.services[].completed_calls` | integer | Count of completed calls. |
 
 ## HTTP Status Codes
 
@@ -59,22 +58,19 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
         "service": "exotel",
         "total_calls": 180,
         "total_duration_minutes": 810.00,
-        "total_duration_hours": 13.50,
-        "completed_calls": 165
+        "total_duration_hours": 13.50
       },
       {
         "service": "twilio",
         "total_calls": 120,
         "total_duration_minutes": 540.00,
-        "total_duration_hours": 9.00,
-        "completed_calls": 110
+        "total_duration_hours": 9.00
       },
       {
         "service": "web",
         "total_calls": 42,
         "total_duration_minutes": 170.75,
-        "total_duration_hours": 2.85,
-        "completed_calls": 40
+        "total_duration_hours": 2.85
       }
     ]
   }

@@ -31,7 +31,6 @@ Returns call count and duration metrics grouped by user email. Use this to ident
 | `data.users[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.users[].total_duration_hours` | float | Total duration in hours. |
 | `data.users[].avg_duration_minutes` | float | Average call duration in minutes. |
-| `data.users[].completed_calls` | integer | Count of completed calls. |
 
 ## HTTP Status Codes
 
@@ -62,16 +61,14 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/admin/analytics/c
         "total_calls": 450,
         "total_duration_minutes": 2025.00,
         "total_duration_hours": 33.75,
-        "avg_duration_minutes": 4.50,
-        "completed_calls": 420
+        "avg_duration_minutes": 4.50
       },
       {
         "user_email": "bob@example.com",
         "total_calls": 280,
         "total_duration_minutes": 1260.00,
         "total_duration_hours": 21.00,
-        "avg_duration_minutes": 4.50,
-        "completed_calls": 260
+        "avg_duration_minutes": 4.50
       }
     ]
   }

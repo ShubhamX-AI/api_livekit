@@ -49,24 +49,6 @@ async def get_dashboard(
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
                     "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
-                    "failed_calls": {
-                        "$sum": {
-                            "$cond": [
-                                {"$in": ["$call_status", ["failed", "busy", "no_answer", "rejected", "timeout", "unreachable"]]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
-                    "initiated_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "initiated"]}, 1, 0]}
-                    },
-                    "answered_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "answered"]}, 1, 0]}
-                    },
                 }
             },
         ]
@@ -113,12 +95,6 @@ async def get_dashboard(
             "total_duration_minutes": round(total_minutes, 2),
             "total_duration_hours": round(total_minutes / 60, 2),
             "avg_duration_minutes": round(summary.get("avg_duration_minutes", 0) or 0, 2),
-            "calls_by_status": {
-                "completed": summary.get("completed_calls", 0),
-                "failed": summary.get("failed_calls", 0),
-                "initiated": summary.get("initiated_calls", 0),
-                "answered": summary.get("answered_calls", 0),
-            },
             "calls_today": periods.get("today", [{}])[0].get("count", 0) if periods.get("today") else 0,
             "calls_this_week": periods.get("this_week", [{}])[0].get("count", 0) if periods.get("this_week") else 0,
             "calls_this_month": periods.get("this_month", [{}])[0].get("count", 0) if periods.get("this_month") else 0,
@@ -158,18 +134,6 @@ async def get_calls_by_assistant(
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
                     "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
-                    "failed_calls": {
-                        "$sum": {
-                            "$cond": [
-                                {"$in": ["$call_status", ["failed", "busy", "no_answer", "rejected", "timeout"]]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -182,8 +146,6 @@ async def get_calls_by_assistant(
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
                     "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
-                    "completed_calls": 1,
-                    "failed_calls": 1,
                 }
             },
         ]
@@ -230,9 +192,6 @@ async def get_calls_by_phone_number(
                     "_id": "$to_number",
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
                     "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
                 }
             },
@@ -245,7 +204,6 @@ async def get_calls_by_phone_number(
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
                     "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
-                    "completed_calls": 1,
                 }
             },
         ]
@@ -295,9 +253,6 @@ async def get_calls_by_time(
                     "_id": {"$dateToString": {"format": date_format, "date": "$started_at"}},
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
                 }
             },
             {"$sort": {"_id": 1}},
@@ -308,7 +263,6 @@ async def get_calls_by_time(
                     "total_calls": 1,
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
-                    "completed_calls": 1,
                 }
             },
         ]
@@ -352,9 +306,6 @@ async def get_calls_by_service(
                     "_id": "$call_service",
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -365,7 +316,6 @@ async def get_calls_by_service(
                     "total_calls": 1,
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
-                    "completed_calls": 1,
                 }
             },
         ]

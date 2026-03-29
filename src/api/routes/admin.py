@@ -50,18 +50,6 @@ async def admin_dashboard(
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
                     "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
-                    "failed_calls": {
-                        "$sum": {
-                            "$cond": [
-                                {"$in": ["$call_status", ["failed", "busy", "no_answer", "rejected", "timeout", "unreachable"]]},
-                                1,
-                                0,
-                            ]
-                        }
-                    },
                     "unique_users": {"$addToSet": "$created_by_email"},
                 }
             },
@@ -83,10 +71,6 @@ async def admin_dashboard(
             "total_duration_hours": round(total_minutes / 60, 2),
             "avg_duration_minutes": round(summary.get("avg_duration_minutes", 0) or 0, 2),
             "total_active_users": len(summary.get("unique_users", [])),
-            "calls_by_status": {
-                "completed": summary.get("completed_calls", 0),
-                "failed": summary.get("failed_calls", 0),
-            },
             "date_range": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
@@ -118,9 +102,6 @@ async def admin_calls_by_user(
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
                     "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -132,7 +113,6 @@ async def admin_calls_by_user(
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
                     "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
-                    "completed_calls": 1,
                 }
             },
         ]
@@ -176,9 +156,6 @@ async def admin_calls_by_phone_number(
                     "_id": "$to_number",
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -189,7 +166,6 @@ async def admin_calls_by_phone_number(
                     "total_calls": 1,
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
-                    "completed_calls": 1,
                 }
             },
         ]
@@ -228,9 +204,6 @@ async def admin_calls_by_service(
                     "_id": "$call_service",
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "completed_calls": {
-                        "$sum": {"$cond": [{"$eq": ["$call_status", "completed"]}, 1, 0]}
-                    },
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -241,7 +214,6 @@ async def admin_calls_by_service(
                     "total_calls": 1,
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
-                    "completed_calls": 1,
                 }
             },
         ]
