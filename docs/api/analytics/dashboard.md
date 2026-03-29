@@ -2,7 +2,7 @@
 
 ## Overview
 
-Returns an at-a-glance summary of call activity for the authenticated user, including total calls, duration, status breakdown, and period-based counts (today, this week, this month).
+Returns an at-a-glance summary of call activity for the authenticated user, including total calls, duration, and period-based counts (today, this week, this month).
 
 ## Endpoint
 
@@ -29,7 +29,6 @@ Returns an at-a-glance summary of call activity for the authenticated user, incl
 | `data.total_duration_minutes` | float | Total call duration in minutes. |
 | `data.total_duration_hours` | float | Total call duration in hours. |
 | `data.avg_duration_minutes` | float | Average call duration in minutes. |
-| `data.calls_by_status` | object | Counts keyed by call status. |
 | `data.calls_today` | integer | Calls placed today. |
 | `data.calls_this_week` | integer | Calls placed this week. |
 | `data.calls_this_month` | integer | Calls placed this month. |
@@ -62,12 +61,6 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/dashboa
     "total_duration_minutes": 1520.75,
     "total_duration_hours": 25.35,
     "avg_duration_minutes": 4.45,
-    "calls_by_status": {
-      "completed": 310,
-      "failed": 12,
-      "initiated": 5,
-      "answered": 15
-    },
     "calls_today": 8,
     "calls_this_week": 45,
     "calls_this_month": 342,
@@ -83,4 +76,3 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/dashboa
 
 - All duration values are rounded to two decimal places.
 - Period counts (today, this week, this month) are computed relative to UTC.
-- Status breakdown includes all statuses present in the data; missing statuses default to `0`.

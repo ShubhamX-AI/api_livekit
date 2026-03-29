@@ -32,8 +32,6 @@ Returns call count and duration metrics grouped by assistant. Use this to compar
 | `data.assistants[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.assistants[].total_duration_hours` | float | Total duration in hours. |
 | `data.assistants[].avg_duration_minutes` | float | Average call duration in minutes. |
-| `data.assistants[].completed_calls` | integer | Count of completed calls. |
-| `data.assistants[].failed_calls` | integer | Count of failed calls. |
 
 ## HTTP Status Codes
 
@@ -64,9 +62,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
         "total_calls": 210,
         "total_duration_minutes": 945.30,
         "total_duration_hours": 15.76,
-        "avg_duration_minutes": 4.50,
-        "completed_calls": 195,
-        "failed_calls": 8
+        "avg_duration_minutes": 4.50
       },
       {
         "assistant_id": "661f9511-f3ac-52e5-b827-557766551111",
@@ -74,9 +70,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
         "total_calls": 132,
         "total_duration_minutes": 575.45,
         "total_duration_hours": 9.59,
-        "avg_duration_minutes": 4.36,
-        "completed_calls": 120,
-        "failed_calls": 4
+        "avg_duration_minutes": 4.36
       }
     ]
   }

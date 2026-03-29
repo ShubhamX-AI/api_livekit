@@ -31,7 +31,6 @@ Returns cross-tenant call count and duration metrics grouped by destination phon
 | `data.phone_numbers[].total_calls` | integer | Total calls to this number. |
 | `data.phone_numbers[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.phone_numbers[].total_duration_hours` | float | Total duration in hours. |
-| `data.phone_numbers[].completed_calls` | integer | Count of completed calls. |
 
 ## HTTP Status Codes
 
@@ -61,15 +60,13 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/admin/analytics/c
         "phone_number": "+919876543210",
         "total_calls": 45,
         "total_duration_minutes": 202.50,
-        "total_duration_hours": 3.38,
-        "completed_calls": 42
+        "total_duration_hours": 3.38
       },
       {
         "phone_number": "+918765432109",
         "total_calls": 30,
         "total_duration_minutes": 135.00,
-        "total_duration_hours": 2.25,
-        "completed_calls": 28
+        "total_duration_hours": 2.25
       }
     ]
   }

@@ -32,7 +32,6 @@ Returns time-series call data bucketed by day, week, or month. Use this to visua
 | `data.time_series[].total_calls` | integer | Total calls in this bucket. |
 | `data.time_series[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.time_series[].total_duration_hours` | float | Total duration in hours. |
-| `data.time_series[].completed_calls` | integer | Count of completed calls. |
 | `data.granularity` | string | The granularity that was applied. |
 
 ### Date Format by Granularity
@@ -70,22 +69,19 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
         "date": "2026-W09",
         "total_calls": 42,
         "total_duration_minutes": 189.60,
-        "total_duration_hours": 3.16,
-        "completed_calls": 38
+        "total_duration_hours": 3.16
       },
       {
         "date": "2026-W10",
         "total_calls": 55,
         "total_duration_minutes": 247.50,
-        "total_duration_hours": 4.13,
-        "completed_calls": 50
+        "total_duration_hours": 4.13
       },
       {
         "date": "2026-W11",
         "total_calls": 63,
         "total_duration_minutes": 283.35,
-        "total_duration_hours": 4.72,
-        "completed_calls": 58
+        "total_duration_hours": 4.72
       }
     ],
     "granularity": "week"
