@@ -94,6 +94,9 @@ async def trigger_outbound_call(
 
         logger.info(f"Triggering Exotel SIP bridge call to {request.to_number}")
 
+        # Trunk config (Exotel number, etc.)
+        sip_config = trunk.trunk_config
+
         await livekit_services.initialize_call_record(
             room_name=room_name,
             assistant_id=assistant.assistant_id,
@@ -105,9 +108,6 @@ async def trigger_outbound_call(
             call_service="exotel",
             platform_number=sip_config.get("exotel_number"),
         )
-
-        # Trunk config (Exotel number, etc.)
-        sip_config = trunk.trunk_config
 
         # One-shot queue — bridge puts result after INVITE resolves, then keeps running
         result_signal = asyncio.Queue(maxsize=1)
