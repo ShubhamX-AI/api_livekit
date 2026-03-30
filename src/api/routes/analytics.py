@@ -48,7 +48,6 @@ async def get_dashboard(
                     "_id": None,
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
                 }
             },
         ]
@@ -86,15 +85,16 @@ async def get_dashboard(
     periods = period_result[0] if period_result else {}
 
     total_minutes = summary.get("total_duration_minutes", 0) or 0
+    total_calls = summary.get("total_calls", 0) or 0
 
     return apiResponse(
         success=True,
         message="Dashboard analytics fetched successfully",
         data={
-            "total_calls": summary.get("total_calls", 0),
+            "total_calls": total_calls,
             "total_duration_minutes": round(total_minutes, 2),
             "total_duration_hours": round(total_minutes / 60, 2),
-            "avg_duration_minutes": round(summary.get("avg_duration_minutes", 0) or 0, 2),
+            "avg_duration_minutes": round(total_minutes / total_calls, 2) if total_calls else 0,
             "calls_today": periods.get("today", [{}])[0].get("count", 0) if periods.get("today") else 0,
             "calls_this_week": periods.get("this_week", [{}])[0].get("count", 0) if periods.get("this_week") else 0,
             "calls_this_month": periods.get("this_month", [{}])[0].get("count", 0) if periods.get("this_month") else 0,
@@ -133,7 +133,6 @@ async def get_calls_by_assistant(
                     "_id": {"assistant_id": "$assistant_id", "assistant_name": "$assistant_name"},
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -145,7 +144,7 @@ async def get_calls_by_assistant(
                     "total_calls": 1,
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
-                    "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
+                    "avg_duration_minutes": {"$round": [{"$cond": [{"$eq": ["$total_calls", 0]}, 0, {"$divide": ["$total_duration_minutes", "$total_calls"]}]}, 2]},
                 }
             },
         ]
@@ -192,7 +191,6 @@ async def get_calls_by_phone_number(
                     "_id": "$to_number",
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
-                    "avg_duration_minutes": {"$avg": "$call_duration_minutes"},
                 }
             },
             {"$sort": {"total_duration_minutes": -1}},
@@ -203,7 +201,7 @@ async def get_calls_by_phone_number(
                     "total_calls": 1,
                     "total_duration_minutes": {"$round": ["$total_duration_minutes", 2]},
                     "total_duration_hours": {"$round": [{"$divide": ["$total_duration_minutes", 60]}, 2]},
-                    "avg_duration_minutes": {"$round": ["$avg_duration_minutes", 2]},
+                    "avg_duration_minutes": {"$round": [{"$cond": [{"$eq": ["$total_calls", 0]}, 0, {"$divide": ["$total_duration_minutes", "$total_calls"]}]}, 2]},
                 }
             },
         ]

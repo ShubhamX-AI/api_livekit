@@ -74,3 +74,4 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/admin/analytics/d
 
 - `total_active_users` counts distinct `created_by_email` values with at least one call in the range.
 - When `user_email` is provided, the response is equivalent to a single-user dashboard.
+- `avg_duration_minutes` is calculated as `total_duration_minutes / total_calls` (derived from totals, not raw Mongo `$avg`), and returns `0` when `total_calls` is `0`. Duration values are rounded to two decimal places.

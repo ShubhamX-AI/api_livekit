@@ -81,3 +81,4 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
 
 - Results are sorted by total duration in descending order.
 - Only assistants with at least one call in the date range are included.
+- `avg_duration_minutes` is calculated as `total_duration_minutes / total_calls` (derived from totals, not raw Mongo `$avg`), and returns `0` when `total_calls` is `0`. Duration values are rounded to two decimal places.

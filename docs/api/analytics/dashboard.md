@@ -75,4 +75,5 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/dashboa
 ## Notes
 
 - All duration values are rounded to two decimal places.
+- `avg_duration_minutes` is calculated as `total_duration_minutes / total_calls` (derived from totals, not raw Mongo `$avg`), and returns `0` when `total_calls` is `0`.
 - Period counts (today, this week, this month) are computed relative to UTC.
