@@ -48,6 +48,9 @@ class Settings:
         # ElevenLabs settings
         self.ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 
+        # Mistral settings
+        self.MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+
         # Audio Paths
         self.BASE_DIR = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

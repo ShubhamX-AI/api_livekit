@@ -18,7 +18,7 @@ A production-ready backend for building and operating real-time voice AI agents 
 
 | Concept | Description |
 | :--- | :--- |
-| **Assistant** | Defines the agent's behavior: system prompt, TTS voice, interaction settings, and optional end-call tool |
+| **Assistant** | Defines the agent's behavior: system prompt, TTS voice (`cartesia`, `sarvam`, `elevenlabs`, `mistral`), interaction settings, and optional end-call tool |
 | **Tool** | Extends assistant capabilities with webhook calls or static-return actions during a conversation |
 | **SIP Trunk** | Stores your telephony provider credentials (Twilio or Exotel) for outbound dialing |
 | **Inbound Mapping** | Links a phone number to an assistant for inbound call routing |

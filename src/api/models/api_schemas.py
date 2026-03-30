@@ -41,9 +41,15 @@ class ElevenLabsTTSConfig(BaseModel):
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
 
 
+class MistralTTSConfig(BaseModel):
+    type: Literal["mistral"] = "mistral"
+    voice_id: str = Field(..., min_length=1, max_length=100, description="Mistral voice ID")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
+
+
 # Discriminated union type
 TTSConfig = Annotated[
-    Union[CartesiaTTSConfig, SarvamTTSConfig, ElevenLabsTTSConfig],
+    Union[CartesiaTTSConfig, SarvamTTSConfig, ElevenLabsTTSConfig, MistralTTSConfig],
     Field(discriminator="type"),  # discriminated by type field in parent
 ]
 
@@ -70,7 +76,7 @@ class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
     assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
-    assistant_tts_model: Literal["cartesia", "sarvam", "elevenlabs"] = Field(..., description="TTS Provider")
+    assistant_tts_model: Literal["cartesia", "sarvam", "elevenlabs", "mistral"] = Field(..., description="TTS Provider")
     assistant_tts_config: TTSConfig = Field(..., description="TTS Configuration object (varies by model)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
     assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
@@ -134,7 +140,7 @@ class UpdateAssistant(BaseModel):
     assistant_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant's name (optional)")
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
-    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs"]] = Field(None, description="TTS Provider (optional)")
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (optional)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
     assistant_interaction_config: Optional[UpdateAssistantInteractionConfigSchema] = Field(None, description="Update interaction settings")

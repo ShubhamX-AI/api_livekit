@@ -30,7 +30,7 @@ List assistants created by the current user with support for pagination, sorting
 | `data.assistants`                              | array   | List of assistant objects.                               |
 | `data.assistants[].assistant_id`               | string  | Unique identifier for the assistant.                     |
 | `data.assistants[].assistant_name`             | string  | The name of the assistant.                               |
-| `data.assistants[].assistant_tts_model`        | string  | The TTS provider used.                                   |
+| `data.assistants[].assistant_tts_model`        | string  | The TTS provider used (`cartesia`, `sarvam`, `elevenlabs`, or `mistral`). |
 | `data.assistants[].assistant_tts_config`       | object  | Masked TTS configuration.                                |
 | `data.assistants[].assistant_interaction_config` | object | Interaction settings for the assistant. |
 | `data.assistants[].assistant_created_by_email` | string  | Email of the user who created the assistant.             |

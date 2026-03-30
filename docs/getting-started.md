@@ -35,9 +35,9 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_name": "Support Bot",
     "assistant_description": "Customer support agent",
     "assistant_prompt": "You are a helpful support agent.",
-    "assistant_tts_model": "cartesia",
+    "assistant_tts_model": "mistral",
     "assistant_tts_config": {
-      "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+      "voice_id": "your_mistral_voice_id"
     },
     "assistant_interaction_config": {
       "speaks_first": true,
@@ -48,6 +48,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
 ```
 
 Save the `assistant_id` from the response.
+Supported `assistant_tts_model` values are `cartesia`, `sarvam`, `elevenlabs`, and `mistral`.
 
 ---
 

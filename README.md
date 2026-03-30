@@ -43,7 +43,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 - [uv](https://docs.astral.sh/uv/)
 - MongoDB
 - LiveKit server (cloud or self-hosted)
-- API keys for providers you use (OpenAI, Cartesia/Sarvam/ElevenLabs, LiveKit)
+- API keys for providers you use (OpenAI, Cartesia/Sarvam/ElevenLabs/Mistral, LiveKit)
 
 ## Environment Variables
 
@@ -64,6 +64,7 @@ OPENAI_API_KEY=<your-openai-api-key>
 CARTESIA_API_KEY=<optional>
 SARVAM_API_KEY=<optional>
 ELEVENLABS_API_KEY=<optional>
+MISTRAL_API_KEY=<optional>
 
 # Email (optional — needed for email tool)
 SMTP_HOST=smtp.sendgrid.net
@@ -190,6 +191,7 @@ api_livekit/
 │   │   └── logger.py
 │   └── services/
 │       ├── elevenlabs/
+│       ├── mistral/
 │       ├── email/
 │       ├── exotel/
 │       │   └── custom_sip_reach/

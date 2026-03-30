@@ -3,6 +3,7 @@
 ## Overview
 
 Assistants define the voice agent behavior, prompt, TTS model/config, interaction settings, and optional end-call behavior.
+Supported TTS providers are `cartesia`, `sarvam`, `elevenlabs`, and `mistral`.
 
 ## Endpoints
 

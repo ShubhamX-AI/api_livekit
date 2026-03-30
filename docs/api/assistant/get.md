@@ -23,7 +23,7 @@ Fetch detailed information about a specific assistant.
 | `data.assistant_name`              | string  | The name of the assistant.                 |
 | `data.assistant_description`       | string  | The description of the assistant.          |
 | `data.assistant_prompt`            | string  | The system prompt.                         |
-| `data.assistant_tts_model`         | string  | The TTS provider.                          |
+| `data.assistant_tts_model`         | string  | The TTS provider (`cartesia`, `sarvam`, `elevenlabs`, or `mistral`). |
 | `data.assistant_tts_config`        | object  | The TTS configuration object.              |
 | `data.assistant_start_instruction` | string  | The start instruction (if set).            |
 | `data.assistant_interaction_config` | object | Interaction settings for the assistant. |

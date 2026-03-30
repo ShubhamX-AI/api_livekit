@@ -14,7 +14,7 @@ Create a new AI assistant configuration.
 | `assistant_name`              | string | Yes      | The name of the assistant (1-100 characters).                                     |
 | `assistant_description`       | string | Yes      | A description of the assistant.                                                   |
 | `assistant_prompt`            | string | Yes      | The system prompt that defines the assistant's behavior.                          |
-| `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia`, `sarvam`, or `elevenlabs`.                   |
+| `assistant_tts_model`         | string | Yes      | The TTS provider. One of `cartesia`, `sarvam`, `elevenlabs`, or `mistral`.        |
 | `assistant_tts_config`        | object | Yes      | The TTS configuration object (see below).                                         |
 | `assistant_start_instruction` | string | No       | Instruction for the assistant to speak when the call starts (max 200 characters). |
 | `assistant_interaction_config` | object | No | Interaction settings (see below). |
@@ -49,6 +49,7 @@ These settings control how the assistant interacts with the user during a sessio
 !!! warning "Use One Humanization Style Per Provider"
 
     If you use TTS humanization prompts, use only the template that matches `assistant_tts_model`.
+    Published templates currently exist for Sarvam, Cartesia, and ElevenLabs only.
     Do not combine rules/tags from multiple providers in one prompt.
     Mixed templates can generate malformed output and lead to TTS runtime errors.
 
@@ -79,6 +80,15 @@ These settings control how the assistant interacts with the user during a sessio
     | :--- | :--- | :--- | :--- |
     | `voice_id` | string | Yes | The ElevenLabs voice ID. |
     | `api_key` | string | No | Optional ElevenLabs API key. If not provided, the system's default key will be used. |
+
+=== "Mistral Configuration"
+
+    Use this when `assistant_tts_model` is set to `"mistral"`.
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `voice_id` | string | Yes | The Mistral voice ID. |
+    | `api_key` | string | No | Optional Mistral API key. If not provided, the system's default key will be used. |
 
 ### Response Schema
 
@@ -163,6 +173,24 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
            "assistant_tts_config": {
              "voice_id": "JBFqnCBv7z4s9ByuOnH",
              "api_key": "your_custom_elevenlabs_api_key"
+           }
+         }'
+```
+
+### Example: Mistral TTS
+
+```bash
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_api_key>" \
+         -d '{
+           "assistant_name": "Mistral Voice Assistant",
+           "assistant_description": "Assistant powered by Mistral voice",
+           "assistant_prompt": "You are a helpful assistant with a calm speaking style.",
+           "assistant_tts_model": "mistral",
+           "assistant_tts_config": {
+             "voice_id": "your_mistral_voice_id",
+             "api_key": "your_custom_mistral_api_key"
            }
          }'
 ```
