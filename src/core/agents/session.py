@@ -254,7 +254,7 @@ async def entrypoint(ctx: JobContext):
             llm = google.realtime.RealtimeModel(
                 model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
                 voice=llm_config.get("voice", "Puck"),
-                modalities=["TEXT", "AUDIO"],
+                modalities=["AUDIO"],
                 instructions=assistant.assistant_prompt,
                 api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
             )
