@@ -90,36 +90,40 @@ class _MistralChunkedStream(tts.ChunkedStream):
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         mime_type = _MIME_TYPES.get(self._opts.response_format, "audio/pcm")
-        initialized = False
 
-        try:
-            stream = await self._tts._client.audio.speech.complete(
+        def _sync_synthesize() -> list[bytes]:
+            """Run the blocking Mistral SDK call in a thread."""
+            chunks = []
+            with self._tts._client.audio.speech.complete(
                 input=self._input_text,
                 model=self._opts.model,
                 voice_id=self._opts.voice_id,
                 response_format=self._opts.response_format,
                 stream=True,
-            )
-
-            async with stream as s:
-                async for event in s:
+            ) as stream:
+                for event in stream:
                     if event.event == "speech.audio.delta":
-                        chunk = base64.b64decode(event.data.audio_data)
-
-                        # Initialize emitter on first chunk so playback starts immediately
-                        if not initialized:
-                            output_emitter.initialize(
-                                request_id=utils.shortuuid(),
-                                sample_rate=self._tts.sample_rate,
-                                num_channels=self._tts.num_channels,
-                                mime_type=mime_type,
-                            )
-                            initialized = True
-
-                        output_emitter.push(chunk)
-
+                        chunks.append(base64.b64decode(event.data.audio_data))
                     elif event.event == "speech.audio.done":
                         break
+            return chunks
+
+        try:
+            loop = asyncio.get_running_loop()
+            chunks = await asyncio.wait_for(
+                loop.run_in_executor(None, _sync_synthesize),
+                timeout=self._conn_options.timeout,
+            )
+
+            output_emitter.initialize(
+                request_id=utils.shortuuid(),
+                sample_rate=self._tts.sample_rate,
+                num_channels=self._tts.num_channels,
+                mime_type=mime_type,
+            )
+
+            for chunk in chunks:
+                output_emitter.push(chunk)
 
             output_emitter.flush()
 
