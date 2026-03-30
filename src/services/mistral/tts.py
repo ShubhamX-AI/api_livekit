@@ -5,12 +5,11 @@ import base64
 import dataclasses
 from dataclasses import dataclass
 
-import aiohttp
+from mistralai.client import Mistral
 
 from livekit.agents import (
     APIConnectionError,
     APIConnectOptions,
-    APIStatusError,
     APITimeoutError,
     tts,
     utils,
@@ -18,8 +17,16 @@ from livekit.agents import (
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 
 
-API_BASE_URL = "https://api.mistral.ai/v1/audio/speech"
-_SAMPLE_RATE = 22050  # MP3 default sample rate
+_PCM_SAMPLE_RATE = 22050  # Mistral voxtral PCM output sample rate
+
+# Map response_format → mime type for output_emitter
+_MIME_TYPES = {
+    "pcm": "audio/pcm",
+    "mp3": "audio/mp3",
+    "wav": "audio/wav",
+    "opus": "audio/opus",
+    "flac": "audio/flac",
+}
 
 
 @dataclass
@@ -37,12 +44,11 @@ class MistralTTS(tts.TTS):
         voice_id: str,
         model: str = "voxtral-mini-tts-2603",
         api_key: str,
-        response_format: str = "mp3",
-        http_session: aiohttp.ClientSession | None = None,
+        response_format: str = "pcm",
     ) -> None:
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False, aligned_transcript=False),
-            sample_rate=_SAMPLE_RATE,
+            sample_rate=_PCM_SAMPLE_RATE,
             num_channels=1,
         )
         self._opts = _TTSOptions(
@@ -51,7 +57,7 @@ class MistralTTS(tts.TTS):
             model=model,
             response_format=response_format,
         )
-        self._session = http_session
+        self._client = Mistral(api_key=api_key)
 
     @property
     def model(self) -> str:
@@ -61,20 +67,13 @@ class MistralTTS(tts.TTS):
     def provider(self) -> str:
         return "Mistral"
 
-    def _ensure_session(self) -> aiohttp.ClientSession:
-        if not self._session:
-            self._session = utils.http_context.http_session()
-        return self._session
-
     def synthesize(
         self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS
     ) -> tts.ChunkedStream:
         return _MistralChunkedStream(tts=self, input_text=text, conn_options=conn_options)
 
     async def aclose(self) -> None:
-        if self._session:
-            await self._session.close()
-            self._session = None
+        pass
 
 
 class _MistralChunkedStream(tts.ChunkedStream):
@@ -90,45 +89,41 @@ class _MistralChunkedStream(tts.ChunkedStream):
         self._opts = dataclasses.replace(tts._opts)
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
-        try:
-            async with self._tts._ensure_session().post(
-                API_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {self._opts.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self._opts.model,
-                    "input": self._input_text,
-                    "voice_id": self._opts.voice_id,
-                    "response_format": self._opts.response_format,
-                },
-                timeout=aiohttp.ClientTimeout(
-                    total=30,
-                    sock_connect=self._conn_options.timeout,
-                ),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                audio_bytes = base64.b64decode(data["audio_data"])
+        mime_type = _MIME_TYPES.get(self._opts.response_format, "audio/pcm")
+        initialized = False
 
-                output_emitter.initialize(
-                    request_id=utils.shortuuid(),
-                    sample_rate=self._tts.sample_rate,
-                    num_channels=self._tts.num_channels,
-                    mime_type="audio/mp3",
-                )
-                output_emitter.push(audio_bytes)
-                output_emitter.flush()
+        try:
+            stream = await self._tts._client.audio.speech.complete_async(
+                input=self._input_text,
+                model=self._opts.model,
+                voice_id=self._opts.voice_id,
+                response_format=self._opts.response_format,
+                stream=True,
+            )
+
+            async with stream as s:
+                async for event in s:
+                    if event.event == "speech.audio.delta":
+                        chunk = base64.b64decode(event.data.audio_data)
+
+                        # Initialize emitter on first chunk so playback starts immediately
+                        if not initialized:
+                            output_emitter.initialize(
+                                request_id=utils.shortuuid(),
+                                sample_rate=self._tts.sample_rate,
+                                num_channels=self._tts.num_channels,
+                                mime_type=mime_type,
+                            )
+                            initialized = True
+
+                        output_emitter.push(chunk)
+
+                    elif event.event == "speech.audio.done":
+                        break
+
+            output_emitter.flush()
 
         except asyncio.TimeoutError as e:
             raise APITimeoutError() from e
-        except aiohttp.ClientResponseError as e:
-            raise APIStatusError(
-                message=e.message,
-                status_code=e.status,
-                request_id=None,
-                body=None,
-            ) from e
         except Exception as e:
             raise APIConnectionError() from e
