@@ -184,11 +184,18 @@ async def get_calls_by_phone_number(
         match_filter["assistant_id"] = assistant_id
 
     try:
+        platform_bucket_expr = {
+            "$cond": [
+                {"$or": [{"$eq": ["$call_type", "web"]}, {"$eq": ["$call_service", "web"]}]},
+                "WEB_CALL",
+                {"$ifNull": ["$platform_number", "UNKNOWN_PLATFORM"]},
+            ]
+        }
         pipeline = [
             {"$match": match_filter},
             {
                 "$group": {
-                    "_id": "$to_number",
+                    "_id": platform_bucket_expr,
                     "total_calls": {"$sum": 1},
                     "total_duration_minutes": {"$sum": {"$ifNull": ["$call_duration_minutes", 0]}},
                 }

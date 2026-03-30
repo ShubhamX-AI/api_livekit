@@ -2,7 +2,7 @@
 
 ## Overview
 
-Returns call count and duration metrics grouped by destination phone number. Optionally filter by a specific assistant.
+Returns call count and duration metrics grouped by platform number bucket. Optionally filter by a specific assistant.
 
 ## Endpoint
 
@@ -26,8 +26,8 @@ Returns call count and duration metrics grouped by destination phone number. Opt
 | :--- | :--- | :--- |
 | `success` | boolean | Operation status. |
 | `message` | string | Result message. |
-| `data.phone_numbers` | array | List of per-number metrics. |
-| `data.phone_numbers[].phone_number` | string | Destination phone number. |
+| `data.phone_numbers` | array | List of per-platform-bucket metrics. |
+| `data.phone_numbers[].phone_number` | string | Platform bucket label (`WEB_CALL`, `UNKNOWN_PLATFORM`, or a platform number). |
 | `data.phone_numbers[].total_calls` | integer | Total calls to this number. |
 | `data.phone_numbers[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.phone_numbers[].total_duration_hours` | float | Total duration in hours. |
@@ -78,5 +78,5 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/analytics/calls/b
 ## Notes
 
 - Results are sorted by total duration in descending order.
-- The `phone_number` value is the `to_number` from the call record.
+- The `phone_number` field is a platform bucket: `WEB_CALL` for web sessions, `UNKNOWN_PLATFORM` for non-web records missing `platform_number`, otherwise the `platform_number` value.
 - `avg_duration_minutes` is calculated as `total_duration_minutes / total_calls` (derived from totals, not raw Mongo `$avg`), and returns `0` when `total_calls` is `0`. Duration values are rounded to two decimal places.

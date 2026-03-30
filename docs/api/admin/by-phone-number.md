@@ -2,7 +2,7 @@
 
 ## Overview
 
-Returns cross-tenant call count and duration metrics grouped by destination phone number. Optionally filter by a specific user.
+Returns cross-tenant call count and duration metrics grouped by platform number bucket. Optionally filter by a specific user.
 
 ## Endpoint
 
@@ -26,8 +26,8 @@ Returns cross-tenant call count and duration metrics grouped by destination phon
 | :--- | :--- | :--- |
 | `success` | boolean | Operation status. |
 | `message` | string | Result message. |
-| `data.phone_numbers` | array | List of per-number metrics. |
-| `data.phone_numbers[].phone_number` | string | Destination phone number. |
+| `data.phone_numbers` | array | List of per-platform-bucket metrics. |
+| `data.phone_numbers[].phone_number` | string | Platform bucket label (`WEB_CALL`, `UNKNOWN_PLATFORM`, or a platform number). |
 | `data.phone_numbers[].total_calls` | integer | Total calls to this number. |
 | `data.phone_numbers[].total_duration_minutes` | float | Total duration in minutes. |
 | `data.phone_numbers[].total_duration_hours` | float | Total duration in hours. |
@@ -76,4 +76,5 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/admin/analytics/c
 ## Notes
 
 - Results are sorted by total duration in descending order.
-- Without `user_email`, the response includes numbers called by all users.
+- Without `user_email`, the response includes platform buckets across all users.
+- The `phone_number` field is a platform bucket: `WEB_CALL` for web sessions, `UNKNOWN_PLATFORM` for non-web records missing `platform_number`, otherwise the `platform_number` value.
