@@ -474,7 +474,17 @@ async def entrypoint(ctx: JobContext):
                         logger.warning("[EXOTEL] Timed out waiting for call_answered — skipping start instruction")
 
                 if gate.is_active:
-                    await session.generate_reply(instructions=start_instruction)
+                    if is_realtime:
+                        logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input")
+                        await session.generate_reply(
+                            user_input=(
+                                "Start the conversation now. "
+                                f"Greet the user like this: {start_instruction}"
+                            )
+                        )
+                    else:
+                        logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
+                        await session.generate_reply(instructions=start_instruction)
                     if silence_watchdog:
                         silence_watchdog.on_assistant_message(start_instruction)
                     logger.info("Start instruction sent successfully")
