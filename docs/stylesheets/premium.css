@@ -95,11 +95,49 @@ body {
   border-top-right-radius: 8px;
 }
 
-/* Content Tabs */
+/* Content Tabs — outer level */
 .md-typeset .tabbed-set {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: inset 0 0 0 1px var(--md-default-fg-color--lightest);
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Tab labels — stronger active indicator */
+.md-typeset .tabbed-set > input:checked + label {
+  border-color: var(--md-accent-fg-color);
+  color: var(--md-accent-fg-color);
+  font-weight: 600;
+}
+
+/* Tab content — breathing room */
+.md-typeset .tabbed-content {
+  padding: 0.75rem 0.25rem 0;
+}
+
+/* Nested tabs (TTS providers inside Pipeline) — subtler styling */
+.md-typeset .tabbed-content .tabbed-set {
+  box-shadow: none;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+  margin-top: 0.75rem;
+}
+
+.md-typeset .tabbed-content .tabbed-set > input + label {
+  font-size: 0.75rem;
+  padding: 0.5em 1em;
+}
+
+/* Bold section labels inside tabs — visual weight without TOC pollution */
+.md-typeset .tabbed-content > div > p > strong:first-child {
+  display: inline-block;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
 }
 
 /* Buttons */

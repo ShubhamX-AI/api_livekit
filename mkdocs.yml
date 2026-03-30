@@ -86,7 +86,7 @@ nav:
       - Health Check: api/health.md
       - Documentation Endpoint: api/documentation.md
 
-    - Assistants:
+    - Assistants (Pipeline/Realtime):
       - Overview: api/assistant/index.md
       - Create Assistant: api/assistant/create.md
       - List Assistants: api/assistant/list.md

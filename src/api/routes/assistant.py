@@ -159,8 +159,9 @@ async def list_assistants(
         {
             "assistant_id": assistant.assistant_id,
             "assistant_name": assistant.assistant_name,
+            "assistant_llm_mode": assistant.assistant_llm_mode,
             "assistant_tts_model": assistant.assistant_tts_model,
-            "assistant_tts_config": mask_api_key(assistant.assistant_tts_config),
+            "assistant_tts_config": mask_api_key(assistant.assistant_tts_config) if assistant.assistant_tts_config else None,
             "assistant_interaction_config": assistant.assistant_interaction_config,
             "assistant_created_by_email": assistant.assistant_created_by_email,
         }
@@ -199,7 +200,10 @@ async def get_assistant_details(
         raise HTTPException(status_code=404, detail="Assistant not found")
 
     assistant_data = assistant.model_dump(exclude={"id"})
-    assistant_data["assistant_tts_config"] = mask_api_key(assistant_data.get("assistant_tts_config", {}))
+    if assistant_data.get("assistant_tts_config"):
+        assistant_data["assistant_tts_config"] = mask_api_key(assistant_data["assistant_tts_config"])
+    if assistant_data.get("assistant_llm_config"):
+        assistant_data["assistant_llm_config"] = mask_api_key(assistant_data["assistant_llm_config"])
 
     return apiResponse(
         success=True,

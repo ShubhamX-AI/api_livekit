@@ -1,57 +1,51 @@
 # Get Assistant Details
 
-Fetch detailed information about a specific assistant.
+Fetch full configuration for one assistant.
 
 - **URL**: `/assistant/details/{assistant_id}`
 - **Method**: `GET`
 - **Headers**: `Authorization: Bearer <your_api_key>`
 
-### Path Parameters
+## Path Parameters
 
-| Parameter      | Type   | Description                |
-| :------------- | :----- | :------------------------- |
-| `assistant_id` | string | The UUID of the assistant. |
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `assistant_id` | string | Assistant UUID. |
 
-### Response Schema
+## Response Schema
 
-| Field                              | Type    | Description                                |
-| :--------------------------------- | :------ | :----------------------------------------- |
-| `success`                          | boolean | Indicates if the operation was successful. |
-| `message`                          | string  | Human-readable success message.            |
-| `data`                             | object  | Complete assistant configuration.          |
-| `data.assistant_id`                | string  | Unique identifier for the assistant.       |
-| `data.assistant_name`              | string  | The name of the assistant.                 |
-| `data.assistant_description`       | string  | The description of the assistant.          |
-| `data.assistant_prompt`            | string  | The system prompt.                         |
-| `data.assistant_tts_model`         | string  | The TTS provider (`cartesia`, `sarvam`, `elevenlabs`, or `mistral`). |
-| `data.assistant_tts_config`        | object  | The TTS configuration object.              |
-| `data.assistant_start_instruction` | string  | The start instruction (if set).            |
-| `data.assistant_interaction_config` | object | Interaction settings for the assistant. |
-| `data.assistant_end_call_enabled`  | boolean | Whether built-in end call behavior is enabled (`false` by default). |
-| `data.assistant_end_call_trigger_phrase` | string | Example user phrase for end-call trigger. If `null`/empty, runtime uses generic confirmation-based trigger guidance. |
-| `data.assistant_end_call_agent_message` | string | Assistant message spoken before ending call. If `null`/empty, runtime fallback is `say goodbye to the user`. |
-| `data.assistant_end_call_url`      | string  | The webhook URL (if set).                  |
-| `data.tool_ids`                    | array   | List of attached tool IDs.                 |
-| `data.assistant_created_at`        | string  | ISO 8601 timestamp of creation.            |
-| `data.assistant_updated_at`        | string  | ISO 8601 timestamp of last update.         |
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `success` | boolean | Operation status. |
+| `message` | string | Human-readable message. |
+| `data.assistant_id` | string | Assistant UUID. |
+| `data.assistant_name` | string | Assistant name. |
+| `data.assistant_description` | string | Assistant description. |
+| `data.assistant_prompt` | string | System prompt. |
+| `data.assistant_llm_mode` | string | `pipeline` or `realtime`. |
+| `data.assistant_llm_config` | object/null | Realtime LLM config. API key is masked when present. |
+| `data.assistant_tts_model` | string/null | TTS provider in pipeline mode. |
+| `data.assistant_tts_config` | object/null | TTS config. API key is masked when present. |
+| `data.assistant_start_instruction` | string/null | Start instruction. |
+| `data.assistant_interaction_config` | object | Interaction settings. |
+| `data.assistant_end_call_enabled` | boolean | End-call tool flag. |
+| `data.assistant_end_call_trigger_phrase` | string/null | End-call trigger phrase. |
+| `data.assistant_end_call_agent_message` | string/null | End-call agent message. |
+| `data.assistant_end_call_url` | string/null | End-call webhook URL. |
+| `data.tool_ids` | array | Attached tool IDs. |
+| `data.assistant_created_at` | string | Created timestamp (ISO-8601). |
+| `data.assistant_updated_at` | string | Updated timestamp (ISO-8601). |
 
-### HTTP Status Codes
+## HTTP Status Codes
 
-| Code | Description                                          |
-| :--- | :--------------------------------------------------- |
-| 200  | Success - Assistant details retrieved.               |
-| 401  | Unauthorized - Invalid or missing Bearer token.      |
-| 404  | Not Found - Assistant does not exist or is inactive. |
-| 500  | Server Error - Internal server error.                |
+| Code | Description |
+| :--- | :--- |
+| 200 | Assistant details retrieved. |
+| 401 | Unauthorized. |
+| 404 | Assistant not found or inactive. |
+| 500 | Internal server error. |
 
-### Example Request
-
-```bash
-curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details/550e8400-e29b-41d4-a716-446655440000" \
-     -H "Authorization: Bearer <your_api_key>"
-```
-
-**Response:**
+## Example Response
 
 ```json
 {
@@ -59,13 +53,18 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details
   "message": "Assistant details retrieved successfully",
   "data": {
     "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
-    "assistant_name": "Support Bot",
-    "assistant_description": "First line of support",
-    "assistant_prompt": "You are a helpful customer support agent.",
-    "assistant_tts_model": "cartesia",
-    "assistant_tts_config": {
-      "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+    "assistant_name": "Gemini Assistant",
+    "assistant_description": "Realtime voice assistant",
+    "assistant_prompt": "You are a helpful assistant.",
+    "assistant_llm_mode": "realtime",
+    "assistant_llm_config": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-live-preview",
+      "voice": "Puck",
+      "api_key": "Using System provided API Key"
     },
+    "assistant_tts_model": null,
+    "assistant_tts_config": null,
     "assistant_start_instruction": null,
     "assistant_interaction_config": {
       "speaks_first": true,
@@ -74,13 +73,13 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/details
       "silence_reprompt_interval": 10.0,
       "silence_max_reprompts": 2
     },
-    "assistant_end_call_enabled": true,
-    "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
-    "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
+    "assistant_end_call_enabled": false,
+    "assistant_end_call_trigger_phrase": null,
+    "assistant_end_call_agent_message": null,
     "assistant_end_call_url": null,
     "tool_ids": [],
-    "assistant_created_at": "2024-01-15T10:00:00.000000",
-    "assistant_updated_at": "2024-01-15T10:00:00.000000"
+    "assistant_created_at": "2026-03-30T10:00:00.000000",
+    "assistant_updated_at": "2026-03-30T10:00:00.000000"
   }
 }
 ```

@@ -4,6 +4,17 @@
 
 This page describes how AI agents integrate with web clients, managed SIP providers, and custom SIP bridges.
 
+## Assistant Runtime Modes
+
+There are two runtime paths for assistant speech generation:
+
+- `pipeline` mode:
+  - Input audio -> OpenAI realtime STT + LLM -> external TTS plugin -> output audio
+- `realtime` mode:
+  - Input audio -> Gemini realtime model (STT + LLM + TTS) -> output audio
+
+Both modes share the same room orchestration, call lifecycle, transcript flow, and tool execution framework.
+
 ## Web Integration
 
 This flow shows how a web client authenticates, joins LiveKit, and exchanges audio with an AI agent session.
@@ -29,9 +40,13 @@ sequenceDiagram
     loop Continuous streaming
         Web->>LK: User voice
         LK->>Agent: Audio frame
-        Agent->>Agent: STT -> text
-        Agent->>Agent: LLM -> response intent
-        Agent->>Agent: TTS -> audio
+        alt pipeline mode
+            Agent->>Agent: STT -> text
+            Agent->>Agent: LLM -> response intent
+            Agent->>Agent: TTS -> audio
+        else realtime mode
+            Agent->>Agent: Unified realtime model -> speech response
+        end
         Agent->>LK: Agent voice
         LK->>Web: Playback
     end

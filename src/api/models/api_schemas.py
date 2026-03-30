@@ -47,6 +47,14 @@ class MistralTTSConfig(BaseModel):
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
 
 
+# ── LLM Realtime Config sub-models ───────────────────
+class GeminiRealtimeConfig(BaseModel):
+    provider: Literal["gemini"] = "gemini"
+    model: str = Field("gemini-3.1-flash-live-preview", description="Gemini Live API model")
+    voice: str = Field("Puck", description="Gemini voice name")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=200, description="Google API key (optional, falls back to system key)")
+
+
 # Discriminated union type
 TTSConfig = Annotated[
     Union[CartesiaTTSConfig, SarvamTTSConfig, ElevenLabsTTSConfig, MistralTTSConfig],
@@ -76,8 +84,10 @@ class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
     assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
-    assistant_tts_model: Literal["cartesia", "sarvam", "elevenlabs", "mistral"] = Field(..., description="TTS Provider")
-    assistant_tts_config: TTSConfig = Field(..., description="TTS Configuration object (varies by model)")
+    assistant_llm_mode: Literal["pipeline", "realtime"] = Field("pipeline", description="LLM pipeline mode: pipeline (separate TTS) or realtime (model handles STT+LLM+TTS)")
+    assistant_llm_config: Optional[GeminiRealtimeConfig] = Field(None, description="LLM config for realtime mode (required when llm_mode is 'realtime')")
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline mode)")
+    assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline mode)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
     assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
     assistant_end_call_enabled: bool = Field(False, description="Enable built-in end_call tool")
@@ -90,27 +100,47 @@ class CreateAssistant(BaseModel):
         str_strip_whitespace = True
         # Example for API documentation
         json_schema_extra = {
-            "example": {
-                "assistant_name": "Test Assistant",
-                "assistant_description": "Test Assistant Description(Optional)",
-                "assistant_prompt": "You are a helpful assistant.",
-                "assistant_tts_model": "cartesia",
-                "assistant_tts_config": {
-                    "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+            "examples": [
+                {
+                    "summary": "Pipeline mode (separate TTS)",
+                    "value": {
+                        "assistant_name": "Test Assistant",
+                        "assistant_description": "Test Assistant Description(Optional)",
+                        "assistant_prompt": "You are a helpful assistant.",
+                        "assistant_llm_mode": "pipeline",
+                        "assistant_tts_model": "cartesia",
+                        "assistant_tts_config": {
+                            "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+                        },
+                        "assistant_start_instruction": "Start instruction.",
+                        "assistant_interaction_config": {
+                            "speaks_first": True,
+                            "filler_words": True,
+                            "silence_reprompts": True,
+                            "silence_reprompt_interval": 10.0,
+                            "silence_max_reprompts": 2,
+                        },
+                        "assistant_end_call_enabled": True,
+                        "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
+                        "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
+                        "assistant_end_call_url": "End call url.",
+                    },
                 },
-                "assistant_start_instruction": "Start instruction.",
-                "assistant_interaction_config": {
-                    "speaks_first": True,
-                    "filler_words": True,
-                    "silence_reprompts": True,
-                    "silence_reprompt_interval": 10.0,
-                    "silence_max_reprompts": 2,
+                {
+                    "summary": "Realtime mode (Gemini handles STT+LLM+TTS)",
+                    "value": {
+                        "assistant_name": "Gemini Assistant",
+                        "assistant_description": "Full realtime assistant",
+                        "assistant_prompt": "You are a helpful assistant.",
+                        "assistant_llm_mode": "realtime",
+                        "assistant_llm_config": {
+                            "provider": "gemini",
+                            "model": "gemini-3.1-flash-live-preview",
+                            "voice": "Puck",
+                        },
+                    },
                 },
-                "assistant_end_call_enabled": True,
-                "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
-                "assistant_end_call_agent_message": "Thank you for your time. Have a great day.",
-                "assistant_end_call_url": "End call url.",
-            }
+            ]
         }
 
     @model_validator(mode="before")
@@ -121,12 +151,20 @@ class CreateAssistant(BaseModel):
             model = data.get("assistant_tts_model")
             config = data.get("assistant_tts_config")
             if model and isinstance(config, dict):
-                config["type"] = model  # inject discriminator key
+                config["type"] = model
         return data
 
     @model_validator(mode="after")
-    def validate_end_call_fields(self):
-        """Validate that required end call fields are present when enabled."""
+    def validate_mode_fields(self):
+        """Validate fields based on llm_mode."""
+        if self.assistant_llm_mode == "pipeline":
+            if not self.assistant_tts_model:
+                raise ValueError("assistant_tts_model is required when assistant_llm_mode is 'pipeline'")
+            if not self.assistant_tts_config:
+                raise ValueError("assistant_tts_config is required when assistant_llm_mode is 'pipeline'")
+        elif self.assistant_llm_mode == "realtime":
+            if not self.assistant_llm_config:
+                raise ValueError("assistant_llm_config is required when assistant_llm_mode is 'realtime'")
         if self.assistant_end_call_enabled:
             if not self.assistant_end_call_trigger_phrase:
                 raise ValueError("assistant_end_call_trigger_phrase is required when assistant_end_call_enabled is True")
@@ -140,6 +178,8 @@ class UpdateAssistant(BaseModel):
     assistant_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant's name (optional)")
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
+    assistant_llm_mode: Optional[Literal["pipeline", "realtime"]] = Field(None, description="LLM pipeline mode")
+    assistant_llm_config: Optional[GeminiRealtimeConfig] = Field(None, description="LLM config for realtime mode")
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (optional)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
@@ -179,11 +219,22 @@ class UpdateAssistant(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def validate_tts_consistency(self):
-        """If only one of tts_model/tts_config is sent, warn or handle in route logic."""
+    def validate_update_consistency(self):
+        """Validate TTS and LLM config consistency on update."""
+        # TTS fields must come in pairs
         if bool(self.assistant_tts_model) != bool(self.assistant_tts_config):
             raise ValueError(
                 "Provide both `assistant_tts_model` and `assistant_tts_config` together, or neither."
+            )
+        # Switching to realtime requires llm_config
+        if self.assistant_llm_mode == "realtime" and not self.assistant_llm_config:
+            raise ValueError(
+                "assistant_llm_config is required when switching to realtime mode."
+            )
+        # Switching to pipeline requires TTS fields
+        if self.assistant_llm_mode == "pipeline" and not self.assistant_tts_model:
+            raise ValueError(
+                "assistant_tts_model and assistant_tts_config are required when switching to pipeline mode."
             )
         return self
 

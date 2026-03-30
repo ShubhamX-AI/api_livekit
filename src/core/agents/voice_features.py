@@ -91,11 +91,13 @@ class SilenceWatchdogController:
         logger: logging.Logger,
         reprompt_interval_sec: float = 10.0,
         max_reprompts: int = 2,
+        use_llm_for_speech: bool = False,
     ) -> None:
         self._session = session
         self._logger = logger
         self._reprompt_interval_sec = reprompt_interval_sec
         self._max_reprompts = max_reprompts
+        self._use_llm_for_speech = use_llm_for_speech  # True for realtime mode (no external TTS)
         self._silence_task: asyncio.Task | None = None
         self._reprompt_count = 0
         self._user_is_speaking = False
@@ -163,10 +165,16 @@ class SilenceWatchdogController:
                     self._max_reprompts,
                 )
                 self._skip_next_assistant_message = True
-                await self._session.say(
-                    "Sorry, I didn't catch that. Are you still there?",
-                    allow_interruptions=True,
-                )
+                if self._use_llm_for_speech:
+                    # Realtime mode: no external TTS, route through LLM
+                    await self._session.generate_reply(
+                        instructions="The user has been silent. Briefly ask if they are still there.",
+                    )
+                else:
+                    await self._session.say(
+                        "Sorry, I didn't catch that. Are you still there?",
+                        allow_interruptions=True,
+                    )
                 await asyncio.sleep(5.0)
         except asyncio.CancelledError:
             raise

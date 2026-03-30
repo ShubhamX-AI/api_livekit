@@ -1,6 +1,6 @@
 # LiveKit Agent Service
 
-FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI Realtime and multiple TTS providers.
+FastAPI backend plus LiveKit worker for real-time voice assistants with `pipeline` and `realtime` modes.
 
 ## What This Project Does
 
@@ -8,6 +8,9 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 - Runs voice agents in LiveKit rooms.
 - Supports web calls with both text (`lk.chat`) and voice input.
 - Supports outbound calling and Exotel inbound routing.
+- Supports assistant runtime modes:
+  - `pipeline`: OpenAI realtime (STT+LLM) + separate TTS provider
+  - `realtime`: Gemini realtime (STT+LLM+TTS in one model)
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
 - Writes activity logs for tool calls, inbound context lookup, and end-call webhook delivery.
@@ -43,7 +46,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with OpenAI R
 - [uv](https://docs.astral.sh/uv/)
 - MongoDB
 - LiveKit server (cloud or self-hosted)
-- API keys for providers you use (OpenAI, Cartesia/Sarvam/ElevenLabs/Mistral, LiveKit)
+- API keys for providers you use (OpenAI, Google Gemini, Cartesia/Sarvam/ElevenLabs/Mistral, LiveKit)
 
 ## Environment Variables
 
@@ -61,6 +64,7 @@ LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 
 OPENAI_API_KEY=<your-openai-api-key>
+GOOGLE_API_KEY=<your-google-api-key>
 CARTESIA_API_KEY=<optional>
 SARVAM_API_KEY=<optional>
 ELEVENLABS_API_KEY=<optional>
@@ -155,6 +159,16 @@ Use these pages as the canonical payload contracts:
 - `/web_call/get_token`
 - `/analytics` — per-user call analytics (dashboard, by-assistant, by-phone-number, by-time, by-service)
 - `/admin` — super-admin cross-tenant analytics and token usage (requires `is_super_admin` flag)
+
+## Assistant Modes
+
+- `pipeline` mode (default):
+  - Requires `assistant_tts_model` and `assistant_tts_config`
+  - Uses OpenAI realtime for STT+LLM and separate configured TTS for speech output
+- `realtime` mode:
+  - Requires `assistant_llm_config`
+  - Uses Gemini realtime for STT+LLM+TTS in one model
+  - Ignores `assistant_tts_model` and `assistant_tts_config` at runtime
 
 ## Project Structure
 

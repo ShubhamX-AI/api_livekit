@@ -39,8 +39,10 @@ class Assistant(Document):
     assistant_id: Indexed(str, unique=True)
     assistant_name: str
     assistant_description: Optional[str] = None
-    assistant_tts_model: str
-    assistant_tts_config: Dict = {}
+    assistant_llm_mode: str = "pipeline"  # "pipeline" | "realtime"
+    assistant_llm_config: Optional[Dict] = None  # provider-specific config for realtime mode
+    assistant_tts_model: Optional[str] = None  # required for pipeline, ignored for realtime
+    assistant_tts_config: Optional[Dict] = None  # required for pipeline, ignored for realtime
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
     assistant_interaction_config: AssistantInteractionConfig = Field(default_factory=AssistantInteractionConfig)
@@ -229,7 +231,11 @@ class UsageRecord(Document):
     tts_provider: Optional[str] = None
     call_service: Optional[str] = None
 
-    # LLM tokens (from SDK UsageCollector — exact values from OpenAI)
+    # LLM pipeline info
+    llm_mode: Optional[str] = None  # "pipeline" | "realtime"
+    llm_realtime_provider: Optional[str] = None  # "gemini" | "openai" (only for realtime mode)
+
+    # LLM tokens (from SDK UsageCollector — exact values)
     llm_input_audio_tokens: int = 0
     llm_input_text_tokens: int = 0
     llm_input_cached_audio_tokens: int = 0

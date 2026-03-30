@@ -51,6 +51,9 @@ class Settings:
         # Mistral settings
         self.MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
+        # Google Gemini settings
+        self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
         # Audio Paths
         self.BASE_DIR = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

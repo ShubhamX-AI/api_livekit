@@ -58,6 +58,7 @@ async def entrypoint(ctx: JobContext):
         return
 
     logger.info(f"Loaded assistant config: {assistant.assistant_name} (ID: {assistant.assistant_id})")
+    is_realtime = assistant.assistant_llm_mode == "realtime"
 
     # Extract metadata from job metadata
     to_number = "Web Call"
@@ -110,9 +111,10 @@ async def entrypoint(ctx: JobContext):
         logger.info("Successfully processed metadata placeholders in assistant instructions")
 
     interaction_config = assistant.assistant_interaction_config
-    filler_words_enabled = bool(interaction_config.filler_words)
+    # Filler words require external TTS (session.say), disabled in realtime mode
+    filler_words_enabled = bool(interaction_config.filler_words) and not is_realtime
     silence_reprompts_enabled = bool(interaction_config.silence_reprompts)
-    logger.info(f"Assistant voice features | filler_words={filler_words_enabled} | silence_reprompts={silence_reprompts_enabled}")
+    logger.info(f"Assistant voice features | filler_words={filler_words_enabled} | silence_reprompts={silence_reprompts_enabled} | realtime={is_realtime}")
 
     # --- Call Readiness & Recording ---
     is_exotel_outbound = job_metadata.get("call_service") == "exotel"
@@ -155,11 +157,18 @@ async def entrypoint(ctx: JobContext):
                 duration_start = call_record.answered_at or call_record.started_at
                 call_duration = (ended_at - duration_start).total_seconds() / 60
 
+            # Determine realtime provider from config
+            llm_realtime_provider = None
+            if is_realtime:
+                llm_realtime_provider = (assistant.assistant_llm_config or {}).get("provider")
+
             usage = UsageRecord(
                 room_name=room_name,
                 assistant_id=assistant_id,
                 user_email=assistant.assistant_created_by_email,
-                tts_provider=assistant.assistant_tts_model,
+                llm_mode=assistant.assistant_llm_mode,
+                llm_realtime_provider=llm_realtime_provider,
+                tts_provider=assistant.assistant_tts_model if not is_realtime else None,
                 call_service=telephony_provider,
                 llm_input_audio_tokens=summary.llm_input_audio_tokens,
                 llm_input_text_tokens=summary.llm_input_text_tokens,
@@ -235,38 +244,65 @@ async def entrypoint(ctx: JobContext):
         tools=tools,
     )
 
-    llm = realtime.RealtimeModel(
-        model="gpt-realtime",
-        input_audio_transcription=AudioTranscription(
-            model="gpt-4o-mini-transcribe",
-            prompt=(
-                "The speaker is multilingual and switches between different languages dynamically. "
-                "Transcribe exactly what is spoken without translating."
-            ),
-        ),
-        input_audio_noise_reduction="near_field",
-        turn_detection=TurnDetection(
-            type="semantic_vad",
-            eagerness="high",
-            create_response=True,
-            interrupt_response=True,
-        ),
-        modalities=["text"],
-        api_key=settings.OPENAI_API_KEY,
-    )
+    if is_realtime:
+        # Full realtime mode: single model handles STT + LLM + TTS
+        llm_config = assistant.assistant_llm_config or {}
+        provider = llm_config.get("provider", "gemini")
 
-    # --- Build TTS ---
-    tts = create_tts(assistant)
-    if tts is None:
-        return
+        if provider == "gemini":
+            from livekit.plugins import google
+            llm = google.realtime.RealtimeModel(
+                model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
+                voice=llm_config.get("voice", "Puck"),
+                modalities=["TEXT", "AUDIO"],
+                instructions=assistant.assistant_prompt,
+                api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
+            )
+        else:
+            logger.error(f"Unsupported realtime provider: {provider}")
+            return
+
+        logger.info(f"Realtime mode | provider={provider} | model={llm_config.get('model')}")
+    else:
+        # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
+        llm = realtime.RealtimeModel(
+            model="gpt-realtime",
+            input_audio_transcription=AudioTranscription(
+                model="gpt-4o-mini-transcribe",
+                prompt=(
+                    "The speaker is multilingual and switches between different languages dynamically. "
+                    "Transcribe exactly what is spoken without translating."
+                ),
+            ),
+            input_audio_noise_reduction="near_field",
+            turn_detection=TurnDetection(
+                type="semantic_vad",
+                eagerness="high",
+                create_response=True,
+                interrupt_response=True,
+            ),
+            modalities=["text"],
+            api_key=settings.OPENAI_API_KEY,
+        )
+        logger.info("Half-cascade mode | llm=openai | tts=%s", assistant.assistant_tts_model)
+
+    # --- Build TTS (only for pipeline mode) ---
+    tts = None
+    if not is_realtime:
+        tts = create_tts(assistant)
+        if tts is None:
+            return
 
     # --- Session Setup ---
-    session = AgentSession(
-        llm=llm,
-        tts=tts,
-        preemptive_generation=True,
-        use_tts_aligned_transcript=True,
-    )
+    if is_realtime:
+        session = AgentSession(llm=llm)
+    else:
+        session = AgentSession(
+            llm=llm,
+            tts=tts,
+            preemptive_generation=True,
+            use_tts_aligned_transcript=True,
+        )
 
     # --- Usage Tracking ---
     usage_collector = UsageCollector()
@@ -283,6 +319,7 @@ async def entrypoint(ctx: JobContext):
             logger=logger,
             reprompt_interval_sec=interaction_config.silence_reprompt_interval,
             max_reprompts=interaction_config.silence_max_reprompts,
+            use_llm_for_speech=is_realtime,
         ) if silence_reprompts_enabled else None
     )
     filler_controller = FillerController(session=session, context_turns=context_turns) if filler_words_enabled else None

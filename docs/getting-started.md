@@ -4,15 +4,15 @@
 
 Choose the path that matches your use case:
 
-- [Outbound SIP Call](#path-a-outbound-sip-call) — dial a phone number via Twilio or Exotel
-- [Web Call](#path-b-web-call) — embed voice/chat in a browser or mobile app, no SIP required
-- [Inbound Call](#path-c-inbound-call) — route incoming calls to an assistant
+- [Outbound SIP Call](#path-a-outbound-sip-call) - dial a phone number via Twilio or Exotel
+- [Web Call](#path-b-web-call) - embed voice/chat in a browser or mobile app, no SIP required
+- [Inbound Call](#path-c-inbound-call) - route incoming calls to an assistant
 
 All paths start with the same first two steps.
 
 ---
 
-## Step 1 — Create an API Key
+## Step 1 - Create an API Key
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key" \
@@ -25,7 +25,14 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/auth/create-key"
 
 Save the `api_key` from the response. All subsequent requests require `Authorization: Bearer <api_key>`.
 
-## Step 2 — Create an Assistant
+## Step 2 - Create an Assistant
+
+Assistants support two execution modes:
+
+- `pipeline` (default): OpenAI realtime handles STT+LLM and a separate TTS provider speaks output.
+- `realtime`: Gemini realtime handles STT+LLM+TTS in one model.
+
+### Example A: Create Assistant in `pipeline` mode
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
@@ -35,6 +42,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_name": "Support Bot",
     "assistant_description": "Customer support agent",
     "assistant_prompt": "You are a helpful support agent.",
+    "assistant_llm_mode": "pipeline",
     "assistant_tts_model": "mistral",
     "assistant_tts_config": {
       "voice_id": "your_mistral_voice_id"
@@ -47,14 +55,32 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
   }'
 ```
 
+### Example B: Create Assistant in `realtime` mode
+
+```bash
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "assistant_name": "Gemini Voice Bot",
+    "assistant_description": "Realtime conversational assistant",
+    "assistant_prompt": "You are a helpful voice assistant.",
+    "assistant_llm_mode": "realtime",
+    "assistant_llm_config": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-live-preview",
+      "voice": "Puck"
+    }
+  }'
+```
+
 Save the `assistant_id` from the response.
-Supported `assistant_tts_model` values are `cartesia`, `sarvam`, `elevenlabs`, and `mistral`.
 
 ---
 
 ## Path A: Outbound SIP Call
 
-### A1 — Create a SIP Trunk
+### A1 - Create a SIP Trunk
 
 === "Twilio"
 
@@ -89,7 +115,7 @@ Supported `assistant_tts_model` values are `cartesia`, `sarvam`, `elevenlabs`, a
 
 Save the `trunk_id` (format: `ST_...`) from the response.
 
-### A2 — Trigger the Call
+### A2 - Trigger the Call
 
 === "Twilio"
 
@@ -129,9 +155,9 @@ Save the `room_name` from the response to correlate with webhook events and call
 
 ## Path B: Web Call
 
-Web calls use WebRTC directly — no SIP trunk required. The client joins a LiveKit room in the browser or mobile app.
+Web calls use WebRTC directly - no SIP trunk required. The client joins a LiveKit room in the browser or mobile app.
 
-### B1 — Generate a Token
+### B1 - Generate a Token
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/get_token" \
@@ -144,7 +170,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/get_tok
 
 The response contains a `token` and `room_name`. Pass the token to the LiveKit client SDK to join the room.
 
-### B2 — Connect with LiveKit SDK
+### B2 - Connect with LiveKit SDK
 
 ```ts
 import { Room } from "livekit-client";
@@ -161,7 +187,7 @@ The assistant joins automatically once the room is created. Both audio and typed
 
 Inbound calls (Exotel only) route incoming calls to an assistant based on the dialed number.
 
-### C1 — Assign an Inbound Number
+### C1 - Assign an Inbound Number
 
 ```bash
 curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/inbound/assign" \
@@ -184,8 +210,8 @@ See [Inbound Calls](api/inbound/index.md) and [Inbound Context Strategies](api/i
 
 ## Next Steps
 
-- [Architecture](architecture.md) — full call-flow diagrams for all integration modes
-- [Assistant APIs](api/assistant/index.md) — tune behavior, interaction settings, end-call tool
-- [TTS Humanization Guide](api/assistant/tts-humanization.md) — write better spoken prompts
-- [Tools APIs](api/tools/index.md) — give the assistant the ability to call external APIs
-- [SIP Provider Setup](api/sip/providers.md) — Twilio and Exotel configuration details
+- [Architecture](architecture.md) - full call-flow diagrams for all integration modes
+- [Assistant APIs](api/assistant/index.md) - pipeline/realtime configuration, interaction settings, end-call tool
+- [TTS Humanization Guide](api/assistant/tts-humanization.md) - write better spoken prompts
+- [Tools APIs](api/tools/index.md) - give the assistant the ability to call external APIs
+- [SIP Provider Setup](api/sip/providers.md) - Twilio and Exotel configuration details
