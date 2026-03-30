@@ -111,7 +111,7 @@ Create a new assistant configuration.
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
     | `provider` | string | No | Realtime provider. Current value: `gemini`. |
-    | `model` | string | No | Gemini realtime model. Default: `gemini-2.5-flash`. |
+    | `model` | string | No | Gemini realtime model. Default: `gemini-3.1-flash-live-preview`. |
     | `voice` | string | No | Gemini voice. Default: `Puck`. |
     | `api_key` | string | No | Optional per-assistant Google key. Falls back to system `GOOGLE_API_KEY`. |
 
@@ -128,7 +128,7 @@ Create a new assistant configuration.
         "assistant_llm_mode": "realtime",
         "assistant_llm_config": {
           "provider": "gemini",
-          "model": "gemini-2.5-flash",
+          "model": "gemini-3.1-flash-live-preview",
           "voice": "Puck"
         }
       }'
@@ -154,6 +154,19 @@ Create a new assistant configuration.
 | `message` | string | Human-readable message. |
 | `data.assistant_id` | string | Created assistant UUID. |
 | `data.assistant_name` | string | Created assistant name. |
+
+## Example Response
+
+```json
+{
+  "success": true,
+  "message": "Assistant created successfully",
+  "data": {
+    "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
+    "assistant_name": "Support Bot"
+  }
+}
+```
 
 ## HTTP Status Codes
 

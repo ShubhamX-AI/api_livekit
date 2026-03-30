@@ -116,9 +116,11 @@ If lookup fails (timeout/HTTP/invalid response):
     Welcome back. I can see you're calling from {{call.caller_number}}.
     ```
 
-    **Safe with fallback phrasing** — place the optional value mid-sentence where its absence is less noticeable:
+    **Safe with conditional section** — use Mustache section syntax to include text only when the value exists:
     ```
-    I have your account pulled up{{context.customer_name ? " for " + context.customer_name : ""}}. How can I help you today?
+    I have your account pulled up{{#context.customer_name}} for {{context.customer_name}}{{/context.customer_name}}. How can I help you today?
     ```
+
+    `{{#key}}...{{/key}}` renders the inner block only when the key is present and non-empty. This is the correct way to handle optional fields.
 
     When in doubt, keep the opening greeting independent of optional context fields and use those fields only in follow-up lines where omission is less noticeable.

@@ -9,10 +9,6 @@ Always use E.164 format:
 - ❌ `555-010-0000` (missing country code)
 - ❌ `(555) 010-0000` (parentheses and spaces)
 
-### Rate Limiting
-
-SIP provider rate limits apply at the trunk level, not the API level. Check your Twilio or Exotel account plan for concurrent call and per-second dial limits. Exceeding provider limits will surface as `failed` or `rejected` terminal statuses in the end-call webhook.
-
 ### Metadata Usage
 
 Use metadata for:

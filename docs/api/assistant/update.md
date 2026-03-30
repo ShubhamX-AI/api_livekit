@@ -80,7 +80,7 @@ Update an existing assistant. Only send fields you want to change.
         "assistant_llm_mode": "realtime",
         "assistant_llm_config": {
           "provider": "gemini",
-          "model": "gemini-2.5-flash",
+          "model": "gemini-3.1-flash-live-preview",
           "voice": "Puck"
         }
       }'
@@ -101,6 +101,18 @@ Update an existing assistant. Only send fields you want to change.
 | `success` | boolean | Operation status. |
 | `message` | string | Human-readable message. |
 | `data.assistant_id` | string | Updated assistant UUID. |
+
+## Example Response
+
+```json
+{
+  "success": true,
+  "message": "Assistant updated successfully",
+  "data": {
+    "assistant_id": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
 
 ## HTTP Status Codes
 
