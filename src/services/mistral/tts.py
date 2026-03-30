@@ -44,7 +44,7 @@ class MistralTTS(tts.TTS):
         voice_id: str,
         model: str = "voxtral-mini-tts-2603",
         api_key: str,
-        response_format: str = "pcm",
+        response_format: str = "opus",
     ) -> None:
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False, aligned_transcript=False),
@@ -93,7 +93,7 @@ class _MistralChunkedStream(tts.ChunkedStream):
         initialized = False
 
         try:
-            stream = await self._tts._client.audio.speech.complete_async(
+            stream = await self._tts._client.audio.speech.complete(
                 input=self._input_text,
                 model=self._opts.model,
                 voice_id=self._opts.voice_id,
