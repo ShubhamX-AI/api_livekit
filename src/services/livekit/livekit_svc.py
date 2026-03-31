@@ -380,6 +380,15 @@ class LiveKitService:
             await self.send_end_call_webhook(room_name=room_name, assistant_id=assistant_id)
 
 
+    async def delete_room(self, room_name: str):
+        """Delete a LiveKit room, terminating all SIP connections and participants."""
+        try:
+            async with self.get_livekit_api() as lkapi:
+                await lkapi.room.delete_room(api.DeleteRoomRequest(room=room_name))
+            logger.info(f"Room deleted: {room_name}")
+        except Exception as e:
+            logger.error(f"Failed to delete room {room_name}: {e}", exc_info=True)
+
     async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[dict]:
         """Start recording the room using LiveKit Egress"""
         try:
