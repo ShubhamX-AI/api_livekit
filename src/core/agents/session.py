@@ -221,15 +221,15 @@ async def entrypoint(ctx: JobContext):
             if trigger_phrase else
             "Call this when the user clearly wants to end the call."
         )
-        tool_description = f"End the current call. {trigger_condition} Before calling this tool, say this to the user: '{agent_message}'"
+        tool_description = f"End the current call. {trigger_condition}"
 
         @function_tool(description=tool_description)
         async def end_call(_ctx: RunContext):
             """Wait for the LLM's goodbye speech to finish, then end the call."""
             # Small buffer for recording egress to finalize audio capture
-            await asyncio.sleep(1.5)
-            asyncio.create_task(_flush_and_end_call(delay=0.0))
-            return ""
+            # await asyncio.sleep(1.5)
+            asyncio.create_task(_flush_and_end_call(delay=1.5))
+            return f"Say this to the user: '{agent_message}'"
 
         tools.append(end_call)
         logger.info(f"Custom end_call tool enabled for assistant {assistant.assistant_id}")
