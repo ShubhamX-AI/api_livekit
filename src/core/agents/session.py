@@ -196,6 +196,9 @@ async def entrypoint(ctx: JobContext):
     async def _flush_and_end_call(delay: float = 0.0):
         nonlocal call_end_triggered
         call_end_triggered = True  # Block duplicate from disconnect handler
+        # Mute all room audio inputs immediately — prevents STT from
+        # processing any new speech during the TTS playout delay window
+        await livekit_services.mute_room_audio_inputs(ctx.room.name)
         if delay > 0:
             await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
         # Wait for in-flight transcript saves before firing webhook (max 3s)
@@ -227,7 +230,6 @@ async def entrypoint(ctx: JobContext):
         async def end_call(_ctx: RunContext):
             """Wait for the LLM's goodbye speech to finish, then end the call."""
             # Small buffer for recording egress to finalize audio capture
-            # await asyncio.sleep(1.5)
             asyncio.create_task(_flush_and_end_call(delay=1.5))
             return f"Say this to the user: '{agent_message}'"
 

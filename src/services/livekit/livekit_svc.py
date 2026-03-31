@@ -380,6 +380,28 @@ class LiveKitService:
             await self.send_end_call_webhook(room_name=room_name, assistant_id=assistant_id)
 
 
+    async def mute_room_audio_inputs(self, room_name: str) -> None:
+        """Mute all participants' audio tracks in a room via the LiveKit Server API."""
+        try:
+            async with self.get_livekit_api() as lkapi:
+                participants = await lkapi.room.list_participants(
+                    api.ListParticipantsRequest(room=room_name)
+                )
+                for participant in participants.participants:
+                    for track in participant.tracks:
+                        if track.type == 0:  # TrackType.AUDIO
+                            await lkapi.room.mute_published_track(
+                                api.MuteRoomTrackRequest(
+                                    room=room_name,
+                                    identity=participant.identity,
+                                    track_sid=track.sid,
+                                    muted=True,
+                                )
+                            )
+            logger.info(f"Muted all audio inputs in room {room_name}")
+        except Exception as e:
+            logger.warning(f"Failed to mute room audio inputs: {e}")
+
     async def delete_room(self, room_name: str):
         """Delete a LiveKit room, terminating all SIP connections and participants."""
         try:
