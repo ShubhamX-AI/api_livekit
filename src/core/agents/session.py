@@ -10,6 +10,7 @@ from livekit.agents import (
     BackgroundAudioPlayer,
     AudioConfig,
     function_tool,
+    RunContext,
 )
 from openai.types.beta.realtime.session import TurnDetection
 from livekit.plugins.openai import realtime
@@ -223,7 +224,7 @@ async def entrypoint(ctx: JobContext):
         tool_description = f"End the current call. {trigger_condition} Before calling this tool, say this to the user: '{agent_message}'"
 
         @function_tool(description=tool_description)
-        async def end_call(_ctx):
+        async def end_call(_ctx: RunContext):
             """Wait for the LLM's goodbye speech to finish, then end the call."""
             # Small buffer for recording egress to finalize audio capture
             await asyncio.sleep(1.5)
