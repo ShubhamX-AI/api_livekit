@@ -15,7 +15,7 @@ Create a new assistant configuration.
 | `assistant_description` | string | Yes | Assistant description. |
 | `assistant_prompt` | string | Yes | System prompt. |
 | `assistant_llm_mode` | string | No | LLM mode: `pipeline` or `realtime`. Default: `pipeline`. |
-| `assistant_start_instruction` | string | No | First spoken instruction at call start (max 200 chars). |
+| `assistant_start_instruction` | string | No | Opening response text. Used when `assistant_interaction_config.speaks_first=true` (max 200 chars). |
 | `assistant_interaction_config` | object | No | Interaction settings (see below). |
 | `assistant_end_call_enabled` | boolean | No | Enables built-in end-call tool. Default: `false`. |
 | `assistant_end_call_trigger_phrase` | string | Conditional | Required if `assistant_end_call_enabled=true`. |
@@ -29,6 +29,7 @@ Create a new assistant configuration.
 === ":material-pipe: Pipeline"
 
     **Pipeline mode** uses OpenAI Realtime for STT + LLM, with a separate TTS provider for audio output.
+    If `assistant_interaction_config.speaks_first=true`, the opening response is spoken at session start.
 
     **Required fields**
 
@@ -96,6 +97,7 @@ Create a new assistant configuration.
 === ":material-lightning-bolt: Realtime"
 
     **Realtime mode** uses a single model (e.g. Gemini Live API) that handles STT, LLM, and TTS in one stream.
+    If `assistant_interaction_config.speaks_first=true`, the opening response is sent at session start through the realtime conversation path.
 
     !!! note "Filler words are not available in realtime mode"
         Since there is no external TTS, `filler_words` is automatically disabled even if set to `true`.
@@ -140,7 +142,7 @@ Create a new assistant configuration.
 
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `speaks_first` | boolean | No | If `true` (default), assistant starts first. |
+| `speaks_first` | boolean | No | If `true` (default), assistant sends an opening response first in both `pipeline` and `realtime` modes. |
 | `filler_words` | boolean | No | Enables filler words while user is speaking. Pipeline mode only. |
 | `silence_reprompts` | boolean | No | Enables reprompts during prolonged user silence. |
 | `silence_reprompt_interval` | number | No | Reprompt interval in seconds (1.0-60.0). Default: `10.0`. |

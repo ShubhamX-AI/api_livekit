@@ -33,6 +33,8 @@ Assistants support two execution modes:
 - `pipeline` (default): OpenAI realtime handles STT+LLM and a separate TTS provider speaks output.
 - `realtime`: Gemini realtime handles STT+LLM+TTS in one model.
 
+Both modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted).
+
 ### Example A: Create Assistant in `pipeline` mode
 
 ```bash
@@ -43,6 +45,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_name": "Support Bot",
     "assistant_description": "Customer support agent",
     "assistant_prompt": "You are a helpful support agent.",
+    "assistant_start_instruction": "Hello, thanks for calling support. How can I help you today?",
     "assistant_llm_mode": "pipeline",
     "assistant_tts_model": "mistral",
     "assistant_tts_config": {
@@ -66,16 +69,25 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_name": "Gemini Voice Bot",
     "assistant_description": "Realtime conversational assistant",
     "assistant_prompt": "You are a helpful voice assistant.",
+    "assistant_start_instruction": "Hi, you're connected to Gemini Voice Bot. How can I assist you today?",
     "assistant_llm_mode": "realtime",
     "assistant_llm_config": {
       "provider": "gemini",
       "model": "gemini-3.1-flash-live-preview",
       "voice": "Puck"
+    },
+    "assistant_interaction_config": {
+      "speaks_first": true,
+      "silence_reprompts": true
     }
   }'
 ```
 
 Save the `assistant_id` from the response.
+
+Behavior note:
+- `pipeline` mode sends the opening response through the pipeline path (LLM + configured TTS).
+- `realtime` mode sends the opening response through the realtime conversation path.
 
 ## Step 3 (Optional) - Give Your Assistant Tools
 

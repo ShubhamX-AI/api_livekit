@@ -16,6 +16,8 @@ Supported TTS providers for `pipeline` mode are `cartesia`, `sarvam`, `elevenlab
 - `assistant_llm_mode="pipeline"` requires both `assistant_tts_model` and `assistant_tts_config`.
 - `assistant_llm_mode="realtime"` requires `assistant_llm_config`.
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
+- `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
+- `assistant_interaction_config.speaks_first` works in both `pipeline` and `realtime` modes.
 
 ## Endpoints
 

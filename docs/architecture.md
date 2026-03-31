@@ -14,6 +14,7 @@ There are two runtime paths for assistant speech generation:
   - Input audio -> Gemini realtime model (STT + LLM + TTS) -> output audio
 
 Both modes share the same room orchestration, call lifecycle, transcript flow, and tool execution framework.
+Both modes also support assistant-first openings when `speaks_first=true`, using `assistant_start_instruction` as the opening response text.
 
 ## Web Integration
 
@@ -116,6 +117,7 @@ graph TD
 - API accepts Exotel outbound requests asynchronously and returns `202 Accepted` after dispatch/bridge startup.
 - SIP setup outcome is resolved out-of-band; final call result is surfaced through end-call webhook payloads.
 - Agent speech + recording are gated by bridge `call_answered` signaling to avoid recording before answer.
+- After readiness is confirmed, start-instruction delivery applies to both runtime modes (`pipeline` and `realtime`).
 - Terminal status finalization and webhook emission are handled through a single lifecycle path to reduce duplicate or conflicting terminal updates.
 - If SIP returns `200 OK` but no RTP ever arrives (`no_rtp_after_answer`), lifecycle final status is treated as `failed`.
 

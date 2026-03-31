@@ -61,6 +61,9 @@ When you trigger an outbound call, the flow differs based on the provider.
 ### Exotel Runtime Gating
 
 - The assistant waits for the bridge `call_answered` event before sending the start instruction.
+- After readiness is confirmed, start-instruction delivery works in both runtime modes:
+  - `pipeline` mode: opening response is generated through the pipeline path.
+  - `realtime` mode: opening response is generated through the realtime conversation path.
 - Runtime activity (assistant speech-side behavior and transcript processing) is held until readiness is confirmed.
 - Recording starts through a managed retry flow after readiness for Exotel outbound calls.
 

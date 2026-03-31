@@ -11,6 +11,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Supports assistant runtime modes:
   - `pipeline`: OpenAI realtime (STT+LLM) + separate TTS provider
   - `realtime`: Gemini realtime (STT+LLM+TTS in one model)
+- Supports start greetings in both modes when `assistant_interaction_config.speaks_first=true`.
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
 - Writes activity logs for tool calls, inbound context lookup, and end-call webhook delivery.
@@ -165,10 +166,14 @@ Use these pages as the canonical payload contracts:
 - `pipeline` mode (default):
   - Requires `assistant_tts_model` and `assistant_tts_config`
   - Uses OpenAI realtime for STT+LLM and separate configured TTS for speech output
+  - When `assistant_interaction_config.speaks_first=true`, the assistant sends the configured start instruction as the first response
 - `realtime` mode:
   - Requires `assistant_llm_config`
   - Uses Gemini realtime for STT+LLM+TTS in one model
   - Ignores `assistant_tts_model` and `assistant_tts_config` at runtime
+  - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
+
+Note: `assistant_start_instruction` is honored in realtime mode whenever `assistant_interaction_config.speaks_first` is enabled.
 
 ## Project Structure
 

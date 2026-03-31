@@ -21,7 +21,7 @@ Update an existing assistant. Only send fields you want to change.
 | `assistant_description` | string | New assistant description. |
 | `assistant_prompt` | string | New system prompt. |
 | `assistant_llm_mode` | string | Target mode: `pipeline` or `realtime`. |
-| `assistant_start_instruction` | string | New start instruction. |
+| `assistant_start_instruction` | string | New opening response text used when `assistant_interaction_config.speaks_first=true`. |
 | `assistant_interaction_config` | object | Partial interaction-config update. |
 | `assistant_end_call_enabled` | boolean | Enable or disable end-call tool. |
 | `assistant_end_call_trigger_phrase` | string | End-call trigger phrase. |
@@ -93,6 +93,11 @@ Update an existing assistant. Only send fields you want to change.
 - TTS fields must come in pairs: send both `assistant_tts_model` and `assistant_tts_config`, or neither.
 - Switching to `realtime` requires `assistant_llm_config`.
 - Switching to `pipeline` requires both `assistant_tts_model` and `assistant_tts_config`.
+
+## Runtime Behavior Notes
+
+- `assistant_interaction_config.speaks_first` is supported in both `pipeline` and `realtime` modes.
+- When `speaks_first=true`, `assistant_start_instruction` is used as the opening response.
 
 ## Response Schema
 

@@ -245,12 +245,15 @@ async def entrypoint(ctx: JobContext):
         tools=tools,
     )
 
+    # Provider selection for realtime mode
+    realtime_provider: str | None = None
+
     if is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS
         llm_config = assistant.assistant_llm_config or {}
-        provider = llm_config.get("provider", "gemini")
+        realtime_provider = llm_config.get("provider", "gemini")
 
-        if provider == "gemini":
+        if realtime_provider == "gemini":
             llm = google_realtime.RealtimeModel(
                 model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
                 voice=llm_config.get("voice", "Puck"),
@@ -259,10 +262,10 @@ async def entrypoint(ctx: JobContext):
                 api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
             )
         else:
-            logger.error(f"Unsupported realtime provider: {provider}")
+            logger.error(f"Unsupported realtime provider: {realtime_provider}")
             return
 
-        logger.info(f"Realtime mode | provider={provider} | model={llm_config.get('model')}")
+        logger.info(f"Realtime mode | provider={realtime_provider} | model={llm_config.get('model')}")
     else:
         # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
         llm = realtime.RealtimeModel(
@@ -475,13 +478,17 @@ async def entrypoint(ctx: JobContext):
 
                 if gate.is_active:
                     if is_realtime:
-                        logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input")
+                        logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input | provider = %s", realtime_provider)
 
-                        from google.genai import types as genai_types
-                        rt_session = agent_instance.realtime_llm_session
-                        rt_session._send_client_event(
-                            genai_types.LiveClientRealtimeInput(text=start_instruction)
-                        )
+                        if realtime_provider == "gemini":
+                            from google.genai import types as genai_types
+
+                            rt_session = agent_instance.realtime_llm_session
+                            rt_session._send_client_event(
+                                genai_types.LiveClientRealtimeInput(text=start_instruction)
+                            )
+                        else:
+                            logger.error("Realtime provider not supported")
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
                         await session.generate_reply(instructions=start_instruction)
