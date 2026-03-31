@@ -208,36 +208,27 @@ async def entrypoint(ctx: JobContext):
                 logger.warning("Timed out waiting for pending transcript tasks")
         await _persist_usage()
         await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
+        await livekit_services.delete_room(room_name=ctx.room.name)
 
-    # Custom end_call tool — controls goodbye speech directly so playout completes before recording stops
+    # Custom end_call tool — LLM speaks goodbye first, tool waits for playout before stopping recording
     if getattr(assistant, "assistant_end_call_enabled", False):
         trigger_phrase = (getattr(assistant, "assistant_end_call_trigger_phrase", None) or "").strip()
         agent_message = (getattr(assistant, "assistant_end_call_agent_message", None) or "Thank you, goodbye!").strip()
 
-        if trigger_phrase:
-            tool_description = (
-                f"End the current call. ONLY call this when the user clearly says: '{trigger_phrase}'. "
-                "Do NOT say anything before or after calling this tool — the tool speaks the goodbye."
-            )
-        else:
-            tool_description = (
-                "End the current call when the user clearly wants to end it. "
-                "Do NOT say anything before or after calling this tool — the tool speaks the goodbye."
-            )
+        trigger_condition = (
+            f"ONLY call this when the user clearly says: '{trigger_phrase}'."
+            if trigger_phrase else
+            "Call this when the user clearly wants to end the call."
+        )
+        tool_description = f"End the current call. {trigger_condition} Before calling this tool, say this to the user: '{agent_message}'"
 
         @function_tool(description=tool_description)
         async def end_call(_ctx):
-            """Speak goodbye, wait for full TTS playout, then end the call."""
-            speech = session.generate_reply(instructions=agent_message)
-            try:
-                # Wait for confirmed playout completion before stopping recording
-                await asyncio.wait_for(speech.wait_for_playout(), timeout=10.0)
-            except asyncio.TimeoutError:
-                logger.warning("Timeout waiting for goodbye TTS playout")
+            """Wait for the LLM's goodbye speech to finish, then end the call."""
             # Small buffer for recording egress to finalize audio capture
             await asyncio.sleep(1.5)
             asyncio.create_task(_flush_and_end_call(delay=0.0))
-            return "Call ended."
+            return ""
 
         tools.append(end_call)
         logger.info(f"Custom end_call tool enabled for assistant {assistant.assistant_id}")
