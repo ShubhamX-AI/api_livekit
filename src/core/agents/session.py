@@ -12,6 +12,7 @@ from livekit.agents import (
 )
 from openai.types.beta.realtime.session import TurnDetection
 from livekit.plugins.openai import realtime
+from livekit.plugins.google import realtime as google_realtime
 from livekit.agents.beta.tools import EndCallTool
 from openai.types.realtime import AudioTranscription
 import os
@@ -250,8 +251,7 @@ async def entrypoint(ctx: JobContext):
         provider = llm_config.get("provider", "gemini")
 
         if provider == "gemini":
-            from livekit.plugins import google
-            llm = google.realtime.RealtimeModel(
+            llm = google_realtime.RealtimeModel(
                 model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
                 voice=llm_config.get("voice", "Puck"),
                 modalities=["AUDIO"],
@@ -476,11 +476,11 @@ async def entrypoint(ctx: JobContext):
                 if gate.is_active:
                     if is_realtime:
                         logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input")
-                        await session.generate_reply(
-                            user_input=(
-                                "Start the conversation now. "
-                                f"Greet the user like this: {start_instruction}"
-                            )
+
+                        from google.genai import types as genai_types
+                        rt_session = agent_instance.realtime_llm_session
+                        rt_session._send_client_event(
+                            genai_types.LiveClientRealtimeInput(text=start_instruction)
                         )
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
