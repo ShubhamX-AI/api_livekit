@@ -9,11 +9,11 @@ from livekit.agents import (
     room_io,
     BackgroundAudioPlayer,
     AudioConfig,
+    function_tool,
 )
 from openai.types.beta.realtime.session import TurnDetection
 from livekit.plugins.openai import realtime
 from livekit.plugins.google import realtime as google_realtime
-from livekit.agents.beta.tools import EndCallTool
 from openai.types.realtime import AudioTranscription
 import os
 import asyncio
@@ -209,33 +209,38 @@ async def entrypoint(ctx: JobContext):
         await _persist_usage()
         await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
 
-    # EndCallTool support
+    # Custom end_call tool — controls goodbye speech directly so playout completes before recording stops
     if getattr(assistant, "assistant_end_call_enabled", False):
         trigger_phrase = (getattr(assistant, "assistant_end_call_trigger_phrase", None) or "").strip()
+        agent_message = (getattr(assistant, "assistant_end_call_agent_message", None) or "Thank you, goodbye!").strip()
+
         if trigger_phrase:
-            extra_description = (
-                "Only call this tool after the user clearly says:- "
-                f"'{trigger_phrase}'."
+            tool_description = (
+                f"End the current call. ONLY call this when the user clearly says: '{trigger_phrase}'. "
+                "Do NOT say anything before or after calling this tool — the tool speaks the goodbye."
             )
         else:
-            extra_description = "Only call this tool after the user clearly asks to end the call."
-
-        end_instructions = getattr(assistant, "assistant_end_call_agent_message", None) or "say goodbye to the user"
-        try:
-
-            async def _on_call_ended_completed(_event):
-                await _flush_and_end_call(delay=3.0)  # 1.5s lets TTS audio flush to egress
-
-            end_call_tool = EndCallTool(
-                extra_description=extra_description,
-                delete_room=True,
-                end_instructions=end_instructions,
-                on_tool_completed=_on_call_ended_completed,
+            tool_description = (
+                "End the current call when the user clearly wants to end it. "
+                "Do NOT say anything before or after calling this tool — the tool speaks the goodbye."
             )
-            tools.extend(end_call_tool.tools)
-            logger.info(f"EndCallTool enabled for assistant {assistant.assistant_id}")
-        except Exception as e:
-            logger.error(f"Failed to initialize EndCallTool: {e}", exc_info=True)
+
+        @function_tool(description=tool_description)
+        async def end_call(_ctx):
+            """Speak goodbye, wait for full TTS playout, then end the call."""
+            speech = session.generate_reply(instructions=agent_message)
+            try:
+                # Wait for confirmed playout completion before stopping recording
+                await asyncio.wait_for(speech.wait_for_playout(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for goodbye TTS playout")
+            # Small buffer for recording egress to finalize audio capture
+            await asyncio.sleep(1.5)
+            asyncio.create_task(_flush_and_end_call(delay=0.0))
+            return "Call ended."
+
+        tools.append(end_call)
+        logger.info(f"Custom end_call tool enabled for assistant {assistant.assistant_id}")
 
     # --- Build Agent & LLM ---
     agent_instance = DynamicAssistant(
