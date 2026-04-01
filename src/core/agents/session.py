@@ -230,7 +230,7 @@ async def entrypoint(ctx: JobContext):
         async def end_call(_ctx: RunContext):
             """Wait for the LLM's goodbye speech to finish, then end the call."""
             # Small buffer for recording egress to finalize audio capture
-            asyncio.create_task(_flush_and_end_call(delay=0.0))
+            asyncio.create_task(_flush_and_end_call(delay=1.5))
             return f"Say this to the user: '{agent_message}'"
 
         tools.append(end_call)
