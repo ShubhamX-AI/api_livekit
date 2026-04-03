@@ -90,18 +90,26 @@ graph TD
         RTP[RTP Media Bridge]
         Mixer[Audio Mixer]
         Port[Dynamic Port Pool]
+        Bridge[Bridge Orchestrator]
     end
 
     subgraph AI Core
         LKR[LiveKit Room]
         Agent[AI Agent Worker]
         BG[Background Audio Player]
+        HC[HoldController]
     end
 
     Exo -->|1. SIP INVITE| SIP
     SIP -->|2. Acquire Port| Port
     Port -.->|3. Bind UDP| RTP
     SIP -->|4. SIP 200 OK| Exo
+    Exo -.->|Hold: re-INVITE a=sendonly| SIP
+    SIP -.->|Resume: re-INVITE a=sendrecv| SIP
+    SIP -.->|on_hold_change| Bridge
+    Bridge -.->|publish_data call_hold| LKR
+    LKR -.->|data_received| Agent
+    Agent -.->|signal_hold| HC
 
     Exo <-->|RTP G711 PCMA/PCMU| RTP
     Agent -->|Voice Track| LKR
@@ -120,6 +128,69 @@ graph TD
 - After readiness is confirmed, start-instruction delivery applies to both runtime modes (`pipeline` and `realtime`).
 - Terminal status finalization and webhook emission are handled through a single lifecycle path to reduce duplicate or conflicting terminal updates.
 - If SIP returns `200 OK` but no RTP ever arrives (`no_rtp_after_answer`), lifecycle final status is treated as `failed`.
+
+### Hold & Resume Detection
+
+When a party puts the call on hold, the platform detects it and suppresses all agent activity to prevent the agent from responding to hold music.
+
+**Exotel (SIP re-INVITE — instant):**
+
+1. Remote party sends a SIP re-INVITE with `a=sendonly` or `a=inactive` in the SDP body.
+2. `sip_client.py` parses the SDP, detects the hold attribute, sends `200 OK`, and fires the `on_hold_change` callback.
+3. `bridge.py` publishes a data packet (`{"event": "call_hold"}` or `{"event": "call_resume"}`) to the LiveKit room on topic `sip_bridge_events`.
+4. `session.py` receives the event and activates `HoldController`, which:
+   - Stops `SilenceWatchdogController` (no reprompts during hold)
+   - Stops `FillerController` (no backchannel fillers during hold)
+   - Calls `session.interrupt()` to kill any in-progress agent speech
+5. On resume, the silence watchdog is restarted and normal agent behavior resumes.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Remote as Remote Party
+    participant Exotel as Exotel SIP Proxy
+    participant SIP as sip_client.py
+    participant Bridge as bridge.py
+    participant LK as LiveKit Room
+    participant Session as session.py
+    participant HC as HoldController
+
+    Remote->>Exotel: Put on hold
+    Exotel->>SIP: SIP re-INVITE (a=sendonly)
+    SIP->>SIP: _sdp_is_hold() → True
+    SIP->>Exotel: 200 OK
+    SIP->>Bridge: on_hold_change(True)
+    Bridge->>LK: publish_data({"event":"call_hold"})
+    LK->>Session: data_received (sip_bridge_events)
+    Session->>HC: signal_hold(True)
+    HC->>HC: stop watchdog + fillers
+    HC->>Session: session.interrupt()
+
+    Note over Remote,HC: Call on hold — agent silent
+
+    Remote->>Exotel: Resume call
+    Exotel->>SIP: SIP re-INVITE (a=sendrecv)
+    SIP->>SIP: _sdp_is_hold() → False
+    SIP->>Exotel: 200 OK
+    SIP->>Bridge: on_hold_change(False)
+    Bridge->>LK: publish_data({"event":"call_resume"})
+    LK->>Session: data_received (sip_bridge_events)
+    Session->>HC: signal_hold(False)
+    HC->>HC: restart watchdog
+```
+
+**Suppression during hold:**
+
+Three event handlers check `hold_controller.is_on_hold` and suppress activity:
+
+| Event | Behavior during hold |
+| :--- | :--- |
+| `conversation_item_added` | Returns early; interrupts assistant speech; no transcript saved |
+| `user_state_changed` | Returns early; no filler/silence watchdog triggers |
+| `agent_state_changed` | Calls `session.interrupt()` if agent starts speaking |
+
+!!! note "Provider coverage"
+    Hold detection via SIP re-INVITE works for **Exotel** calls only. Twilio and other providers do not currently have hold detection — the agent may respond to hold music if the call is placed on hold for extended periods.
 
 ## Provider Support Matrix
 

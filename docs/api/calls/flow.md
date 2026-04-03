@@ -67,6 +67,17 @@ When you trigger an outbound call, the flow differs based on the provider.
 - Runtime activity (assistant speech-side behavior and transcript processing) is held until readiness is confirmed.
 - Recording starts through a managed retry flow after readiness for Exotel outbound calls.
 
+### Hold & Resume (Exotel)
+
+- When the remote party puts the call on hold, Exotel sends a SIP re-INVITE with `a=sendonly` or `a=inactive` in the SDP.
+- The bridge detects this instantly and publishes a `call_hold` event to the LiveKit room.
+- The agent session activates hold mode:
+  - Silence watchdog stops (no reprompts during hold music)
+  - Filler word controller stops (no backchannel during hold)
+  - Any in-progress agent speech is interrupted
+  - Transcript processing is suppressed
+- On resume, the bridge publishes `call_resume` and the agent returns to normal operation.
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -87,6 +98,16 @@ sequenceDiagram
     Bridge->>Bridge: AI Agent joins room
     Bridge->>Phone: Audio Relay (RTP)
     Phone->>Bridge: Audio Relay (RTP)
+    opt Hold
+        Phone->>Provider: Put on hold
+        Provider->>Bridge: SIP re-INVITE (a=sendonly)
+        Bridge->>Bridge: Agent enters hold mode
+    end
+    opt Resume
+        Phone->>Provider: Resume call
+        Provider->>Bridge: SIP re-INVITE (a=sendrecv)
+        Bridge->>Bridge: Agent resumes normal operation
+    end
     Phone->>Provider: Hang up
     Provider-->>Bridge: SIP BYE
     Bridge-->>API: Call ended

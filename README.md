@@ -34,6 +34,17 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Exotel completed-call duration is measured from `answered_at` to `ended_at`.
 - Trunk/provider mismatch is rejected at API level (`trunk_type` must match `call_service`).
 
+## Hold Detection & Suppression
+
+- Exotel calls: Hold is detected instantly via SIP re-INVITE (`a=sendonly` or `a=inactive` in SDP).
+- When hold is detected, the agent enters hold mode:
+  - Silence watchdog stops (no reprompts during hold music)
+  - Filler word controller stops (no backchannel fillers)
+  - In-progress agent speech is interrupted
+  - Transcript processing is suppressed
+- On resume, normal agent behavior is restored automatically.
+- Twilio and other providers: Hold detection is not yet implemented — the agent may respond to hold music.
+
 ## Architecture
 
 1. API service (`src/api/server.py`) exposes REST endpoints.

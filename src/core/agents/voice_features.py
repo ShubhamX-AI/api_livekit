@@ -185,6 +185,42 @@ class SilenceWatchdogController:
                 self._silence_task = None
 
 
+class HoldController:
+    """Suppress agent activity during SIP hold."""
+
+    def __init__(
+        self,
+        logger: logging.Logger,
+        session: AgentSession,
+        silence_watchdog: "SilenceWatchdogController | None",
+        filler_controller: "FillerController | None",
+    ) -> None:
+        self._logger = logger
+        self._session = session
+        self._silence_watchdog = silence_watchdog
+        self._filler_controller = filler_controller
+        self._is_on_hold = False
+
+    @property
+    def is_on_hold(self) -> bool:
+        return self._is_on_hold
+
+    def signal_hold(self, is_hold: bool) -> None:
+        if is_hold and not self._is_on_hold:
+            self._is_on_hold = True
+            self._logger.info("[HOLD] Call on hold — suppressing agent")
+            if self._silence_watchdog:
+                self._silence_watchdog.stop(reset_count=True)
+            if self._filler_controller:
+                self._filler_controller.stop()
+            self._session.interrupt()
+        elif not is_hold and self._is_on_hold:
+            self._is_on_hold = False
+            self._logger.info("[HOLD] Call resumed")
+            if self._silence_watchdog:
+                self._silence_watchdog.start()
+
+
 class FillerController:
     """Manage the filler word task lifecycle."""
 

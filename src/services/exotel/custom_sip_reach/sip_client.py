@@ -53,6 +53,15 @@ def format_exotel_number(number: str) -> str:
     return clean
 
 
+def _sdp_is_hold(sdp_body: str) -> bool:
+    """Return True if SDP indicates hold (a=sendonly or a=inactive)."""
+    for line in sdp_body.splitlines():
+        stripped = line.strip().lower()
+        if stripped in ("a=sendonly", "a=inactive"):
+            return True
+    return False
+
+
 class ExotelSipClient:
     def __init__(
         self,
@@ -87,6 +96,7 @@ class ExotelSipClient:
         self.last_sip_status_code: int | None = None
         self.last_sip_status_reason: str | None = None
         self.last_call_status: str | None = None
+        self.on_hold_change: callable | None = None  # called with bool (True=hold, False=resume)
 
     @staticmethod
     def _map_call_status_from_sip(code: int) -> str:
@@ -383,6 +393,7 @@ class ExotelSipClient:
                     cl = int(hdrs.get("content-length", "0"))
                     if len(rest) < cl:
                         break
+                    body = rest[:cl].decode(errors="replace") if cl > 0 else ""
                     buf = rest[cl:]
 
                     if start.startswith("BYE "):
@@ -392,6 +403,15 @@ class ExotelSipClient:
                             await self._writer.drain()
                         logger.info("[SIP] → 200 OK (BYE)")
                         return
+                    elif start.startswith("INVITE "):
+                        # re-INVITE: hold/resume signaling
+                        hold = _sdp_is_hold(body)
+                        if self._writer:
+                            self._writer.write(self._response_200_ok(hdrs))
+                            await self._writer.drain()
+                        logger.info(f"[SIP] ← re-INVITE — hold={hold}")
+                        if self.on_hold_change:
+                            self.on_hold_change(hold)
         except Exception as e:
             logger.info(f"[SIP] Monitor ended: {e}")
 
