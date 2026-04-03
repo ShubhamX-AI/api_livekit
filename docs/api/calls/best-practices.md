@@ -29,6 +29,19 @@ Common errors and how to handle them:
 | `404` Trunk not found     | Wrong ID           | Verify trunk exists and belongs to user |
 | `500` Provider error      | SIP provider issue | Check provider status and credentials   |
 
+### Call Hold Behavior (Exotel)
+
+When a call is placed on hold via Exotel:
+
+- The agent detects hold instantly through SIP re-INVITE signaling.
+- All agent activity is suppressed — no filler words, no silence reprompts, no transcript processing.
+- Any in-progress agent speech is immediately interrupted.
+- When the call resumes, the agent returns to normal operation automatically.
+- This prevents the agent from responding to hold music or generating spurious responses.
+
+!!! note "Provider coverage"
+    Hold detection currently works for **Exotel only**. Twilio calls do not have hold detection — if a Twilio call is placed on hold, the agent may respond to hold music.
+
 ---
 
 ## Next Steps

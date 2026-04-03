@@ -29,7 +29,7 @@ from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.tts_factory import create_tts
 from src.core.agents.utils import render_prompt
-from src.core.agents.voice_features import SilenceWatchdogController, FillerController
+from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
 from src.core.db.db_schemas import Assistant, InboundContextStrategy, UsageRecord, CallRecord
@@ -343,6 +343,12 @@ async def entrypoint(ctx: JobContext):
         ) if silence_reprompts_enabled else None
     )
     filler_controller = FillerController(session=session, context_turns=context_turns) if filler_words_enabled else None
+    hold_controller = HoldController(
+        logger=logger,
+        session=session,
+        silence_watchdog=silence_watchdog,
+        filler_controller=filler_controller,
+    )
 
     # Background audio
     ambient_path = os.path.join(settings.AUDIO_DIR, "office-ambience_48k.wav")
@@ -368,6 +374,11 @@ async def entrypoint(ctx: JobContext):
     @session.on("conversation_item_added")
     def on_conversation_item(event):
         if not event.item.text_content:
+            return
+        # Suppress all activity during hold
+        if hold_controller.is_on_hold:
+            if event.item.role == "assistant":
+                session.interrupt()
             return
         # Block all activity until the call is ready
         if not gate.is_active:
@@ -404,20 +415,27 @@ async def entrypoint(ctx: JobContext):
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
     logger.info("AgentSession started successfully")
 
-    if filler_words_enabled or silence_reprompts_enabled:
-        @session.on("user_state_changed")
-        def on_user_state_changed(event):
-            nonlocal user_is_speaking
-            is_speaking = event.new_state == "speaking"
-            user_is_speaking = is_speaking
+    @session.on("user_state_changed")
+    def on_user_state_changed(event):
+        nonlocal user_is_speaking
+        is_speaking = event.new_state == "speaking"
+        user_is_speaking = is_speaking
 
-            if silence_watchdog:
-                silence_watchdog.on_user_state_changed(is_speaking)
-            if filler_controller:
-                if is_speaking:
-                    filler_controller.start()
-                else:
-                    filler_controller.stop()
+        if hold_controller.is_on_hold:
+            return  # Suppress filler/silence during hold
+
+        if silence_watchdog:
+            silence_watchdog.on_user_state_changed(is_speaking)
+        if filler_controller:
+            if is_speaking:
+                filler_controller.start()
+            else:
+                filler_controller.stop()
+
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(event):
+        if hold_controller.is_on_hold and event.new_state == "speaking":
+            session.interrupt()
 
     # --- Exotel Bridge: Call-Answered Handling ---
     @ctx.room.on("data_received")
@@ -438,6 +456,10 @@ async def entrypoint(ctx: JobContext):
                                 answered_at=datetime.now(timezone.utc),
                             )
                         )
+                elif msg.get("event") == "call_hold":
+                    hold_controller.signal_hold(True)
+                elif msg.get("event") == "call_resume":
+                    hold_controller.signal_hold(False)
             except (json.JSONDecodeError, TypeError):
                 pass
 

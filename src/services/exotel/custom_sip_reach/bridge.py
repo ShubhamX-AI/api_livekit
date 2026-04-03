@@ -89,6 +89,20 @@ async def run_bridge(
         sip_client = ExotelSipClient(**sip_client_kwargs)
         inbound_bye = register_call_id(sip_client.call_id)
 
+        # Hold/resume detection via SIP re-INVITE
+        async def _on_hold_change(is_hold: bool):
+            event_name = "call_hold" if is_hold else "call_resume"
+            try:
+                await room.local_participant.publish_data(
+                    json.dumps({"event": event_name}).encode(),
+                    topic="sip_bridge_events",
+                )
+                logger.info(f"[BRIDGE] Published {event_name}")
+            except Exception as e:
+                logger.error(f"[BRIDGE] Failed to publish {event_name}: {e}")
+
+        sip_client.on_hold_change = lambda h: asyncio.create_task(_on_hold_change(h))
+
         # Subscribe to ALL audio tracks (agent voice + background/thinking sounds)
         @room.on("track_subscribed")
         def on_track(track, publication, participant):
