@@ -14,6 +14,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Supports start greetings in both modes when `assistant_interaction_config.speaks_first=true`.
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
+- Sends post-call webhook notifications with both actual and billable call duration.
 - Writes activity logs for tool calls, inbound context lookup, and end-call webhook delivery.
 - Tracks per-call LLM token usage and TTS character counts via SDK metrics.
 - Provides analytics endpoints for call duration, volume, and usage monitoring.
@@ -133,6 +134,12 @@ Run unit tests:
 
 ```bash
 uv run python -m unittest discover -s tests -v
+```
+
+Backfill existing call records with billable minutes:
+
+```bash
+uv run python -m scripts.backfill_billable_duration_minutes
 ```
 
 ## Documentation

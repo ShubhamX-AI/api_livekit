@@ -16,7 +16,7 @@ Example: `550e8400-e29b-41d4-a716-446655440000_abc123def456`
 
 ### Option 1 — End-Call Webhook (recommended)
 
-Configure `assistant_end_call_url` on the assistant. When a call reaches a terminal state, the platform POSTs the full call record (status, transcripts, duration) to that URL.
+Configure `assistant_end_call_url` on the assistant. When a call reaches a terminal state, the platform POSTs the full call record, including both actual duration and backend-calculated billable duration, to that URL.
 
 See [End Call Webhook](webhook.md) for the complete payload contract.
 

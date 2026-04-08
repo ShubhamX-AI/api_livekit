@@ -42,6 +42,7 @@ Content-Type: application/json
     "started_at": "2024-01-15T10:00:00.000Z",
     "ended_at": "2024-01-15T10:05:30.000Z",
     "call_duration_minutes": 5.5,
+    "billable_duration_minutes": 6,
     "created_by_email": "user@example.com",
     "call_type": "outbound",
     "call_service": "exotel",
@@ -82,7 +83,8 @@ Content-Type: application/json
 | `data.transcripts[].timestamp` | string  | ISO 8601 timestamp.                        |
 | `data.started_at`              | string  | Call start time (ISO 8601).                |
 | `data.ended_at`                | string  | Call end time (ISO 8601).                  |
-| `data.call_duration_minutes`   | number  | Total call duration in minutes.            |
+| `data.call_duration_minutes`   | number  | Actual measured call duration in minutes.  |
+| `data.billable_duration_minutes` | integer | Chargeable duration in whole minutes, rounded up for connected calls and `0` for non-connected terminal outcomes. |
 | `data.created_by_email`        | string  | Email of the user who owns this call.      |
 | `data.call_type`               | string  | Call direction: `outbound`, `inbound`, or `web`. |
 | `data.call_service`            | string  | Telephony provider: `exotel`, `twilio`, or `web`. |
@@ -132,6 +134,7 @@ The webhook payload is generated from the stored call record and currently inclu
 - `started_at`
 - `ended_at`
 - `call_duration_minutes`
+- `billable_duration_minutes`
 - `created_by_email`
 - `call_type`
 - `call_service`
@@ -167,6 +170,7 @@ curl -X POST "https://your-webhook-url" \
       "started_at": "2024-01-15T10:00:00.000Z",
       "ended_at": "2024-01-15T10:05:30.000Z",
       "call_duration_minutes": 5.5,
+      "billable_duration_minutes": 6,
       "call_type": "outbound",
       "call_service": "exotel",
       "platform_number": "08044319240"
@@ -195,6 +199,7 @@ Content-Type: application/json
     - Empty `recording_path` does not block terminal webhook delivery
     - Ensure your webhook endpoint responds quickly (< 10 seconds)
     - Store the `room_name` to correlate with call initiation
+    - `billable_duration_minutes` is calculated by the backend using the platform billing rule, so clients should not recompute rounding locally
 
 ### Exotel Terminal Mapping Notes
 
@@ -207,6 +212,7 @@ Content-Type: application/json
 - Outbound API response status (`200`/`202`/`4xx`/`5xx`) indicates request validation/acceptance at API time.
 - For asynchronous Exotel setup, webhook `data.call_status` is authoritative for lifecycle updates and terminal outcomes.
 - Treat terminal statuses (`completed`, `busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`) as final outcomes.
+- Use `data.call_duration_minutes` for actual elapsed time and `data.billable_duration_minutes` for billing/charge display.
 
 ### Public Payload vs Internal Tracking
 

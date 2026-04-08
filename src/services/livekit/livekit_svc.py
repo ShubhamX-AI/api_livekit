@@ -15,6 +15,7 @@ from livekit.protocol.sip import (
 )
 from src.core.config import settings
 from src.core.logger import logger, setup_logging
+from src.core.billing import calculate_billable_duration_minutes, NON_BILLABLE_FINAL_STATUSES
 from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog, UsageRecord
 
 setup_logging()
@@ -266,6 +267,12 @@ class LiveKitService:
             call_record.ended_at = ended_at
         if call_duration_minutes is not None:
             call_record.call_duration_minutes = call_duration_minutes
+            call_record.billable_duration_minutes = calculate_billable_duration_minutes(
+                call_status=call_status,
+                call_duration_minutes=call_duration_minutes,
+            )
+        elif call_status in NON_BILLABLE_FINAL_STATUSES:
+            call_record.billable_duration_minutes = 0
         await call_record.save()
         return call_record
 
@@ -374,6 +381,10 @@ class LiveKitService:
             call_record.call_duration_minutes = (
                 call_record.ended_at - duration_start
             ).total_seconds() / 60
+            call_record.billable_duration_minutes = calculate_billable_duration_minutes(
+                call_status="completed",
+                call_duration_minutes=call_record.call_duration_minutes,
+            )
             call_record.call_status = "completed"
             await call_record.save()
             logger.info(f"Call record ended for room: {room_name}")

@@ -159,6 +159,7 @@ class CallRecord(Document):
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: Optional[datetime] = None
     call_duration_minutes: Optional[float] = None
+    billable_duration_minutes: Optional[int] = None
     # Analytics fields
     created_by_email: Optional[EmailStr] = None
     call_type: Optional[Literal["outbound", "inbound", "web"]] = None

@@ -249,7 +249,7 @@ async def get_call_logs(
     limit: int = Query(10, ge=1, le=100, description="Items per page"),
     start_date: Optional[datetime] = Query(None, description="Start date for filtering (ISO 8601)"),
     end_date: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601)"),
-    sort_by: str = Query("started_at", description="Field to sort by (e.g., started_at, ended_at, call_duration_minutes)"),
+    sort_by: str = Query("started_at", description="Field to sort by (e.g., started_at, ended_at, call_duration_minutes, billable_duration_minutes)"),
     sort_order: str = Query("desc", description="Sort order: 'asc' or 'desc'"),
     current_user: APIKey = Depends(get_current_user)
 ):

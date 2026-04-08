@@ -20,7 +20,7 @@ Retrieve call logs for a specific assistant with support for pagination, sorting
 | `limit`      | integer | No       | `10`         | Number of items per page (minimum: 1, maximum: 100).                                     |
 | `start_date` | string  | No       | -            | Start date for filtering (ISO 8601 format).                                              |
 | `end_date`   | string  | No       | -            | End date for filtering (ISO 8601 format).                                                |
-| `sort_by`    | string  | No       | `started_at` | Field to sort by (e.g., `started_at`, `ended_at`, `call_duration_minutes`, `call_cost`). |
+| `sort_by`    | string  | No       | `started_at` | Field to sort by (e.g., `started_at`, `ended_at`, `call_duration_minutes`, `billable_duration_minutes`). |
 | `sort_order` | string  | No       | `desc`       | Sort order: `asc` or `desc`.                                                             |
 
 ### Response Schema
@@ -42,7 +42,8 @@ Retrieve call logs for a specific assistant with support for pagination, sorting
 | `data.logs[].answered_at`           | string  | ISO 8601 timestamp when the call was answered.           |
 | `data.logs[].started_at`            | string  | ISO 8601 timestamp of when the call started.             |
 | `data.logs[].ended_at`              | string  | ISO 8601 timestamp of when the call ended.               |
-| `data.logs[].call_duration_minutes` | float   | Total call duration in minutes.                          |
+| `data.logs[].call_duration_minutes` | float   | Actual measured call duration in minutes.                |
+| `data.logs[].billable_duration_minutes` | integer | Chargeable duration in whole minutes, rounded up for connected calls and `0` for non-connected terminal outcomes. |
 | `data.logs[].recording_path`        | string  | URL/Path to the call recording (if available).           |
 | `data.logs[].transcripts`           | array   | List of transcript objects `{speaker, text, timestamp}`. |
 | `data.pagination`                   | object  | Pagination metadata.                                     |
@@ -88,6 +89,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/call-lo
         "started_at": "2024-01-20T14:30:00.000Z",
         "ended_at": "2024-01-20T14:35:00.000Z",
         "call_duration_minutes": 5.0,
+        "billable_duration_minutes": 5,
         "recording_path": "https://bucket.s3.amazonaws.com/recordings/550e8400...abc123.ogg",
         "transcripts": [
           {
@@ -113,3 +115,4 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/call-lo
 - Completed calls usually have `call_status="completed"` and non-null `answered_at`.
 - Calls not answered or failed during setup can end with terminal statuses like `busy`, `no_answer`, `timeout`, or `failed`.
 - For SIP-driven failures, `sip_status_code` and `sip_status_text` help explain provider-level outcomes.
+- Use `call_duration_minutes` when you need actual elapsed time and `billable_duration_minutes` when you need the amount that will be charged.
