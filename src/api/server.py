@@ -30,15 +30,23 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan events"""
+    import asyncio
+
     # Startup
     await init_db()
-    
+
     # Start the inbound SIP listener at boot so it's always actively listening for incoming calls
     from src.services.exotel.custom_sip_reach.inbound_listener import ensure_inbound_server
     await ensure_inbound_server()
-    
+
+    # Start the outbound call dispatcher — drips queued calls at controlled rate
+    from src.services.outbound_dispatcher import outbound_dispatcher_loop
+    dispatcher_task = asyncio.create_task(outbound_dispatcher_loop())
+
     yield
+
     # Shutdown
+    dispatcher_task.cancel()
     await close_db()
 
 

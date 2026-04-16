@@ -4,6 +4,7 @@ from beanie import Document, Indexed
 from pydantic import BaseModel, Field, EmailStr
 from pymongo import IndexModel
 from pymongo.collation import Collation
+import uuid
 
 
 # API key storage
@@ -203,6 +204,32 @@ class Tool(Document):
 
     class Settings:
         name = "tools"  # Collection name in MongoDB
+
+
+class OutboundCallQueue(Document):
+    """Queue for outbound calls — dispatcher processes these at a controlled rate."""
+
+    queue_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    user_email: str
+    assistant_id: str
+    assistant_name: str
+    trunk_id: str
+    to_number: str
+    call_service: Literal["twilio", "exotel"]
+    job_metadata: Dict = Field(default_factory=dict)
+    status: str = "pending"   # pending | dispatching | dispatched | failed
+    queued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    dispatched_at: Optional[datetime] = None
+    retry_count: int = 0
+    last_error: Optional[str] = None
+
+    class Settings:
+        name = "outbound_call_queue"
+        indexes = [
+            IndexModel([("status", 1), ("queued_at", 1)]),  # dispatcher poll query
+            IndexModel([("queue_id", 1)], unique=True),
+            IndexModel([("user_email", 1), ("queued_at", -1)]),
+        ]
 
 
 class ActivityLog(Document):

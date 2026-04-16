@@ -2,7 +2,7 @@
 
 ## Overview
 
-Outbound calls initiate a LiveKit room, dispatch an assistant, and place a call through the selected SIP service.
+Outbound calls are now queued first, then dispatched into LiveKit and the selected SIP service by a background dispatcher when capacity is available.
 
 !!! info "Provider support status"
 
@@ -13,6 +13,7 @@ Outbound calls initiate a LiveKit room, dispatch an assistant, and place a call 
 ## Endpoints and Guides
 
 - [Trigger Outbound Call](trigger.md)
+- [Queue Status](queue-status.md)
 - [Generate Web Call Token](web-call.md)
 - [Call Flow](flow.md)
 - [End Call Webhook](webhook.md)

@@ -8,6 +8,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Runs voice agents in LiveKit rooms.
 - Supports web calls with both text (`lk.chat`) and voice input.
 - Supports outbound calling and Exotel inbound routing.
+- Queues outbound call requests and dispatches them in the background at a controlled rate.
 - Supports assistant runtime modes:
   - `pipeline`: OpenAI realtime (STT+LLM) + separate TTS provider
   - `realtime`: Gemini realtime (STT+LLM+TTS in one model)
@@ -19,6 +20,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Tracks per-call LLM token usage and TTS character counts via SDK metrics.
 - Provides analytics endpoints for call duration, volume, and usage monitoring.
 - Super-admin endpoints for cross-tenant analytics and token usage visibility.
+- Protects worker capacity by buffering outbound requests and limiting new job intake under higher CPU load.
 
 ## Provider Support
 
@@ -28,12 +30,28 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 
 ## Exotel Outbound Lifecycle
 
-- Exotel outbound API calls return `202 Accepted` while SIP setup continues asynchronously.
+- Exotel outbound API calls are queued first and return `202 Accepted` with a `queue_id`.
+- A background dispatcher starts with the API process and promotes queued calls into active LiveKit sessions when capacity is available.
 - Final call outcomes are delivered through end-call webhook payloads (`completed`, `busy`, `no_answer`, `timeout`, `failed`, etc.).
 - Exotel outbound recording starts only after the bridge signals `call_answered` and the worker confirms egress start.
 - Exotel recordings are explicitly stopped on call end using the stored egress id.
 - Exotel completed-call duration is measured from `answered_at` to `ended_at`.
 - Trunk/provider mismatch is rejected at API level (`trunk_type` must match `call_service`).
+
+## Outbound Queueing
+
+- `POST /call/outbound` validates the assistant and trunk, inserts an `outbound_call_queue` record, and returns `202 Accepted`.
+- `GET /call/queue/{queue_id}` returns queue state for the requesting user.
+- Queue states are:
+  - `pending`: waiting for dispatcher capacity
+  - `dispatching`: reserved by dispatcher and being turned into a live call
+  - `dispatched`: LiveKit room + provider dispatch created successfully
+  - `failed`: permanently failed after retry exhaustion
+- Current dispatcher defaults:
+  - up to `8` concurrent active outbound sessions
+  - polls the queue every `2` seconds
+  - retries dispatch failures up to `3` times
+- Active-session protection also uses the worker load threshold in `src/core/agents/session.py` so the worker stops accepting new jobs around `65%` CPU load.
 
 ## Hold Detection & Suppression
 
@@ -49,9 +67,10 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 ## Architecture
 
 1. API service (`src/api/server.py`) exposes REST endpoints.
-2. Worker (`src/core/agents/session.py`) joins LiveKit rooms and runs the assistant.
-3. MongoDB stores assistants, tools, trunks, call records, and logs.
-4. LiveKit handles media transport and room orchestration.
+2. API startup also launches the outbound dispatcher loop (`src/services/outbound_dispatcher.py`).
+3. Worker (`src/core/agents/session.py`) joins LiveKit rooms and runs the assistant.
+4. MongoDB stores assistants, tools, trunks, queued outbound calls, call records, and logs.
+5. LiveKit handles media transport and room orchestration.
 
 ## Requirements
 
@@ -118,6 +137,8 @@ Start API server:
 uv run server_run.py
 ```
 
+The API process also starts the outbound dispatcher and inbound Exotel listener during app startup.
+
 Start worker in another terminal:
 
 ```bash
@@ -172,6 +193,7 @@ Use these pages as the canonical payload contracts:
 - `/tool`
 - `/sip`
 - `/call`
+- `/call/queue/{queue_id}`
 - `/inbound`
 - `/inbound_context_strategy`
 - `/logs`
@@ -227,6 +249,7 @@ api_livekit/
 │   │   ├── config.py
 │   │   └── logger.py
 │   └── services/
+│       ├── outbound_dispatcher.py
 │       ├── elevenlabs/
 │       ├── mistral/
 │       ├── email/

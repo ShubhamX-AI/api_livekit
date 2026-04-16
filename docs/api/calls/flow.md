@@ -41,22 +41,40 @@ sequenceDiagram
 
 When you trigger an outbound call, the flow differs based on the provider.
 
-### Twilio Flow (Managed SIP)
+### Shared Queue + Dispatcher Flow
 
 1. **Validation**: System validates the assistant, trunk, and phone number.
-2. **Room Creation**: A LiveKit room is created.
-3. **SIP Participant**: API calls LiveKit's SIP API to create a participant.
-4. **Twilio Connection**: LiveKit connects directly to Twilio.
-5. **Agent Connection**: The AI assistant joins the room.
+2. **Queue Insert**: API writes a `pending` item into `outbound_call_queue`.
+3. **Immediate Ack**: API returns `202 Accepted` with a `queue_id`.
+4. **Dispatcher Poll**: Background dispatcher checks available capacity.
+5. **Slot Reservation**: Dispatcher marks the item `dispatching`.
+6. **Provider Dispatch**: Dispatcher creates the room, dispatches the agent, and starts the provider-specific call path.
+7. **Queue Finalization**: Queue item becomes `dispatched` on success or returns to `pending` / `failed` on retryable or permanent error.
+
+### Twilio Flow (Managed SIP)
+
+1. **Queued Request**: Request enters the outbound queue.
+2. **Room Creation**: Dispatcher creates a LiveKit room.
+3. **Call Record Init**: Dispatcher creates the initial call record with `initiated` status.
+4. **SIP Participant**: Dispatcher calls LiveKit's SIP API to create a participant.
+5. **Twilio Connection**: LiveKit connects directly to Twilio.
+6. **Agent Connection**: The AI assistant joins the room.
 
 ### Exotel Flow (Custom Bridge)
 
-1. **Validation**: System validates the assistant, trunk, and phone number.
-2. **Room Creation**: A LiveKit room is created.
-3. **Custom Bridge**: API starts a background task running the `custom_sip_reach` bridge.
-4. **Exotel Connection**: The bridge connects to Exotel via SIP/TCP.
-5. **RTP Relay**: The bridge relays media between Exotel and the LiveKit room.
-6. **Agent Connection**: The AI assistant joins the room and waits for bridge readiness before speaking.
+1. **Queued Request**: Request enters the outbound queue.
+2. **Room Creation**: Dispatcher creates a LiveKit room.
+3. **Call Record Init**: Dispatcher creates the initial call record with `initiated` status.
+4. **Custom Bridge**: Dispatcher starts a background task running the `custom_sip_reach` bridge.
+5. **Exotel Connection**: The bridge connects to Exotel via SIP/TCP.
+6. **RTP Relay**: The bridge relays media between Exotel and the LiveKit room.
+7. **Agent Connection**: The AI assistant joins the room and waits for bridge readiness before speaking.
+
+### Dispatcher Capacity Rules
+
+- The dispatcher only starts new work when active sessions are below the configured limit.
+- Current defaults are `8` active outbound jobs, a `2` second polling interval, and `3` retry attempts before permanent failure.
+- The worker also advertises reduced intake at higher CPU load (`load_threshold=0.65`), which complements the queue by preventing uncontrolled fan-out.
 
 ### Exotel Runtime Gating
 
@@ -82,15 +100,21 @@ When you trigger an outbound call, the flow differs based on the provider.
 sequenceDiagram
     participant User
     participant API
+    participant Queue as Outbound Queue
+    participant Dispatcher
     participant Bridge as SIP Bridge / LiveKit
     participant Provider as SIP Provider
     participant Phone
 
     User->>API: POST /call/outbound
     API->>API: Validate assistant & trunk
-    Note over API,Bridge: Twilio: API -> LiveKit SIP API
-    Note over API,Bridge: Exotel: API -> Custom SIP Bridge
-    API->>Bridge: Initiate Connection
+    API->>Queue: Insert pending queue item
+    API-->>User: 202 Accepted + queue_id
+    Dispatcher->>Queue: Poll pending items
+    Dispatcher->>Queue: Mark item dispatching
+    Note over Dispatcher,Bridge: Twilio: Dispatcher -> LiveKit SIP API
+    Note over Dispatcher,Bridge: Exotel: Dispatcher -> Custom SIP Bridge
+    Dispatcher->>Bridge: Initiate Connection
     Bridge->>Provider: SIP INVITE
     Provider->>Phone: Ring
     Phone-->>Provider: Answer

@@ -4,6 +4,15 @@
 
 This page describes how AI agents integrate with web clients, managed SIP providers, and custom SIP bridges.
 
+## API Startup Services
+
+When the FastAPI app starts, it initializes MongoDB and starts two long-running background services:
+
+- **Exotel inbound SIP listener** — listens for incoming SIP INVITE/BYE from Exotel on boot
+- **Outbound call dispatcher** — event-driven loop that drains the outbound call queue
+
+Outbound request acceptance and outbound call execution are fully decoupled. The API enqueues calls and returns immediately; the dispatcher handles pacing and retry independently.
+
 ## Assistant Runtime Modes
 
 There are two runtime paths for assistant speech generation:
@@ -122,12 +131,110 @@ graph TD
 
 ### Outbound Exotel Lifecycle
 
-- API accepts Exotel outbound requests asynchronously and returns `202 Accepted` after dispatch/bridge startup.
-- SIP setup outcome is resolved out-of-band; final call result is surfaced through end-call webhook payloads.
-- Agent speech + recording are gated by bridge `call_answered` signaling to avoid recording before answer.
+- `POST /call/outbound` validates the request, inserts to `outbound_call_queue`, and returns `202 Accepted` with a `queue_id`. No LiveKit room is created at this point.
+- The event-driven dispatcher wakes immediately on enqueue and creates the LiveKit room + starts the SIP bridge when a capacity slot is available.
+- SIP setup outcome (`200 OK` / failure / timeout) is resolved out-of-band via `result_signal`; the caller can poll `GET /call/queue/{queue_id}` for status.
+- Agent speech and recording are gated by bridge `call_answered` signaling to avoid recording before answer.
 - After readiness is confirmed, start-instruction delivery applies to both runtime modes (`pipeline` and `realtime`).
 - Terminal status finalization and webhook emission are handled through a single lifecycle path to reduce duplicate or conflicting terminal updates.
 - If SIP returns `200 OK` but no RTP ever arrives (`no_rtp_after_answer`), lifecycle final status is treated as `failed`.
+
+## Outbound Queueing and Capacity Control
+
+All outbound calls go through a persistent MongoDB queue before being dispatched to LiveKit. This prevents server overload when users trigger many calls simultaneously.
+
+### Outbound Call Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as API User
+    participant API as API Server
+    participant DB as MongoDB
+    participant Disp as Outbound Dispatcher
+    participant LK as LiveKit
+    participant SIP as SIP Bridge / Trunk
+    participant Agent as AI Agent Worker
+
+    User->>API: POST /call/outbound
+    API->>API: Validate assistant + trunk
+    API->>DB: Insert OutboundCallQueue (status=pending)
+    API->>Disp: notify_dispatcher() [asyncio.Event.set()]
+    API-->>User: 202 Accepted + queue_id
+
+    Note over Disp: Wakes immediately on event signal
+
+    Disp->>DB: COUNT active CallRecords (initiated + answered)
+    Disp->>DB: Fetch up to (MAX - active) pending items
+    Disp->>DB: Mark items status=dispatching
+
+    loop For each dispatched item
+        Disp->>LK: Create room
+        Disp->>LK: Create agent dispatch
+        Disp->>DB: Insert CallRecord (status=initiated)
+        alt Exotel
+            Disp->>SIP: run_bridge (async task)
+            SIP-->>Disp: result_signal (INVITE resolved)
+        else Twilio
+            Disp->>LK: create_sip_participant
+        end
+        Disp->>DB: Mark queue item status=dispatched
+        LK->>Agent: Start session
+    end
+
+    User->>API: GET /call/queue/{queue_id}
+    API-->>User: { status, dispatched_at, ... }
+```
+
+### Queue States
+
+| State | Meaning |
+| :--- | :--- |
+| `pending` | Waiting for a free slot |
+| `dispatching` | Slot reserved — room creation in progress |
+| `dispatched` | LiveKit room created and SIP bridge started |
+| `failed` | All retry attempts exhausted |
+
+### Capacity Model
+
+Capacity is calculated as:
+
+```
+available_slots = MAX_CONCURRENT_JOBS(8) - active_sessions
+
+active_sessions = COUNT(CallRecord where status IN ["initiated","answered"])
+                + _dispatching_count  ← in-memory reservation for mid-dispatch calls
+```
+
+The `_dispatching_count` in-memory counter bridges the gap between "room creation started" and "CallRecord written to MongoDB" (~100ms window), preventing double-dispatch under any timing.
+
+On the agent worker side, `load_threshold=0.65` provides a secondary CPU-based guard: the worker stops accepting new jobs when average CPU exceeds 65%, protecting against inbound call bursts that bypass the queue.
+
+### Retry Behaviour
+
+Failed dispatches (SIP error, LiveKit API error, trunk inactive) are retried up to `3` times automatically. The item is reset to `pending` and re-queued on the next dispatcher wake. After 3 failures, status becomes `failed` with the last error stored in `last_error`.
+
+### Event-Driven Design
+
+The dispatcher uses `asyncio.Event` instead of polling:
+
+```
+New call enqueued
+    → notify_dispatcher() sets asyncio.Event
+    → dispatcher wakes in <1ms
+    → processes queue immediately
+
+No calls for hours
+    → dispatcher sleeps (0 CPU)
+    → wakes once every 60s as fallback safety poll
+    → returns to sleep if queue is empty
+
+Server restart with pending items in MongoDB
+    → startup recovery: _process_pending() runs on boot
+    → all pending calls from before restart are dispatched
+```
+
+This replaces a naive poll-every-N-seconds loop with zero idle CPU overhead. Upgrade path to Redis Pub/Sub is straightforward if multiple API server instances are needed — only `notify_dispatcher()` and the wait mechanism change.
 
 ### Hold & Resume Detection
 

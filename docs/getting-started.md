@@ -4,7 +4,7 @@
 
 Choose the path that matches your use case:
 
-- [Outbound SIP Call](#path-a-outbound-sip-call) - dial a phone number via Twilio or Exotel
+- [Outbound SIP Call](#path-a-outbound-sip-call) - queue a phone call via Twilio or Exotel
 - [Web Call](#path-b-web-call) - embed voice/chat in a browser or mobile app, no SIP required
 - [Inbound Call](#path-c-inbound-call) - route incoming calls to an assistant
 - [End-to-End Example](#end-to-end-example-outbound-call-with-a-tool-and-webhook) - full walkthrough from zero to receiving a webhook
@@ -188,7 +188,7 @@ Save the `trunk_id` (format: `ST_...`) from the response.
       }'
     ```
 
-    A `200 OK` response means the call was placed successfully.
+    A `202 Accepted` response means the request was queued successfully. Save the returned `queue_id`.
 
 === "Exotel"
 
@@ -204,9 +204,38 @@ Save the `trunk_id` (format: `ST_...`) from the response.
       }'
     ```
 
-    A `202 Accepted` response means call setup has started. The final outcome (answered, busy, no_answer, etc.) is delivered asynchronously via the end-call webhook configured on the assistant (`assistant_end_call_url`).
+    A `202 Accepted` response means the request was queued successfully. Save the returned `queue_id`.
 
-Save the `room_name` from the response to correlate with webhook events and call logs.
+Example response:
+
+```json
+{
+  "success": true,
+  "message": "Outbound call queued successfully",
+  "data": {
+    "queue_id": "QUEUE_ID",
+    "status": "queued"
+  }
+}
+```
+
+### A3 - Check Queue Status
+
+```bash
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/call/queue/QUEUE_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+Use this endpoint to see whether the request is still `pending`, currently `dispatching`, already `dispatched`, or permanently `failed`.
+
+### A4 - Track the Final Call Outcome
+
+Once the queue item becomes `dispatched`, track the live call outcome through:
+
+- the assistant end-call webhook (`assistant_end_call_url`)
+- `GET /assistant/call-logs/{assistant_id}`
+
+The final outcome (`answered`, `completed`, `busy`, `no_answer`, and so on) is not stored on the queue item itself.
 
 ---
 

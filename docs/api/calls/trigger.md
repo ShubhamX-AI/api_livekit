@@ -1,6 +1,6 @@
 # Trigger Outbound Call
 
-Initiate a call from an assistant to a phone number.
+Queue an outbound call from an assistant to a phone number.
 
 - **URL**: `/call/outbound`
 - **Method**: `POST`
@@ -50,21 +50,19 @@ Then your metadata should be:
 | :-------------------- | :------ | :----------------------------------------- |
 | `success`             | boolean | Indicates if the operation was successful. |
 | `message`             | string  | Human-readable success message.            |
-| `data`                | object  | Contains call initiation details.          |
-| `data.room_name`      | string  | The LiveKit room name for this call.       |
-| `data.agent_dispatch` | object  | LiveKit agent dispatch details.            |
-| `data.participant`    | object  | LiveKit participant details.               |
+| `data`                | object  | Contains queue acknowledgement details.    |
+| `data.queue_id`       | string  | Queue identifier for status polling.       |
+| `data.status`         | string  | Initial queue state. Usually `queued`.     |
 
 ### HTTP Status Codes
 
 | Code | Description                                                                                |
 | :--- | :----------------------------------------------------------------------------------------- |
-| 200  | Success - Twilio call triggered successfully.                                              |
-| 202  | Accepted - Exotel call accepted for asynchronous setup; final outcome is delivered later. |
+| 202  | Accepted - outbound call request queued successfully.                                      |
 | 400  | Bad Request - Invalid input data, missing required fields, or trunk type and call service mismatch. |
 | 401  | Unauthorized - Invalid or missing Bearer token.                                            |
 | 404  | Not Found - Assistant or trunk not found.                                                  |
-| 500  | Server Error - Internal server error during call initiation.                               |
+| 500  | Server Error - Internal server error during queue insertion or later dispatch.             |
 
 ### Example: Basic Outbound Call
 
@@ -85,17 +83,10 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 ```json
 {
   "success": true,
-  "message": "Outbound call triggered successfully",
+  "message": "Outbound call queued successfully",
   "data": {
-    "room_name": "550e8400-e29b-41d4-a716-446655440000_abc123",
-    "agent_dispatch": {
-      "id": "agent_123",
-      "state": "JOINING"
-    },
-    "participant": {
-      "sid": "PA_xxx",
-      "identity": "phone-+15550200000"
-    }
+    "queue_id": "8b7df5ea0fdc497ea4f44bd31954a387",
+    "status": "queued"
   }
 }
 ```
@@ -119,23 +110,27 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/call/outbound" \
 ```json
 {
   "success": true,
-  "message": "Outbound call accepted via Exotel bridge",
+  "message": "Outbound call queued successfully",
   "data": {
-    "room_name": "exotel-+918044319240-abc123",
-    "agent_dispatch": {
-      "id": "agent_123",
-      "state": "JOINING"
-    },
-    "status": "initiated"
+    "queue_id": "9c1ad10ef9b6484aad8e8d15a299f4b8",
+    "status": "queued"
   }
 }
 ```
 
-For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-call webhook payload (`data.call_status`) for lifecycle updates and terminal outcomes.
+After you receive the `queue_id`, poll [Queue Status](queue-status.md) if you need to know whether the dispatcher has picked up the job. Once the call is actually dispatched, use the end-call webhook payload (`data.call_status`) or assistant call logs for lifecycle updates and terminal outcomes.
+
+### Queueing Notes
+
+- `POST /call/outbound` no longer returns `room_name`, LiveKit dispatch metadata, or SIP participant details.
+- The API validates assistant ownership and active trunk ownership before the queue item is inserted.
+- Queue insertion is per-user; `GET /call/queue/{queue_id}` is also scoped to the authenticated user.
+- Queue status tracks dispatch progress only. It does not replace final call outcome tracking.
 
 ### Exotel Async Lifecycle Notes
 
-- `202 Accepted` means call setup has started, not that the user has answered.
+- `202 Accepted` means the request was queued successfully, not that provider setup has started or the user has answered.
+- Dispatcher capacity determines when provider setup begins.
 - Exotel setup outcomes (`busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`) are delivered through the end-call webhook.
 - Assistant speech/transcript processing starts only after bridge readiness (`call_answered`), not merely after `202 Accepted`.
 - The assistant starts Exotel outbound recording only after the bridge signals `call_answered` (post SIP `200 OK`).
@@ -143,7 +138,7 @@ For Exotel calls, SIP answer/failure is processed asynchronously. Use the end-ca
 
 ### Exotel Outcome Mapping (SIP to Final `call_status`)
 
-`POST /call/outbound` with `call_service="exotel"` returns `202 Accepted` once setup starts. Final outcomes are asynchronous and delivered through the end-call webhook (`data.call_status`).
+`POST /call/outbound` with `call_service="exotel"` returns `202 Accepted` once the queue insert succeeds. Final outcomes are asynchronous and delivered through the end-call webhook (`data.call_status`) after the dispatcher actually starts the call.
 
 | SIP/Runtime Outcome | Final `call_status` | Meaning |
 | :--- | :--- | :--- |
