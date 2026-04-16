@@ -236,6 +236,21 @@ Server restart with pending items in MongoDB
 
 This replaces a naive poll-every-N-seconds loop with zero idle CPU overhead. Upgrade path to Redis Pub/Sub is straightforward if multiple API server instances are needed — only `notify_dispatcher()` and the wait mechanism change.
 
+### Module Layout
+
+```
+src/services/outbound_dispatcher/
+├── __init__.py      # re-exports notify_dispatcher, outbound_dispatcher_loop
+└── dispatcher.py    # constants, event, capacity helpers, dispatch logic, loop
+```
+
+Consumers import from the package root — no import changes needed if the internals are reorganised:
+
+```python
+from src.services.outbound_dispatcher import notify_dispatcher        # call.py
+from src.services.outbound_dispatcher import outbound_dispatcher_loop # server.py
+```
+
 ### Hold & Resume Detection
 
 When a party puts the call on hold, the platform detects it and suppresses all agent activity to prevent the agent from responding to hold music.
