@@ -1,12 +1,15 @@
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from beanie.operators import In
 
 from src.core.db.db_schemas import CallRecord, OutboundCallQueue, OutboundSIP
 from src.core.logger import logger
 from src.services.livekit.livekit_svc import LiveKitService
+
+# Calls stuck in "initiated" longer than this are considered stale (crashed/lost).
+STALE_CALL_THRESHOLD_MINUTES = 30
 
 MAX_CONCURRENT_JOBS = 8   # max simultaneous active sessions
 MAX_RETRIES = 3           # permanent failure after this many attempts
@@ -25,6 +28,33 @@ _dispatching_count = 0
 def notify_dispatcher() -> None:
     """Call this after inserting a new OutboundCallQueue item to wake the dispatcher."""
     _new_call_event.set()
+
+
+async def _cleanup_stale_calls() -> None:
+    """On startup, mark any calls stuck in 'initiated'/'answered' as failed.
+
+    These are left over from a previous container crash and would otherwise
+    permanently occupy slots in _get_active_session_count(), preventing new
+    calls from ever being dispatched.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_CALL_THRESHOLD_MINUTES)
+    stale = await CallRecord.find(
+        In(CallRecord.call_status, ["initiated", "answered"]),
+        CallRecord.started_at < cutoff,
+    ).to_list()
+    if stale:
+        now = datetime.now(timezone.utc)
+        for record in stale:
+            record.call_status = "failed"
+            record.call_status_reason = "Marked failed on restart — call was stuck in initiated/answered state"
+            record.ended_at = now
+            await record.save()
+        logger.warning(
+            f"Startup cleanup: marked {len(stale)} stale call record(s) as failed "
+            f"(older than {STALE_CALL_THRESHOLD_MINUTES} min)"
+        )
+    else:
+        logger.info("Startup cleanup: no stale call records found")
 
 
 async def _get_active_session_count() -> int:
@@ -200,23 +230,30 @@ async def _process_pending() -> None:
         active = await _get_active_session_count()
         slots = MAX_CONCURRENT_JOBS - active
 
-        if slots > 0:
-            pending = (
-                await OutboundCallQueue.find(OutboundCallQueue.status == "pending")
-                .sort("queued_at")
-                .limit(slots)
-                .to_list()
-            )
-            for item in pending:
-                item.status = "dispatching"
-                await item.save()
-                asyncio.create_task(_dispatch_queued_call(item))
+        if slots <= 0:
+            logger.info(f"Dispatcher: active={active}, no slots available (max={MAX_CONCURRENT_JOBS})")
+            return
 
-            if pending:
-                logger.info(
-                    f"Dispatcher: active={active}, slots={slots}, "
-                    f"dispatching {len(pending)} call(s)"
-                )
+        pending = (
+            await OutboundCallQueue.find(OutboundCallQueue.status == "pending")
+            .sort("queued_at")
+            .limit(slots)
+            .to_list()
+        )
+
+        if not pending:
+            logger.debug(f"Dispatcher: active={active}, slots={slots}, queue empty")
+            return
+
+        for item in pending:
+            item.status = "dispatching"
+            await item.save()
+            asyncio.create_task(_dispatch_queued_call(item))
+
+        logger.info(
+            f"Dispatcher: active={active}, slots={slots}, "
+            f"dispatching {len(pending)} call(s)"
+        )
     except Exception as e:
         logger.error(f"Dispatcher process error: {e}", exc_info=True)
 
@@ -228,6 +265,10 @@ async def outbound_dispatcher_loop() -> None:
     Zero CPU usage when the queue is empty.
     """
     logger.info(f"Outbound call dispatcher started (max_concurrent={MAX_CONCURRENT_JOBS})")
+
+    # Cleanup stale initiated/answered records from a previous crash so they
+    # don't permanently occupy concurrency slots.
+    await _cleanup_stale_calls()
 
     # Startup recovery: process any calls that were pending before last restart
     await _process_pending()
