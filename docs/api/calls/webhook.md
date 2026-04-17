@@ -13,6 +13,7 @@ Content-Type: application/json
   "message": "Call details fetched successfully",
   "data": {
     "room_name": "550e8400-e29b-41d4-a716-446655440000_abc123",
+    "queue_id": "8b7df5ea0fdc497ea4f44bd31954a387",
     "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
     "assistant_name": "Support Agent",
     "to_number": "+15550200000",
@@ -68,6 +69,7 @@ Content-Type: application/json
 | `message`                      | string  | Status message.                            |
 | `data`                         | object  | Complete call details.                     |
 | `data.room_name`               | string  | The LiveKit room name.                     |
+| `data.queue_id`                | string  | The queue ID from `POST /call/outbound`. Present for outbound calls, `null` for inbound/web. Use this to correlate the webhook with the original trigger response. |
 | `data.assistant_id`            | string  | ID of the assistant used.                  |
 | `data.assistant_name`          | string  | Name of the assistant.                     |
 | `data.to_number`               | string  | Phone number that was called.              |
@@ -121,6 +123,7 @@ Terminal setup outcomes:
 The webhook payload is generated from the stored call record and currently includes:
 
 - `room_name`
+- `queue_id` (outbound calls only — matches the `queue_id` from `POST /call/outbound`)
 - `assistant_id`
 - `assistant_name`
 - `to_number`
@@ -198,7 +201,7 @@ Content-Type: application/json
     - `recording_path` can be empty/null when recording fails after runtime retries
     - Empty `recording_path` does not block terminal webhook delivery
     - Ensure your webhook endpoint responds quickly (< 10 seconds)
-    - Store the `room_name` to correlate with call initiation
+    - For outbound calls, use `data.queue_id` to correlate the webhook with the original `POST /call/outbound` response. For inbound/web calls, use `data.room_name`.
     - `billable_duration_minutes` is calculated by the backend using the platform billing rule, so clients should not recompute rounding locally
 
 ### Exotel Terminal Mapping Notes

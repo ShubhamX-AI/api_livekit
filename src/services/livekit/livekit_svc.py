@@ -192,6 +192,7 @@ class LiveKitService:
         call_type: Optional[str] = None,
         call_service: Optional[str] = None,
         platform_number: Optional[str] = None,
+        queue_id: Optional[str] = None,
     ):
         """Create a call record if missing, or refresh base call metadata if present."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
@@ -209,11 +210,14 @@ class LiveKitService:
                 call_record.call_service = call_service
             if platform_number:
                 call_record.platform_number = platform_number
+            if queue_id:
+                call_record.queue_id = queue_id
             await call_record.save()
             return call_record
 
         call_record = CallRecord(
             room_name=room_name,
+            queue_id=queue_id,
             assistant_id=assistant_id,
             assistant_name=assistant_name,
             to_number=to_number,

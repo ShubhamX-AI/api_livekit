@@ -24,6 +24,8 @@ This endpoint is only for outbound queued calls and only reports queue lifecycle
 
 Configure `assistant_end_call_url` on the assistant. When a call reaches a terminal state, the platform POSTs the full call record, including both actual duration and backend-calculated billable duration, to that URL.
 
+The webhook payload includes `data.queue_id` for outbound calls — this matches the `queue_id` returned by `POST /call/outbound`, so you can correlate the webhook to the original trigger without polling.
+
 See [End Call Webhook](webhook.md) for the complete payload contract.
 
 ### Option 3 — Query Call Logs

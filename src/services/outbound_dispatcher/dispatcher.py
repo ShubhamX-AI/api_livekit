@@ -158,6 +158,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 call_type="outbound",
                 call_service="twilio",
                 platform_number=(trunk.trunk_config.get("numbers") or [None])[0],
+                queue_id=item.queue_id,
             )
             await livekit_services.create_sip_participant(
                 room_name=room_name,
@@ -180,6 +181,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 call_type="outbound",
                 call_service="exotel",
                 platform_number=sip_config.get("exotel_number"),
+                queue_id=item.queue_id,
             )
             result_signal: asyncio.Queue = asyncio.Queue(maxsize=1)
             asyncio.create_task(
@@ -196,6 +198,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
 
         item.status = "dispatched"
         item.dispatched_at = datetime.now(timezone.utc)
+        item.room_name = room_name
         await item.save()
         logger.info(
             f"Dispatched queued call {item.queue_id} → room={room_name} | to={item.to_number}"

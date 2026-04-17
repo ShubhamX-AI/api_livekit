@@ -135,6 +135,7 @@ class InboundContextStrategy(Document):
 
 class CallRecord(Document):
     room_name: Indexed(str, unique=True)
+    queue_id: Optional[str] = None   # set for outbound calls dispatched via queue
     assistant_id: str
     assistant_name: str
     to_number: str
