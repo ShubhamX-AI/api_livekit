@@ -12,6 +12,10 @@ services:
     restart: unless-stopped
     command: python server_run.py
     network_mode: "host"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
       interval: 30s
@@ -25,5 +29,9 @@ services:
       - .env
     restart: unless-stopped
     command: python -m src.core.agents.session start
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     depends_on:
       - api
