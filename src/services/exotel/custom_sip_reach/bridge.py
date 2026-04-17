@@ -160,6 +160,8 @@ async def run_bridge(
 
         # Notify agent that call is answered
         try:
+            # Add an samll delay to avoid race conditions
+            await asyncio.sleep(0.5)
             await room.local_participant.publish_data(
                 json.dumps({"event": "call_answered"}).encode(),
                 topic="sip_bridge_events",

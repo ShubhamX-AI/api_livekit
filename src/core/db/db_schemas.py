@@ -221,6 +221,7 @@ class OutboundCallQueue(Document):
     status: str = "pending"   # pending | dispatching | dispatched | failed
     queued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     dispatched_at: Optional[datetime] = None
+    room_name: Optional[str] = None
     retry_count: int = 0
     last_error: Optional[str] = None
 
