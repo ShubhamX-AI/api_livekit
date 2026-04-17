@@ -60,6 +60,10 @@ class RTPMediaBridge:
         )
 
         self._remote_addr: tuple[str, int] | None = None
+        # Outbound send is gated on this flag, not _remote_addr.
+        # _remote_addr can be auto-learned from early-media RTP during ringing,
+        # but we must NOT send agent audio until SIP 200 OK has arrived.
+        self._tx_ready = False
         self._running = False
         self.negotiated_pt = PCMA_PAYLOAD_TYPE
 
@@ -101,6 +105,8 @@ class RTPMediaBridge:
     def set_remote_endpoint(self, ip: str, port: int, pt: int = PCMA_PAYLOAD_TYPE):
         self._remote_addr = (ip, port)
         self.negotiated_pt = pt
+        # Unlock outbound — called only after SIP 200 OK.
+        self._tx_ready = True
         logger.info(f"[RTP] Remote endpoint → {ip}:{port} PT={pt}")
         # Immediately flush any agent audio that was buffered during the SIP
         # INVITE / ringing phase.  We cannot await here (sync method) so we
@@ -253,7 +259,7 @@ class RTPMediaBridge:
 
     async def send_to_rtp(self, frame: rtc.AudioFrame):
         """Send mixed audio to remote RTP. Buffers if SIP not yet answered."""
-        if not self._remote_addr:
+        if not self._tx_ready:
             self._frame_buffer.append(frame)
             return
         # Flush buffer once (after set_remote_endpoint called)
@@ -270,7 +276,7 @@ class RTPMediaBridge:
         We buffer until we have exactly 320 bytes of 8kHz 16-bit PCM (= 20ms),
         then encode and send one correctly-sized packet.
         """
-        if not self._remote_addr:
+        if not self._tx_ready or not self._remote_addr:
             return
         try:
             raw = bytes(frame.data.cast("b"))

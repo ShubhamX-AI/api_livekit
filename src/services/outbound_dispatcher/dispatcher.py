@@ -11,6 +11,10 @@ from src.services.livekit.livekit_svc import LiveKitService
 # Calls stuck in "initiated" longer than this are considered stale (crashed/lost).
 STALE_CALL_THRESHOLD_MINUTES = 30
 
+# Queue items stuck in 'dispatching' longer than this indicate a worker crash
+# mid-dispatch. Reset them back to 'pending' (or 'failed' past MAX_RETRIES).
+STUCK_DISPATCHING_MINUTES = 5
+
 MAX_CONCURRENT_JOBS = 8   # max simultaneous active sessions
 MAX_RETRIES = 3           # permanent failure after this many attempts
 
@@ -31,30 +35,55 @@ def notify_dispatcher() -> None:
 
 
 async def _cleanup_stale_calls() -> None:
-    """On startup, mark any calls stuck in 'initiated'/'answered' as failed.
+    """Mark hung calls as failed and recover queue items left mid-dispatch.
 
-    These are left over from a previous container crash and would otherwise
-    permanently occupy slots in _get_active_session_count(), preventing new
-    calls from ever being dispatched.
+    Runs on startup AND on every dispatcher tick.  Two independent sweeps:
+
+    1. CallRecord stuck in 'initiated'/'answered' past STALE_CALL_THRESHOLD_MINUTES
+       permanently occupy slots in _get_active_session_count(), blocking new
+       calls.  Mark them 'failed'.
+    2. OutboundCallQueue items stuck in 'dispatching' past STUCK_DISPATCHING_MINUTES
+       indicate a worker crash mid-dispatch (between create_room and
+       initialize_call_record).  Reset them to 'pending' so they retry, or
+       'failed' once MAX_RETRIES is reached.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_CALL_THRESHOLD_MINUTES)
+    now = datetime.now(timezone.utc)
+
+    # Sweep 1: stale CallRecords
+    cutoff = now - timedelta(minutes=STALE_CALL_THRESHOLD_MINUTES)
     stale = await CallRecord.find(
         In(CallRecord.call_status, ["initiated", "answered"]),
         CallRecord.started_at < cutoff,
     ).to_list()
     if stale:
-        now = datetime.now(timezone.utc)
         for record in stale:
             record.call_status = "failed"
-            record.call_status_reason = "Marked failed on restart — call was stuck in initiated/answered state"
+            record.call_status_reason = "Marked failed by cleanup — stuck in initiated/answered state"
             record.ended_at = now
             await record.save()
         logger.warning(
-            f"Startup cleanup: marked {len(stale)} stale call record(s) as failed "
+            f"Cleanup: marked {len(stale)} stale call record(s) as failed "
             f"(older than {STALE_CALL_THRESHOLD_MINUTES} min)"
         )
-    else:
-        logger.info("Startup cleanup: no stale call records found")
+
+    # Sweep 2: stuck 'dispatching' queue items (worker crashed mid-dispatch)
+    queue_cutoff = now - timedelta(minutes=STUCK_DISPATCHING_MINUTES)
+    stuck = await OutboundCallQueue.find(
+        OutboundCallQueue.status == "dispatching",
+        OutboundCallQueue.queued_at < queue_cutoff,
+    ).to_list()
+    if stuck:
+        for item in stuck:
+            item.retry_count += 1
+            item.last_error = "Worker crashed mid-dispatch"
+            if item.retry_count >= MAX_RETRIES:
+                item.status = "failed"
+            else:
+                item.status = "pending"
+            await item.save()
+        logger.warning(
+            f"Cleanup: recovered {len(stuck)} stuck 'dispatching' queue item(s)"
+        )
 
 
 async def _get_active_session_count() -> int:
@@ -285,4 +314,7 @@ async def outbound_dispatcher_loop() -> None:
         finally:
             _new_call_event.clear()
 
+        # Clear hung 'initiated' CallRecords and stuck 'dispatching' queue
+        # items so their slots free up without needing a server restart.
+        await _cleanup_stale_calls()
         await _process_pending()
