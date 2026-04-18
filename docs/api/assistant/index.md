@@ -18,6 +18,8 @@ Supported TTS providers for `pipeline` mode are `cartesia`, `sarvam`, `elevenlab
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
 - `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
 - `assistant_interaction_config.speaks_first` works in both `pipeline` and `realtime` modes.
+- `assistant_interaction_config.background_sound_enabled` and `assistant_interaction_config.thinking_sound_enabled` default to `true`.
+- Background/thinking sound is configured at the assistant level only; call-trigger APIs do not override it per session.
 
 ## Endpoints
 

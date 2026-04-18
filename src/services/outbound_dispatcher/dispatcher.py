@@ -8,9 +8,6 @@ from src.core.db.db_schemas import CallRecord, OutboundCallQueue, OutboundSIP
 from src.core.logger import logger
 from src.services.livekit.livekit_svc import LiveKitService
 
-# Calls stuck in "initiated" longer than this are considered stale (crashed/lost).
-STALE_CALL_THRESHOLD_MINUTES = 30
-
 # Queue items stuck in 'dispatching' longer than this indicate a worker crash
 # mid-dispatch. Reset them back to 'pending' (or 'failed' past MAX_RETRIES).
 STUCK_DISPATCHING_MINUTES = 5
@@ -34,40 +31,34 @@ def notify_dispatcher() -> None:
     _new_call_event.set()
 
 
-async def _cleanup_stale_calls() -> None:
-    """Mark hung calls as failed and recover queue items left mid-dispatch.
+async def _fail_all_active_calls() -> None:
+    """On startup, immediately fail every initiated/answered call record.
 
-    Runs on startup AND on every dispatcher tick.  Two independent sweeps:
-
-    1. CallRecord stuck in 'initiated'/'answered' past STALE_CALL_THRESHOLD_MINUTES
-       permanently occupy slots in _get_active_session_count(), blocking new
-       calls.  Mark them 'failed'.
-    2. OutboundCallQueue items stuck in 'dispatching' past STUCK_DISPATCHING_MINUTES
-       indicate a worker crash mid-dispatch (between create_room and
-       initialize_call_record).  Reset them to 'pending' so they retry, or
-       'failed' once MAX_RETRIES is reached.
+    These calls belong to agent processes that died with the previous server
+    instance. They will never complete, so fail them now to free concurrency slots.
     """
     now = datetime.now(timezone.utc)
-
-    # Sweep 1: stale CallRecords
-    cutoff = now - timedelta(minutes=STALE_CALL_THRESHOLD_MINUTES)
     stale = await CallRecord.find(
         In(CallRecord.call_status, ["initiated", "answered"]),
-        CallRecord.started_at < cutoff,
     ).to_list()
     if stale:
         for record in stale:
             record.call_status = "failed"
-            record.call_status_reason = "Marked failed by cleanup — stuck in initiated/answered state"
+            record.call_status_reason = "Marked failed on server startup — agent process no longer running"
             record.ended_at = now
             await record.save()
         logger.warning(
-            f"Cleanup: marked {len(stale)} stale call record(s) as failed "
-            f"(older than {STALE_CALL_THRESHOLD_MINUTES} min)"
+            f"Startup cleanup: marked {len(stale)} call record(s) as failed"
         )
 
-    # Sweep 2: stuck 'dispatching' queue items (worker crashed mid-dispatch)
-    queue_cutoff = now - timedelta(minutes=STUCK_DISPATCHING_MINUTES)
+
+async def _recover_stuck_dispatching() -> None:
+    """Recover queue items left in 'dispatching' by a crashed worker.
+
+    Runs on every dispatcher tick. Resets them to 'pending' so they retry,
+    or 'failed' once MAX_RETRIES is reached.
+    """
+    queue_cutoff = datetime.now(timezone.utc) - timedelta(minutes=STUCK_DISPATCHING_MINUTES)
     stuck = await OutboundCallQueue.find(
         OutboundCallQueue.status == "dispatching",
         OutboundCallQueue.queued_at < queue_cutoff,
@@ -298,9 +289,9 @@ async def outbound_dispatcher_loop() -> None:
     """
     logger.info(f"Outbound call dispatcher started (max_concurrent={MAX_CONCURRENT_JOBS})")
 
-    # Cleanup stale initiated/answered records from a previous crash so they
-    # don't permanently occupy concurrency slots.
-    await _cleanup_stale_calls()
+    # Fail ALL initiated/answered records from before this startup — those
+    # agent processes are dead and these calls will never complete.
+    await _fail_all_active_calls()
 
     # Startup recovery: process any calls that were pending before last restart
     await _process_pending()
@@ -314,7 +305,6 @@ async def outbound_dispatcher_loop() -> None:
         finally:
             _new_call_event.clear()
 
-        # Clear hung 'initiated' CallRecords and stuck 'dispatching' queue
-        # items so their slots free up without needing a server restart.
-        await _cleanup_stale_calls()
+        # Recover queue items stuck in 'dispatching' by a crashed worker.
+        await _recover_stuck_dispatching()
         await _process_pending()

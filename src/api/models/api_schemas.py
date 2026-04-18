@@ -69,6 +69,8 @@ class AssistantInteractionConfigSchema(BaseModel):
     silence_reprompts: bool = Field(False, description="Enable silence reprompts when the user stops responding")
     silence_reprompt_interval: float = Field(10.0, ge=1.0, le=60.0, description="Interval in seconds between silence reprompts")
     silence_max_reprompts: int = Field(2, ge=0, le=5, description="Maximum number of silence reprompts before ending the session")
+    background_sound_enabled: bool = Field(True, description="Enable background ambience during the session")
+    thinking_sound_enabled: bool = Field(True, description="Enable the typing-style thinking sound while the assistant is processing")
 
 
 class UpdateAssistantInteractionConfigSchema(BaseModel):
@@ -77,6 +79,8 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     silence_reprompts: Optional[bool] = Field(None, description="Enable or disable silence reprompts")
     silence_reprompt_interval: Optional[float] = Field(None, ge=1.0, le=60.0, description="Interval in seconds between silence reprompts")
     silence_max_reprompts: Optional[int] = Field(None, ge=0, le=5, description="Maximum number of silence reprompts before ending the session")
+    background_sound_enabled: Optional[bool] = Field(None, description="Enable or disable background ambience")
+    thinking_sound_enabled: Optional[bool] = Field(None, description="Enable or disable the typing-style thinking sound")
 
 
 # For Assistant creation
@@ -119,6 +123,8 @@ class CreateAssistant(BaseModel):
                             "silence_reprompts": True,
                             "silence_reprompt_interval": 10.0,
                             "silence_max_reprompts": 2,
+                            "background_sound_enabled": True,
+                            "thinking_sound_enabled": True,
                         },
                         "assistant_end_call_enabled": True,
                         "assistant_end_call_trigger_phrase": "Thanks, that's all. You can end the call now.",
@@ -200,6 +206,8 @@ class UpdateAssistant(BaseModel):
                     "speaks_first": False,
                     "filler_words": True,
                     "silence_reprompts": False,
+                    "background_sound_enabled": False,
+                    "thinking_sound_enabled": True,
                 },
                 "assistant_end_call_enabled": True,
                 "assistant_end_call_trigger_phrase": "Okay bye, please end the call.",

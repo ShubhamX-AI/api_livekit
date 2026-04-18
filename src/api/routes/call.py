@@ -35,6 +35,12 @@ async def trigger_outbound_call(
     if not trunk:
         raise HTTPException(status_code=404, detail="Trunk not found in DB")
 
+    if trunk.trunk_type != request.call_service:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Trunk type '{trunk.trunk_type}' does not match call service '{request.call_service}'",
+        )
+
     queue_item = OutboundCallQueue(
         user_email=current_user.user_email,
         assistant_id=assistant.assistant_id,
