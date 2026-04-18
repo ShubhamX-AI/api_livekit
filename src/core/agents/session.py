@@ -154,7 +154,22 @@ async def entrypoint(ctx: JobContext):
     livekit_services = LiveKitService()
     gate = CallReadinessGate(is_exotel_outbound)
     recorder = RecordingManager(livekit_services, room_name, assistant_id)
-    pending_transcript_tasks: list[asyncio.Task] = []
+
+    # Bounded queue serializes transcript DB writes off the audio hot path.
+    # put_nowait on the event handler never blocks; single consumer drains async.
+    _transcript_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+
+    async def _transcript_worker():
+        while True:
+            fn = await _transcript_queue.get()
+            try:
+                await fn()
+            except Exception as e:
+                logger.error(f"Transcript write failed | room={room_name}: {e}")
+            finally:
+                _transcript_queue.task_done()
+
+    transcript_worker = asyncio.create_task(_transcript_worker())
 
     # Start recording immediately for non-Exotel calls
     if not is_exotel_outbound:
@@ -232,15 +247,14 @@ async def entrypoint(ctx: JobContext):
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
         if delay > 0:
             await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
-        # Wait for in-flight transcript saves before firing webhook (max 3s)
-        pending = [t for t in pending_transcript_tasks if not t.done()]
-        if pending:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*pending, return_exceptions=True), timeout=3.0
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Timed out waiting for pending transcript tasks")
+        # Drain transcript queue before ending (max 3s).
+        # call_end_triggered is already True, so no new items will be enqueued.
+        try:
+            await asyncio.wait_for(_transcript_queue.join(), timeout=3.0)
+        except asyncio.TimeoutError:
+            logger.warning("Timed out waiting for pending transcripts")
+        transcript_worker.cancel()
+        await asyncio.gather(transcript_worker, return_exceptions=True)
         await _persist_usage()
         await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
         await livekit_services.delete_room(room_name=ctx.room.name)
@@ -418,22 +432,26 @@ async def entrypoint(ctx: JobContext):
         if silence_watchdog and event.item.role == "assistant" and not user_is_speaking:
             silence_watchdog.on_assistant_message(event.item.text_content)
 
-        task = asyncio.create_task(
-            livekit_services.add_transcript(
-                room_name=ctx.room.name,
-                speaker=event.item.role,
-                text=event.item.text_content,
-                assistant_id=assistant_id,
-                assistant_name=assistant.assistant_name,
-                to_number=to_number,
-                recording_path=recorder.s3_url,
-                created_by_email=assistant.assistant_created_by_email,
-                call_type=job_metadata.get("call_type"),
-                call_service=job_metadata.get("call_service") or job_metadata.get("service"),
-                platform_number=job_metadata.get("inbound_number"),
+        if call_end_triggered:
+            return
+        try:
+            _transcript_queue.put_nowait(
+                lambda: livekit_services.add_transcript(
+                    room_name=ctx.room.name,
+                    speaker=event.item.role,
+                    text=event.item.text_content,
+                    assistant_id=assistant_id,
+                    assistant_name=assistant.assistant_name,
+                    to_number=to_number,
+                    recording_path=recorder.s3_url,
+                    created_by_email=assistant.assistant_created_by_email,
+                    call_type=job_metadata.get("call_type"),
+                    call_service=job_metadata.get("call_service") or job_metadata.get("service"),
+                    platform_number=job_metadata.get("inbound_number"),
+                )
             )
-        )
-        pending_transcript_tasks.append(task)
+        except asyncio.QueueFull:
+            logger.warning(f"Transcript queue full, dropping | room={room_name}")
 
     # --- Start Session ---
     logger.info("Starting AgentSession...")
@@ -598,7 +616,7 @@ if __name__ == "__main__":
             job_memory_warn_mb=1024,
             entrypoint_fnc=entrypoint,
             agent_name="api-agent",
-            num_idle_processes=2,
+            num_idle_processes=5,
             load_threshold=0.65,  # stop accepting new jobs at 65% CPU (default dev=inf)
         )
     )

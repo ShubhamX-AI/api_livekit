@@ -28,6 +28,7 @@ from .rtp_bridge import RTPMediaBridge
 from .sip_client import format_exotel_number
 from src.core.db.db_schemas import Assistant, InboundSIP
 from src.services.livekit.livekit_svc import LiveKitService
+from src.services.outbound_dispatcher.dispatcher import try_reserve_slot, release_slot
 from src.core.logger import logger, setup_logging
 setup_logging()
 
@@ -172,6 +173,24 @@ async def handle_inbound_call(
         await writer.drain()
         return
 
+    if not await try_reserve_slot():
+        logger.warning(
+            f"[INBOUND] Slot cap reached — rejecting call-id={call_id} "
+            f"caller={caller_number} dialed={normalized_number}"
+        )
+        writer.write(
+            _build_sip_response(
+                status_line="SIP/2.0 486 Busy Here",
+                call_id=call_id,
+                cseq=cseq,
+                from_header=from_header,
+                to_header=to_header,
+                via_headers=via_headers,
+            )
+        )
+        await writer.drain()
+        return
+
     try:
         room_name = await livekit_service.create_room(assistant.assistant_id)
     except Exception as e:
@@ -187,20 +206,41 @@ async def handle_inbound_call(
             )
         )
         await writer.drain()
+        release_slot()
         return
 
     # Initialize call record for inbound call
-    await livekit_service.initialize_call_record(
-        room_name=room_name,
-        assistant_id=assistant.assistant_id,
-        assistant_name=assistant.assistant_name,
-        to_number=caller_number,
-        call_status="initiated",
-        created_by_email=assistant.assistant_created_by_email,
-        call_type="inbound",
-        call_service="exotel",
-        platform_number=normalized_number,
-    )
+    try:
+        await livekit_service.initialize_call_record(
+            room_name=room_name,
+            assistant_id=assistant.assistant_id,
+            assistant_name=assistant.assistant_name,
+            to_number=caller_number,
+            call_status="initiated",
+            created_by_email=assistant.assistant_created_by_email,
+            call_type="inbound",
+            call_service="exotel",
+            platform_number=normalized_number,
+        )
+    except Exception as e:
+        logger.error(f"[INBOUND] Failed to initialize call record: {e}")
+        writer.write(
+            _build_sip_response(
+                status_line="SIP/2.0 500 Internal Server Error",
+                call_id=call_id,
+                cseq=cseq,
+                from_header=from_header,
+                to_header=to_header,
+                via_headers=via_headers,
+            )
+        )
+        await writer.drain()
+        release_slot()
+        return
+    # Release the in-memory reservation now that the CallRecord (status="initiated")
+    # is persisted — _get_active_session_count picks it up from the DB from this
+    # point forward, so keeping _dispatching_count incremented would double-count.
+    release_slot()
 
     pool = get_port_pool()
     port = await pool.acquire()
@@ -235,7 +275,10 @@ async def handle_inbound_call(
                 via_headers=via_headers,
             )
         )
-        await writer.drain()
+        try:
+            await writer.drain()
+        except Exception as e:
+            logger.debug(f"[INBOUND] writer.drain() after 500 failed: {e}")
         await pool.release(port)
         return
 
@@ -373,13 +416,27 @@ async def handle_inbound_call(
             forward_task.cancel()
             try:
                 await forward_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
 
         if rtp_bridge:
-            rtp_bridge.stop()
+            try:
+                rtp_bridge.stop()
+            except Exception as e:
+                logger.warning(f"[INBOUND] rtp_bridge.stop() raised: {e}")
 
-        await room.disconnect()
-        await pool.release(port)
-        logger.info(f"[INBOUND] Port {port} released")
-        unregister_call_id(call_id)
+        try:
+            await room.disconnect()
+        except Exception as e:
+            logger.warning(f"[INBOUND] room.disconnect() raised: {e}")
+
+        try:
+            await pool.release(port)
+            logger.info(f"[INBOUND] Port {port} released")
+        except Exception as e:
+            logger.warning(f"[INBOUND] pool.release({port}) raised: {e}")
+
+        try:
+            unregister_call_id(call_id)
+        except Exception as e:
+            logger.warning(f"[INBOUND] unregister_call_id({call_id}) raised: {e}")

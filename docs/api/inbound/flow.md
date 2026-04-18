@@ -11,8 +11,9 @@ Inbound calling currently uses the custom Exotel SIP bridge.
 5. If the mapping is missing or detached, the bridge returns `480 Temporarily Unavailable`.
 6. The bridge loads the assistant from `assistant_id` on the mapping.
 7. If the mapped assistant is inactive or missing, the bridge returns `480 Temporarily Unavailable`.
-8. When routing succeeds, the bridge creates a LiveKit room, dispatches the assistant, and connects RTP audio.
-9. The agent session optionally runs inbound context lookup before rendering prompt templates.
+8. If the global concurrency cap (`MAX_CONCURRENT_JOBS`) is reached, the bridge returns `486 Busy Here`. Inbound calls share the same slot pool as outbound calls.
+9. When routing succeeds, the bridge creates a LiveKit room, dispatches the assistant, and connects RTP audio.
+10. The agent session optionally runs inbound context lookup before rendering prompt templates.
 
 ## Dispatch Metadata
 
@@ -65,8 +66,9 @@ If strategy loading or webhook lookup fails:
 
 - A `200 OK` SIP response is sent only after LiveKit room setup and RTP bridge startup succeed.
 - The bridge waits briefly after room connection, then publishes a `call_answered` event on the `sip_bridge_events` topic so the agent can start speaking after the media path is ready.
-- If room creation or dispatch setup fails, the bridge returns `500 Internal Server Error`.
+- If room creation, call record initialization, or dispatch setup fails, the bridge returns `500 Internal Server Error` and releases the reserved slot.
 - Active call shutdown is driven by SIP `BYE`, LiveKit disconnect, or RTP silence timeout.
+- On API server startup, every inbound `CallRecord` left in `initiated`/`answered` from a previous (crashed) process is force-failed with reason `"Marked failed on server startup — agent process no longer running"`. This frees concurrency slots that would otherwise stay reserved by dead calls.
 
 ```mermaid
 sequenceDiagram
