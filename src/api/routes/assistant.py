@@ -12,6 +12,12 @@ router = APIRouter()
 setup_logging()
 
 
+# Utility functions to merge interaction config and mask API keys in TTS config for security when listing assistants or fetching details
+def merge_interaction_config(base, overrides: dict) -> dict:
+    base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
+    return {**base_dict, **overrides}
+
+
 def mask_api_key(tts_config: dict) -> dict:
     """Mask the API key in the TTS config for security."""
     if not tts_config:
@@ -75,11 +81,23 @@ async def update_assistant(
     logger.info(f"Received request to update assistant: {assistant_id}")
 
 
-    # Update fields
     update_data = request.model_dump(exclude_unset=True)
 
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided for update")
+
+    assistant = await Assistant.find_one(
+        Assistant.assistant_id == assistant_id,
+        Assistant.assistant_created_by_email == current_user.user_email,
+    )
+    if not assistant:
+        raise HTTPException(status_code=404, detail="Assistant not found")
+
+    if "assistant_interaction_config" in update_data:
+        update_data["assistant_interaction_config"] = merge_interaction_config(
+            assistant.assistant_interaction_config,
+            update_data["assistant_interaction_config"],
+        )
 
     logger.info(f"Updating assistant {assistant_id}")
     update_data.update(
@@ -89,13 +107,7 @@ async def update_assistant(
         }
     )
 
-    result = await Assistant.find_one(
-        Assistant.assistant_id == assistant_id,
-        Assistant.assistant_created_by_email == current_user.user_email,
-    ).update({"$set": update_data})
-
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Assistant not found")
+    await assistant.update({"$set": update_data})
 
     logger.info(f"Assistant updated successfully: {assistant_id}")
     return apiResponse(

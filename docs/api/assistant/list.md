@@ -67,7 +67,9 @@ List assistants created by the current user.
           "filler_words": true,
           "silence_reprompts": true,
           "silence_reprompt_interval": 10.0,
-          "silence_max_reprompts": 2
+          "silence_max_reprompts": 2,
+          "background_sound_enabled": true,
+          "thinking_sound_enabled": true
         },
         "assistant_created_by_email": "admin@example.com"
       }

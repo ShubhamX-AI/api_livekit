@@ -31,6 +31,8 @@ class AssistantInteractionConfig(BaseModel):
     silence_reprompts: bool = False
     silence_reprompt_interval: float = 10.0
     silence_max_reprompts: int = 2
+    background_sound_enabled: bool = True
+    thinking_sound_enabled: bool = True
 
 
 # Assistant storage

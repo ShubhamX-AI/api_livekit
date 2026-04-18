@@ -41,6 +41,27 @@ setup_logging()
 load_dotenv(override=True)
 
 
+# Helper to build background audio player based on interaction config
+def build_background_audio(interaction_config) -> BackgroundAudioPlayer | None:
+    ambient_sound = None
+    if getattr(interaction_config, "background_sound_enabled", True):
+        ambient_path = os.path.join(settings.AUDIO_DIR, "office-ambience_48k.wav")
+        ambient_sound = AudioConfig(ambient_path, volume=0.4)
+
+    thinking_sound = None
+    if getattr(interaction_config, "thinking_sound_enabled", True):
+        typing_path = os.path.join(settings.AUDIO_DIR, "typing-sound_48k.wav")
+        thinking_sound = AudioConfig(typing_path, volume=0.5)
+
+    if ambient_sound is None and thinking_sound is None:
+        return None
+
+    return BackgroundAudioPlayer(
+        ambient_sound=ambient_sound,
+        thinking_sound=thinking_sound,
+    )
+
+
 async def entrypoint(ctx: JobContext):
     # Ensure database connection
     try:
@@ -117,7 +138,16 @@ async def entrypoint(ctx: JobContext):
     # Filler words require external TTS (session.say), disabled in realtime mode
     filler_words_enabled = bool(interaction_config.filler_words) and not is_realtime
     silence_reprompts_enabled = bool(interaction_config.silence_reprompts)
-    logger.info(f"Assistant voice features | filler_words={filler_words_enabled} | silence_reprompts={silence_reprompts_enabled} | realtime={is_realtime}")
+    background_sound_enabled = bool(getattr(interaction_config, "background_sound_enabled", True))
+    thinking_sound_enabled = bool(getattr(interaction_config, "thinking_sound_enabled", True))
+    logger.info(
+        "Assistant voice features | "
+        f"filler_words={filler_words_enabled} | "
+        f"silence_reprompts={silence_reprompts_enabled} | "
+        f"background_sound={background_sound_enabled} | "
+        f"thinking_sound={thinking_sound_enabled} | "
+        f"realtime={is_realtime}"
+    )
 
     # --- Call Readiness & Recording ---
     is_exotel_outbound = job_metadata.get("call_service") == "exotel"
@@ -280,7 +310,7 @@ async def entrypoint(ctx: JobContext):
             input_audio_noise_reduction="near_field",
             turn_detection=TurnDetection(
                 type="semantic_vad",
-                eagerness="high",
+                eagerness="medium",
                 create_response=True,
                 interrupt_response=True,
             ),
@@ -310,7 +340,7 @@ async def entrypoint(ctx: JobContext):
                 turn_detection="realtime_llm",
                 endpointing={
                     "mode": "dynamic",
-                    "min_delay": 0.3,
+                    "min_delay": 0.1,
                     "max_delay": 3.0,
                 },
                 interruption={
@@ -351,12 +381,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Background audio
-    ambient_path = os.path.join(settings.AUDIO_DIR, "office-ambience_48k.wav")
-    typing_path = os.path.join(settings.AUDIO_DIR, "typing-sound_48k.wav")
-    background_audio = BackgroundAudioPlayer(
-        ambient_sound=AudioConfig(ambient_path, volume=0.4),
-        thinking_sound=AudioConfig(typing_path, volume=0.5),
-    )
+    background_audio = build_background_audio(interaction_config)
 
     # Text input only for web calls
     is_web_call = job_metadata.get("call_type") == "web"

@@ -89,7 +89,9 @@ Create a new assistant configuration.
           "filler_words": true,
           "silence_reprompts": true,
           "silence_reprompt_interval": 10.0,
-          "silence_max_reprompts": 2
+          "silence_max_reprompts": 2,
+          "background_sound_enabled": true,
+          "thinking_sound_enabled": true
         }
       }'
     ```
@@ -147,6 +149,10 @@ Create a new assistant configuration.
 | `silence_reprompts` | boolean | No | Enables reprompts during prolonged user silence. |
 | `silence_reprompt_interval` | number | No | Reprompt interval in seconds (1.0-60.0). Default: `10.0`. |
 | `silence_max_reprompts` | number | No | Maximum reprompts before ending session (0-5). Default: `2`. |
+| `background_sound_enabled` | boolean | No | Enables background ambience. Default: `true`. |
+| `thinking_sound_enabled` | boolean | No | Enables the typing-style thinking sound. Default: `true`. |
+
+These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.
 
 ## Response Schema
 
