@@ -85,6 +85,22 @@ async def _get_active_session_count() -> int:
     return db_active + _dispatching_count
 
 
+async def try_reserve_slot() -> bool:
+    """Atomically reserve a session slot if one is free. Returns True on success."""
+    global _dispatching_count
+    if await _get_active_session_count() >= MAX_CONCURRENT_JOBS:
+        return False
+    _dispatching_count += 1
+    return True
+
+
+def release_slot() -> None:
+    """Release a reservation taken by try_reserve_slot()."""
+    global _dispatching_count
+    if _dispatching_count > 0:
+        _dispatching_count -= 1
+
+
 async def _monitor_exotel_result(
     room_name: str, assistant_id: str, result_signal: asyncio.Queue
 ) -> None:
@@ -150,7 +166,7 @@ async def _monitor_exotel_result(
 async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
     """Perform the actual LiveKit room creation + SIP dispatch for one queued call."""
     global _dispatching_count
-    _dispatching_count += 1  # reserve slot immediately
+    _dispatching_count += 1  # reserve slot immediately (released in finally via release_slot)
     try:
         trunk = await OutboundSIP.find_one(
             OutboundSIP.trunk_id == item.trunk_id,
@@ -244,7 +260,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
         await item.save()
 
     finally:
-        _dispatching_count = max(0, _dispatching_count - 1)  # release reservation
+        release_slot()  # release reservation taken at top of this function
 
 
 async def _process_pending() -> None:
