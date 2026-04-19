@@ -326,7 +326,7 @@ async def entrypoint(ctx: JobContext):
                 type="semantic_vad",
                 eagerness="medium",
                 create_response=True,
-                interrupt_response=True,
+                interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
             modalities=["text"],
             api_key=settings.OPENAI_API_KEY,

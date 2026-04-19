@@ -37,6 +37,7 @@ COPY assets /app/assets
 COPY docs /app/docs
 COPY mkdocs.yml /app/mkdocs.yml
 COPY server_run.py /app/server_run.py
+COPY sip_dispatcher_run.py /app/sip_dispatcher_run.py
 
 # Build MkDocs documentation
 RUN mkdocs build -d site

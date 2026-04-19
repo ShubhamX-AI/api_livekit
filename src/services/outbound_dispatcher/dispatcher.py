@@ -300,7 +300,7 @@ async def _process_pending() -> None:
 async def outbound_dispatcher_loop() -> None:
     """Event-driven dispatcher: wakes instantly when a call is enqueued.
 
-    Falls back to a 60s poll to catch any items left pending after a restart.
+    Falls back to a 30s poll to catch any items left pending after a restart.
     Zero CPU usage when the queue is empty.
     """
     logger.info(f"Outbound call dispatcher started (max_concurrent={MAX_CONCURRENT_JOBS})")
@@ -314,8 +314,10 @@ async def outbound_dispatcher_loop() -> None:
 
     while True:
         try:
-            # Sleep until notify_dispatcher() fires, with a 60s fallback
-            await asyncio.wait_for(_new_call_event.wait(), timeout=60.0)
+            # Sleep until notify_dispatcher() fires, with a 30s fallback.
+            # In multi-container deployments notify_dispatcher() is in-process only,
+            # so the poll is the primary trigger for the sip_dispatcher container.
+            await asyncio.wait_for(_new_call_event.wait(), timeout=30.0)
         except asyncio.TimeoutError:
             pass  # fallback poll — catches stuck items
         finally:

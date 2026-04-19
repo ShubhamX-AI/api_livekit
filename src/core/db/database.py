@@ -59,7 +59,7 @@ class Database:
     async def close_db(cls):
         """Close database connection"""
         if cls.client:
-            cls.client.close()
+            await cls.client.close()
             logger.info("MongoDB connection closed")
 
 
