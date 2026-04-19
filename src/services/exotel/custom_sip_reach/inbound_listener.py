@@ -137,11 +137,8 @@ async def _handle_inbound_sip(
                     from .inbound_bridge import handle_inbound_call
                     asyncio.create_task(
                         handle_inbound_call(
-                            hdrs=hdrs,
-                            raw_invite=hb.encode(),
                             sdp_body=body,
                             writer=writer,
-                            reader=reader,
                             from_header=hdrs.get("from", ""),
                             to_header=hdrs.get("to", ""),
                             call_id=call_id,

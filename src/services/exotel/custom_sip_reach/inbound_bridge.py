@@ -59,11 +59,8 @@ def _build_sip_response(
 
 
 async def handle_inbound_call(
-    hdrs: dict,
-    raw_invite: bytes,
     sdp_body: str,
     writer: asyncio.StreamWriter,
-    reader: asyncio.StreamReader,
     from_header: str,
     to_header: str,
     call_id: str,
@@ -283,7 +280,6 @@ async def handle_inbound_call(
         return
 
     rtp_bridge = None
-    forward_task = None
     inbound_bye = None
     room = rtc.Room()
 
@@ -326,19 +322,14 @@ async def handle_inbound_call(
         rtp_bridge = RTPMediaBridge(public_ip=EXOTEL_MEDIA_IP, bind_port=port)
 
         @room.on("track_subscribed")
-        def on_track(track, publication, participant):
-            nonlocal forward_task
-            if (
-                track.kind == rtc.TrackKind.KIND_AUDIO
-                and publication.source == rtc.TrackSource.SOURCE_MICROPHONE
-                and forward_task is None
-            ):
+        def on_track(track, publication, participant):  # type: ignore[reportUnusedFunction]
+            if track.kind == rtc.TrackKind.KIND_AUDIO:
                 logger.info(
-                    f"[INBOUND] Agent audio from {participant.identity} — buffering"
+                    f"[INBOUND] Agent audio from {participant.identity} "
+                    f"(source={publication.source}) — adding to mixer"
                 )
-                from .bridge import _forward_audio
-
-                forward_task = asyncio.create_task(_forward_audio(track, rtp_bridge))
+                rtp_bridge.add_outbound_track(track)
+                rtp_bridge.start_outbound_mixer()
 
         token = (
             AccessToken(LK_API_KEY, LK_API_SECRET)
@@ -412,13 +403,6 @@ async def handle_inbound_call(
         logger.error(f"[INBOUND] Error: {e}", exc_info=True)
 
     finally:
-        if forward_task:
-            forward_task.cancel()
-            try:
-                await forward_task
-            except (asyncio.CancelledError, Exception):
-                pass
-
         if rtp_bridge:
             try:
                 rtp_bridge.stop()
