@@ -6,10 +6,12 @@ This page describes how AI agents integrate with web clients, managed SIP provid
 
 ## API Startup Services
 
-When the FastAPI app starts, it initializes MongoDB and starts two long-running background services:
+When the FastAPI app starts, it initializes MongoDB and conditionally starts two long-running background services:
 
-- **Exotel inbound SIP listener** — listens for incoming SIP INVITE/BYE from Exotel on boot
-- **Outbound call dispatcher** — event-driven loop that drains the outbound call queue
+- **Exotel inbound SIP listener** — listens for incoming SIP INVITE/BYE from Exotel on boot (controlled by `ENABLE_SIP_LISTENER` env var, default `true`)
+- **Outbound call dispatcher** — event-driven loop that drains the outbound call queue (controlled by `ENABLE_DISPATCHER` env var, default `true`)
+
+In **single-container / dev** mode both services run inside the API process. In **production Docker** deployments a dedicated `sip_dispatcher` container runs `sip_dispatcher_run.py`, which owns both services exclusively. The `api` container sets `ENABLE_SIP_LISTENER=false` and `ENABLE_DISPATCHER=false` so it can scale to multiple Gunicorn workers without SIP port conflicts or duplicate dispatchers.
 
 Outbound request acceptance and outbound call execution are fully decoupled. The API enqueues calls and returns immediately; the dispatcher handles pacing and retry independently.
 
@@ -235,7 +237,7 @@ New call enqueued
 
 No calls for hours
     → dispatcher sleeps (0 CPU)
-    → wakes once every 60s as fallback safety poll
+    → wakes once every 30s as fallback safety poll (reduced from 60s; primary trigger in multi-container mode where notify_dispatcher() is in-process only)
     → returns to sleep if queue is empty
 
 Server restart with pending items in MongoDB

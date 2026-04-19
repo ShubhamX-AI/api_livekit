@@ -1,10 +1,11 @@
+import asyncio
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
 from src.api.routes import (
     auth,
     health,
@@ -30,23 +31,28 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan events"""
-    import asyncio
-
     # Startup
     await init_db()
 
-    # Start the inbound SIP listener at boot so it's always actively listening for incoming calls
-    from src.services.exotel.custom_sip_reach.inbound_listener import ensure_inbound_server
-    await ensure_inbound_server()
+    dispatcher_task = None
 
-    # Start the outbound call dispatcher — drips queued calls at controlled rate
-    from src.services.outbound_dispatcher import outbound_dispatcher_loop
-    dispatcher_task = asyncio.create_task(outbound_dispatcher_loop())
+    # ENABLE_SIP_LISTENER / ENABLE_DISPATCHER default to "true" so existing single-container
+    # setups (dev, local) keep working without any env changes.
+    # In production, the dedicated sip_dispatcher container sets both to "true" and the
+    # api container sets both to "false" — preventing port conflicts and duplicate dispatch.
+    if os.getenv("ENABLE_SIP_LISTENER", "true").lower() == "true":
+        from src.services.exotel.custom_sip_reach.inbound_listener import ensure_inbound_server
+        await ensure_inbound_server()
+
+    if os.getenv("ENABLE_DISPATCHER", "true").lower() == "true":
+        from src.services.outbound_dispatcher import outbound_dispatcher_loop
+        dispatcher_task = asyncio.create_task(outbound_dispatcher_loop())
 
     yield
 
     # Shutdown
-    dispatcher_task.cancel()
+    if dispatcher_task is not None:
+        dispatcher_task.cancel()
     await close_db()
 
 

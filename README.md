@@ -49,7 +49,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
   - `failed`: permanently failed after retry exhaustion
 - Current dispatcher defaults:
   - up to `8` concurrent active outbound sessions
-  - polls the queue every `2` seconds
+  - polls the queue every `2` seconds (fallback poll every `30s` when idle)
   - retries dispatch failures up to `3` times
 - Active-session protection also uses the worker load threshold in `src/core/agents/session.py` so the worker stops accepting new jobs around `65%` CPU load.
 
@@ -66,8 +66,8 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 
 ## Architecture
 
-1. API service (`src/api/server.py`) exposes REST endpoints.
-2. API startup also launches the outbound dispatcher loop (`src/services/outbound_dispatcher.py`).
+1. API service (`src/api/server.py`) exposes REST endpoints (multiple Gunicorn workers in production).
+2. SIP dispatcher (`sip_dispatcher_run.py`) — dedicated process that owns the inbound SIP listener and outbound dispatcher loop. See `docs/architecture.md` for the single-container vs. multi-container deployment model.
 3. Worker (`src/core/agents/session.py`) joins LiveKit rooms and runs the assistant.
 4. MongoDB stores assistants, tools, trunks, queued outbound calls, call records, and logs.
 5. LiveKit handles media transport and room orchestration.
@@ -87,6 +87,11 @@ Create `.env` in the project root.
 ```ini
 PORT=8000
 BACKEND_URL=http://localhost:8000  # Worker callback URL for webhook routing
+
+# Container role controls (default "true" keeps single-container / dev setups working)
+ENABLE_SIP_LISTENER=true   # Set "false" on api container when sip_dispatcher container is used
+ENABLE_DISPATCHER=true     # Set "false" on api container when sip_dispatcher container is used
+GUNICORN_WORKERS=1
 
 MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
 DATABASE_NAME=livekit_db
@@ -131,13 +136,17 @@ Install dependencies:
 uv sync
 ```
 
-Start API server:
+Start API server (also starts SIP listener + outbound dispatcher by default):
 
 ```bash
 uv run server_run.py
 ```
 
-The API process also starts the outbound dispatcher and inbound Exotel listener during app startup.
+Start the dedicated SIP dispatcher process (optional, for multi-worker / production setups):
+
+```bash
+uv run sip_dispatcher_run.py
+```
 
 Start worker in another terminal:
 
@@ -226,6 +235,7 @@ api_livekit/
 ├── docker-compose.yml
 ├── mkdocs.yml
 ├── server_run.py
+├── sip_dispatcher_run.py
 ├── .agents/
 │   ├── workflows/
 │   └── skills/

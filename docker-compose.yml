@@ -1,14 +1,20 @@
 services:
+
+  # ── HTTP API ─────────────────────────────────────────────────────────────────
+  # Pure HTTP, multiple workers. SIP listener and dispatcher are OFF here —
+  # they live in the sip_dispatcher container to avoid port conflicts.
   api:
     build:
       context: .
       dockerfile: Dockerfile
     image: api_livekit:latest
     container_name: api_livekit
-    environment:
-      - "8001:8001"
     env_file:
       - .env
+    environment:
+      ENABLE_SIP_LISTENER: "false"
+      ENABLE_DISPATCHER: "false"
+      GUNICORN_WORKERS: "4"
     restart: unless-stopped
     command: python server_run.py
     network_mode: "host"
@@ -21,7 +27,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
+  # ── SIP Listener + Outbound Dispatcher ───────────────────────────────────────
+  # Runs as a single dedicated process — no HTTP server, no gunicorn workers.
+  # Owns port 5070 (inbound SIP) and the outbound call queue exclusively.
+  sip_dispatcher:
+    image: api_livekit:latest
+    container_name: api_livekit_sip_dispatcher
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: python sip_dispatcher_run.py
+    network_mode: "host"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  # ── LiveKit Agent Workers ─────────────────────────────────────────────────────
   agent:
     image: api_livekit:latest
     container_name: api_livekit_agent
@@ -34,4 +57,5 @@ services:
         soft: 65536
         hard: 65536
     depends_on:
-      - api
+      api:
+        condition: service_healthy
