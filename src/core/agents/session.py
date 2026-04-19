@@ -573,7 +573,7 @@ async def entrypoint(ctx: JobContext):
                             logger.error("Realtime provider not supported")
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
-                        await session.generate_reply(instructions=start_instruction)
+                        await session.generate_reply(instructions=start_instruction, allow_interruptions=False)
                     if silence_watchdog:
                         silence_watchdog.on_assistant_message(start_instruction)
                     logger.info("Start instruction sent successfully")
