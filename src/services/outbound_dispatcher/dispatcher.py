@@ -303,7 +303,7 @@ async def _watch_for_new_calls() -> None:
     while True:
         try:
             col = Database.client[settings.DATABASE_NAME]["outbound_call_queue"]
-            async with col.watch([{"$match": {"operationType": "insert"}}]) as stream:
+            async with await col.watch([{"$match": {"operationType": "insert"}}]) as stream:
                 async for _ in stream:
                     logger.info("ChangeStream: new call queued → waking dispatcher")
                     _new_call_event.set()
@@ -323,7 +323,7 @@ async def _watch_for_call_completions() -> None:
     while True:
         try:
             col = Database.client[settings.DATABASE_NAME]["call_records"]
-            async with col.watch(pipeline) as stream:
+            async with await col.watch(pipeline) as stream:
                 async for _ in stream:
                     logger.info("ChangeStream: call completed → checking pending queue")
                     _new_call_event.set()
