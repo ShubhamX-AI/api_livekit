@@ -1,14 +1,10 @@
 """
 Dedicated process for two singleton services:
   - Inbound SIP listener  (Exotel BYE / OPTIONS on port 5070)
-  - Outbound call dispatcher (polls MongoDB queue, drips calls)
+  - Outbound call dispatcher (MongoDB Change Streams + 30s fallback poll)
 
 Runs as a separate container so the api container can safely scale to
 multiple workers without port-binding conflicts or duplicate dispatchers.
-
-Note: notify_dispatcher() signals are in-memory and don't cross container
-boundaries. The dispatcher falls back to its 5-second poll, so outbound
-calls are dispatched within ~30s of being queued.
 """
 
 import asyncio

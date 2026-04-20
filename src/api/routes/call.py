@@ -5,7 +5,6 @@ from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import OutboundSIP, APIKey, Assistant, OutboundCallQueue
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
-from src.services.outbound_dispatcher import notify_dispatcher
 
 router = APIRouter()
 setup_logging()
@@ -51,7 +50,6 @@ async def trigger_outbound_call(
         job_metadata=request.metadata or {},
     )
     await queue_item.insert()
-    notify_dispatcher()  # wake dispatcher immediately — no 60s wait
 
     logger.info(
         f"Enqueued outbound call {queue_item.queue_id} | "

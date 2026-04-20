@@ -161,10 +161,9 @@ sequenceDiagram
     User->>API: POST /call/outbound
     API->>API: Validate assistant + trunk
     API->>DB: Insert OutboundCallQueue (status=pending)
-    API->>Disp: notify_dispatcher() [asyncio.Event.set()]
     API-->>User: 202 Accepted + queue_id
 
-    Note over Disp: Wakes immediately on event signal
+    Note over Disp: MongoDB Change Stream fires instantly (cross-container)
 
     Disp->>DB: COUNT active CallRecords (initiated + answered)
     Disp->>DB: Fetch up to (MAX - active) pending items
@@ -227,39 +226,41 @@ Failed dispatches (SIP error, LiveKit API error, trunk inactive) are retried up 
 
 ### Event-Driven Design
 
-The dispatcher uses `asyncio.Event` instead of polling:
+The dispatcher uses MongoDB Change Streams for cross-container, zero-latency notification:
 
 ```
-New call enqueued
-    → notify_dispatcher() sets asyncio.Event
-    → dispatcher wakes in <1ms
-    → processes queue immediately
+New call enqueued (any container)
+    → Change Stream on outbound_call_queue fires instantly
+    → dispatcher wakes, processes queue immediately
+
+Call finishes (agent container)
+    → Change Stream on call_records (terminal status) fires
+    → dispatcher wakes, chains next pending call immediately
 
 No calls for hours
     → dispatcher sleeps (0 CPU)
-    → wakes once every 30s as fallback safety poll (reduced from 60s; primary trigger in multi-container mode where notify_dispatcher() is in-process only)
-    → returns to sleep if queue is empty
+    → 30s fallback poll as safety net (catches missed events during stream restart)
+    → returns to sleep if queue empty
 
 Server restart with pending items in MongoDB
     → startup recovery: _process_pending() runs on boot
     → all pending calls from before restart are dispatched
 ```
 
-This replaces a naive poll-every-N-seconds loop with zero idle CPU overhead. Upgrade path to Redis Pub/Sub is straightforward if multiple API server instances are needed — only `notify_dispatcher()` and the wait mechanism change.
+Both Change Stream watchers auto-restart on error with 5s backoff. No new infrastructure needed — MongoDB Atlas always runs replica sets.
 
 ### Module Layout
 
 ```
 src/services/outbound_dispatcher/
-├── __init__.py      # re-exports notify_dispatcher, outbound_dispatcher_loop
-└── dispatcher.py    # constants, event, capacity helpers, dispatch logic, loop
+├── __init__.py      # re-exports outbound_dispatcher_loop
+└── dispatcher.py    # constants, capacity helpers, Change Stream watchers, dispatch logic, loop
 ```
 
-Consumers import from the package root — no import changes needed if the internals are reorganised:
+Consumers import from the package root:
 
 ```python
-from src.services.outbound_dispatcher import notify_dispatcher        # call.py
-from src.services.outbound_dispatcher import outbound_dispatcher_loop # server.py
+from src.services.outbound_dispatcher import outbound_dispatcher_loop # sip_dispatcher_run.py
 ```
 
 ### Hold & Resume Detection

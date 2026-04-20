@@ -17,18 +17,11 @@ MAX_RETRIES = 3           # permanent failure after this many attempts
 
 livekit_services = LiveKitService()
 
-# Event-driven dispatch: set by notify_dispatcher() whenever a call is enqueued.
-# Dispatcher sleeps until this fires, then processes immediately.
 _new_call_event = asyncio.Event()
 
 # In-memory reservation counter: tracks calls that are mid-dispatch
 # (room created but CallRecord not yet written). Prevents double-dispatch.
 _dispatching_count = 0
-
-
-def notify_dispatcher() -> None:
-    """Call this after inserting a new OutboundCallQueue item to wake the dispatcher."""
-    _new_call_event.set()
 
 
 async def _fail_all_active_calls() -> None:
@@ -297,32 +290,67 @@ async def _process_pending() -> None:
         logger.error(f"Dispatcher process error: {e}", exc_info=True)
 
 
-async def outbound_dispatcher_loop() -> None:
-    """Event-driven dispatcher: wakes instantly when a call is enqueued.
+_TERMINAL_STATUSES = [
+    "completed", "failed", "busy", "no_answer",
+    "rejected", "cancelled", "unreachable", "timeout",
+]
 
-    Falls back to a 30s poll to catch any items left pending after a restart.
-    Zero CPU usage when the queue is empty.
+
+async def _watch_for_new_calls() -> None:
+    """Change Stream: wakes dispatcher the moment a new call is inserted — cross-container."""
+    while True:
+        try:
+            col = OutboundCallQueue.get_motor_collection()
+            async with col.watch([{"$match": {"operationType": "insert"}}]) as stream:
+                async for _ in stream:
+                    logger.info("ChangeStream: new call queued → waking dispatcher")
+                    _new_call_event.set()
+        except Exception as e:
+            logger.warning(f"ChangeStream (new calls) error, restarting in 5s: {e}")
+            await asyncio.sleep(5)
+
+
+async def _watch_for_call_completions() -> None:
+    """Change Stream: wakes dispatcher when a call finishes → chain next pending call."""
+    pipeline = [{
+        "$match": {
+            "operationType": "update",
+            "updateDescription.updatedFields.call_status": {"$in": _TERMINAL_STATUSES},
+        }
+    }]
+    while True:
+        try:
+            col = CallRecord.get_motor_collection()
+            async with col.watch(pipeline) as stream:
+                async for _ in stream:
+                    logger.info("ChangeStream: call completed → checking pending queue")
+                    _new_call_event.set()
+        except Exception as e:
+            logger.warning(f"ChangeStream (completions) error, restarting in 5s: {e}")
+            await asyncio.sleep(5)
+
+
+async def outbound_dispatcher_loop() -> None:
+    """Event-driven dispatcher: wakes instantly when a call is enqueued or completes.
+
+    Change Streams provide cross-container notification. 30s poll is a safety-net fallback.
     """
     logger.info(f"Outbound call dispatcher started (max_concurrent={MAX_CONCURRENT_JOBS})")
 
-    # Fail ALL initiated/answered records from before this startup — those
-    # agent processes are dead and these calls will never complete.
     await _fail_all_active_calls()
-
-    # Startup recovery: process any calls that were pending before last restart
     await _process_pending()
+
+    asyncio.create_task(_watch_for_new_calls())
+    asyncio.create_task(_watch_for_call_completions())
 
     while True:
         try:
-            # Sleep until notify_dispatcher() fires, with a 30s fallback.
-            # In multi-container deployments notify_dispatcher() is in-process only,
-            # so the poll is the primary trigger for the sip_dispatcher container.
             await asyncio.wait_for(_new_call_event.wait(), timeout=30.0)
         except asyncio.TimeoutError:
-            pass  # fallback poll — catches stuck items
+            pass  # safety-net poll
         finally:
             _new_call_event.clear()
 
-        # Recover queue items stuck in 'dispatching' by a crashed worker.
+        # Check for stuck dispatching
         await _recover_stuck_dispatching()
         await _process_pending()
