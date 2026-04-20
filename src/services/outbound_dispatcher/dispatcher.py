@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from beanie.operators import In
 
+from src.core.config import settings
+from src.core.db.database import Database
 from src.core.db.db_schemas import CallRecord, OutboundCallQueue, OutboundSIP
 from src.core.logger import logger
 from src.services.livekit.livekit_svc import LiveKitService
@@ -300,7 +302,7 @@ async def _watch_for_new_calls() -> None:
     """Change Stream: wakes dispatcher the moment a new call is inserted — cross-container."""
     while True:
         try:
-            col = OutboundCallQueue.get_motor_collection()
+            col = Database.client[settings.DATABASE_NAME]["outbound_call_queue"]
             async with col.watch([{"$match": {"operationType": "insert"}}]) as stream:
                 async for _ in stream:
                     logger.info("ChangeStream: new call queued → waking dispatcher")
@@ -320,7 +322,7 @@ async def _watch_for_call_completions() -> None:
     }]
     while True:
         try:
-            col = CallRecord.get_motor_collection()
+            col = Database.client[settings.DATABASE_NAME]["call_records"]
             async with col.watch(pipeline) as stream:
                 async for _ in stream:
                     logger.info("ChangeStream: call completed → checking pending queue")
