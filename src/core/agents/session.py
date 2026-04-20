@@ -12,6 +12,7 @@ from livekit.agents import (
     function_tool,
     RunContext,
     TurnHandlingOptions,
+    NOT_GIVEN,
 )
 from openai.types.beta.realtime.session import TurnDetection
 from livekit.plugins.openai import realtime
@@ -573,7 +574,16 @@ async def entrypoint(ctx: JobContext):
                             logger.error("Realtime provider not supported")
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
-                        await session.generate_reply(instructions=start_instruction, allow_interruptions=False)
+                        # RealtimeModel with capabilities.turn_detection=True silently resets
+                        # allow_interruptions=False to NOT_GIVEN in _generate_reply. The SpeechHandle
+                        # then falls back to activity.allow_interruptions → _agent._allow_interruptions.
+                        # Setting it here ensures the first message's SpeechHandle is truly uninterruptible.
+                        # NOTE: _allow_interruptions is a private library attr — verify on livekit-agents upgrades.
+                        agent_instance._allow_interruptions = False
+                        try:
+                            await session.generate_reply(instructions=start_instruction, allow_interruptions=False)
+                        finally:
+                            agent_instance._allow_interruptions = NOT_GIVEN
                     if silence_watchdog:
                         silence_watchdog.on_assistant_message(start_instruction)
                     logger.info("Start instruction sent successfully")
