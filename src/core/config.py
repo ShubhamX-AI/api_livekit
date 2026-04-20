@@ -71,5 +71,7 @@ class Settings:
         # Backend URL
         self.BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+        # Max Concurrent jobs (Number of concurrent calls)
+        self.MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "8"))
 
 settings = Settings()

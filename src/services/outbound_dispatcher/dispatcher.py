@@ -14,7 +14,6 @@ from src.services.livekit.livekit_svc import LiveKitService
 # mid-dispatch. Reset them back to 'pending' (or 'failed' past MAX_RETRIES).
 STUCK_DISPATCHING_MINUTES = 5
 
-MAX_CONCURRENT_JOBS = 8   # max simultaneous active sessions
 MAX_RETRIES = 3           # permanent failure after this many attempts
 
 livekit_services = LiveKitService()
@@ -83,7 +82,7 @@ async def _get_active_session_count() -> int:
 async def try_reserve_slot() -> bool:
     """Atomically reserve a session slot if one is free. Returns True on success."""
     global _dispatching_count
-    if await _get_active_session_count() >= MAX_CONCURRENT_JOBS:
+    if await _get_active_session_count() >= settings.MAX_CONCURRENT_JOBS:
         return False
     _dispatching_count += 1
     return True
@@ -262,10 +261,10 @@ async def _process_pending() -> None:
     """Check queue and dispatch as many calls as current capacity allows."""
     try:
         active = await _get_active_session_count()
-        slots = MAX_CONCURRENT_JOBS - active
+        slots = settings.MAX_CONCURRENT_JOBS - active
 
         if slots <= 0:
-            logger.info(f"Dispatcher: active={active}, no slots available (max={MAX_CONCURRENT_JOBS})")
+            logger.info(f"Dispatcher: active={active}, no slots available (max={settings.MAX_CONCURRENT_JOBS})")
             return
 
         pending = (
@@ -337,7 +336,7 @@ async def outbound_dispatcher_loop() -> None:
 
     Change Streams provide cross-container notification. 30s poll is a safety-net fallback.
     """
-    logger.info(f"Outbound call dispatcher started (max_concurrent={MAX_CONCURRENT_JOBS})")
+    logger.info(f"Outbound call dispatcher started (max_concurrent={settings.MAX_CONCURRENT_JOBS})")
 
     await _fail_all_active_calls()
     await _process_pending()

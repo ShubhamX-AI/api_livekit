@@ -616,7 +616,7 @@ if __name__ == "__main__":
             job_memory_warn_mb=1024,
             entrypoint_fnc=entrypoint,
             agent_name="api-agent",
-            num_idle_processes=5,
+            num_idle_processes=2,
             load_threshold=0.65,  # stop accepting new jobs at 65% CPU (default dev=inf)
         )
     )
