@@ -33,6 +33,7 @@ class AssistantInteractionConfig(BaseModel):
     silence_max_reprompts: int = 2
     background_sound_enabled: bool = True
     thinking_sound_enabled: bool = True
+    allow_interruptions: bool = False
 
 
 # Assistant storage

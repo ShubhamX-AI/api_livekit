@@ -100,6 +100,7 @@ Update an existing assistant. Only send fields you want to change.
 - When `speaks_first=true`, `assistant_start_instruction` is used as the opening response.
 - `assistant_interaction_config.background_sound_enabled` controls background ambience for all sessions using the assistant.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.
+- `assistant_interaction_config.allow_interruptions` controls whether users can interrupt the assistant's initial greeting. Default: `false`.
 - Partial `assistant_interaction_config` updates are merged with the stored config; omitted fields are preserved.
 - Call-trigger APIs do not provide per-call overrides for these sound settings.
 

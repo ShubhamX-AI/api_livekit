@@ -69,7 +69,8 @@ List assistants created by the current user.
           "silence_reprompt_interval": 10.0,
           "silence_max_reprompts": 2,
           "background_sound_enabled": true,
-          "thinking_sound_enabled": true
+          "thinking_sound_enabled": true,
+          "allow_interruptions": false
         },
         "assistant_created_by_email": "admin@example.com"
       }

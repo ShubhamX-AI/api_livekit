@@ -151,6 +151,7 @@ Create a new assistant configuration.
 | `silence_max_reprompts` | number | No | Maximum reprompts before ending session (0-5). Default: `2`. |
 | `background_sound_enabled` | boolean | No | Enables background ambience. Default: `true`. |
 | `thinking_sound_enabled` | boolean | No | Enables the typing-style thinking sound. Default: `true`. |
+| `allow_interruptions` | boolean | No | If `true`, users can interrupt the assistant's initial greeting. Default: `false` (greeting is uninterruptible). |
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.
 

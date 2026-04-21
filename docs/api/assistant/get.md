@@ -73,7 +73,8 @@ Fetch full configuration for one assistant.
       "silence_reprompt_interval": 10.0,
       "silence_max_reprompts": 2,
       "background_sound_enabled": true,
-      "thinking_sound_enabled": true
+      "thinking_sound_enabled": true,
+      "allow_interruptions": false
     },
     "assistant_end_call_enabled": false,
     "assistant_end_call_trigger_phrase": null,

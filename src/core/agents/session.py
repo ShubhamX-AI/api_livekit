@@ -316,7 +316,7 @@ async def entrypoint(ctx: JobContext):
         llm = realtime.RealtimeModel(
             model="gpt-realtime",
             input_audio_transcription=AudioTranscription(
-                model="gpt-4o-mini-transcribe",
+                model="gpt-4o-transcribe",
                 prompt=(
                     "The speaker is multilingual and switches between different languages dynamically. "
                     "Transcribe exactly what is spoken without translating."
@@ -579,9 +579,11 @@ async def entrypoint(ctx: JobContext):
                         # then falls back to activity.allow_interruptions → _agent._allow_interruptions.
                         # Setting it here ensures the first message's SpeechHandle is truly uninterruptible.
                         # NOTE: _allow_interruptions is a private library attr — verify on livekit-agents upgrades.
-                        agent_instance._allow_interruptions = False
+                        allow_int = getattr(interaction_config, "allow_interruptions", False)
+                        if not allow_int:
+                            agent_instance._allow_interruptions = False
                         try:
-                            await session.generate_reply(instructions=start_instruction, allow_interruptions=False)
+                            await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
                         finally:
                             agent_instance._allow_interruptions = NOT_GIVEN
                     if silence_watchdog:

@@ -71,6 +71,7 @@ class AssistantInteractionConfigSchema(BaseModel):
     silence_max_reprompts: int = Field(2, ge=0, le=5, description="Maximum number of silence reprompts before ending the session")
     background_sound_enabled: bool = Field(True, description="Enable background ambience during the session")
     thinking_sound_enabled: bool = Field(True, description="Enable the typing-style thinking sound while the assistant is processing")
+    allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
 
 
 class UpdateAssistantInteractionConfigSchema(BaseModel):
@@ -81,6 +82,7 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     silence_max_reprompts: Optional[int] = Field(None, ge=0, le=5, description="Maximum number of silence reprompts before ending the session")
     background_sound_enabled: Optional[bool] = Field(None, description="Enable or disable background ambience")
     thinking_sound_enabled: Optional[bool] = Field(None, description="Enable or disable the typing-style thinking sound")
+    allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
 
 
 # For Assistant creation
