@@ -324,15 +324,14 @@ async def entrypoint(ctx: JobContext):
         else:
             _stt_prompt = (
                 "The speaker is multilingual and may speak or switch between any language at any time. "
-                "Transcribe verbatim in the original spoken language(s). "
-                "Do not translate or normalize to any single language. "
-                "Preserve code-switching if it occurs."
+                "Transcribe in the original spoken language(s). "
+                "If Can't understand , transcribe in English. "
             )
 
         llm = realtime.RealtimeModel(
             model="gpt-realtime",
             input_audio_transcription=AudioTranscription(
-                model="gpt-4o-transcribe",
+                model="gpt-4o-mini-transcribe",
                 prompt=_stt_prompt,
             ),
             input_audio_noise_reduction="near_field",
