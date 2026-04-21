@@ -34,6 +34,7 @@ class AssistantInteractionConfig(BaseModel):
     background_sound_enabled: bool = True
     thinking_sound_enabled: bool = True
     allow_interruptions: bool = False
+    preferred_languages: Optional[List[str]] = None
 
 
 # Assistant storage

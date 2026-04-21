@@ -101,6 +101,7 @@ Update an existing assistant. Only send fields you want to change.
 - `assistant_interaction_config.background_sound_enabled` controls background ambience for all sessions using the assistant.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.
 - `assistant_interaction_config.allow_interruptions` controls whether users can interrupt the assistant's initial greeting. Default: `false`.
+- `assistant_interaction_config.preferred_languages` accepts a list of BCP-47 codes (e.g. `["hi-IN", "en-US"]`). Pass an empty list `[]` to clear the hint and revert to auto-detection.
 - Partial `assistant_interaction_config` updates are merged with the stored config; omitted fields are preserved.
 - Call-trigger APIs do not provide per-call overrides for these sound settings.
 

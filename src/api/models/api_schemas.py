@@ -72,6 +72,7 @@ class AssistantInteractionConfigSchema(BaseModel):
     background_sound_enabled: bool = Field(True, description="Enable background ambience during the session")
     thinking_sound_enabled: bool = Field(True, description="Enable the typing-style thinking sound while the assistant is processing")
     allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
+    preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. If unset, model auto-detects all languages.")
 
 
 class UpdateAssistantInteractionConfigSchema(BaseModel):
@@ -83,6 +84,7 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     background_sound_enabled: Optional[bool] = Field(None, description="Enable or disable background ambience")
     thinking_sound_enabled: Optional[bool] = Field(None, description="Enable or disable the typing-style thinking sound")
     allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
+    preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. Pass empty list to clear.")
 
 
 # For Assistant creation

@@ -91,7 +91,8 @@ Create a new assistant configuration.
           "silence_reprompt_interval": 10.0,
           "silence_max_reprompts": 2,
           "background_sound_enabled": true,
-          "thinking_sound_enabled": true
+          "thinking_sound_enabled": true,
+          "preferred_languages": ["en-US", "hi-IN"]
         }
       }'
     ```
@@ -152,6 +153,7 @@ Create a new assistant configuration.
 | `background_sound_enabled` | boolean | No | Enables background ambience. Default: `true`. |
 | `thinking_sound_enabled` | boolean | No | Enables the typing-style thinking sound. Default: `true`. |
 | `allow_interruptions` | boolean | No | If `true`, users can interrupt the assistant's initial greeting. Default: `false` (greeting is uninterruptible). |
+| `preferred_languages` | array of strings | No | BCP-47 language codes the agent supports (e.g. `["hi-IN", "en-US", "ta-IN"]`). Used to hint the STT model when the speaker is multilingual or switches between languages. If omitted, the STT model auto-detects all languages. |
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.
 

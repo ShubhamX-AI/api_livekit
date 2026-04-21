@@ -313,14 +313,27 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"Realtime mode | provider={realtime_provider} | model={llm_config.get('model')}")
     else:
         # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
+        _langs = interaction_config.preferred_languages
+        if _langs:
+            _lang_str = ", ".join(_langs)
+            _stt_prompt = (
+                f"The speaker is multilingual and switches between these languages: {_lang_str}. "
+                "Transcribe exactly what is spoken in the original language. "
+                "Do not translate. Preserve code-switching — if speaker mixes languages mid-sentence, transcribe each part in its original language."
+            )
+        else:
+            _stt_prompt = (
+                "The speaker is multilingual and may speak or switch between any language at any time. "
+                "Transcribe verbatim in the original spoken language(s). "
+                "Do not translate or normalize to any single language. "
+                "Preserve code-switching if it occurs."
+            )
+
         llm = realtime.RealtimeModel(
             model="gpt-realtime",
             input_audio_transcription=AudioTranscription(
                 model="gpt-4o-transcribe",
-                prompt=(
-                    "The speaker is multilingual and switches between different languages dynamically. "
-                    "Transcribe exactly what is spoken without translating."
-                ),
+                prompt=_stt_prompt,
             ),
             input_audio_noise_reduction="near_field",
             turn_detection=TurnDetection(
