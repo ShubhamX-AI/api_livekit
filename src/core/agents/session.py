@@ -425,7 +425,7 @@ async def entrypoint(ctx: JobContext):
     # --- Transcription Event Handler ---
     @session.on("conversation_item_added")
     def on_conversation_item(event):
-        if not event.item.text_content:
+        if not getattr(event.item, "text_content", None):
             return
         # Suppress all activity during hold
         if hold_controller.is_on_hold:
