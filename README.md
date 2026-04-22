@@ -161,6 +161,15 @@ Optional Docker flow:
 docker compose --profile control --profile agent up --build
 ```
 
+Dockerfile selection by deployment mode:
+
+- `control` mode builds with `Dockerfile.control`
+- `agent` mode builds with `Dockerfile.agent`
+- `full` mode builds all services with the original `Dockerfile`
+- role-specific dependency manifests:
+  - `docker/requirements-control.txt`
+  - `docker/requirements-agent.txt`
+
 Production dual-host deployment (recommended):
 
 ```bash
@@ -169,6 +178,9 @@ Production dual-host deployment (recommended):
 
 # Server B (capacity node): agent only
 ./deploy.sh agent
+
+# Single host full stack using original Dockerfile
+./deploy.sh full
 ```
 
 Optional: if Server A has spare CPU, also run agent there:
@@ -256,6 +268,11 @@ api_livekit/
 ├── uv.lock
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker/
+│   ├── Dockerfile.control
+│   ├── Dockerfile.agent
+│   ├── requirements-control.txt
+│   └── requirements-agent.txt
 ├── mkdocs.yml
 ├── server_run.py
 ├── sip_dispatcher_run.py

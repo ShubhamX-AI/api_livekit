@@ -7,8 +7,8 @@ services:
     profiles: ["control"]
     build:
       context: .
-      dockerfile: Dockerfile
-    image: api_livekit:latest
+      dockerfile: ${API_DOCKERFILE:-docker/Dockerfile.control}
+    image: api_livekit_control:latest
     container_name: api_livekit
     env_file:
       - .env
@@ -37,8 +37,8 @@ services:
     profiles: ["control"]
     build:
       context: .
-      dockerfile: Dockerfile
-    image: api_livekit:latest
+      dockerfile: ${DISPATCHER_DOCKERFILE:-docker/Dockerfile.control}
+    image: api_livekit_control:latest
     container_name: api_livekit_sip_dispatcher
     env_file:
       - .env
@@ -54,8 +54,8 @@ services:
     profiles: ["agent"]
     build:
       context: .
-      dockerfile: Dockerfile
-    image: api_livekit:latest
+      dockerfile: ${AGENT_DOCKERFILE:-docker/Dockerfile.agent}
+    image: api_livekit_agent:latest
     container_name: api_livekit_agent
     env_file:
       - .env

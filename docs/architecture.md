@@ -28,6 +28,12 @@ The project `docker-compose.yml` uses service profiles:
 - `control` profile: `api`, `sip_dispatcher`
 - `agent` profile: `agent`
 
+Dockerfile mode mapping:
+
+- `control` deploys use `docker/Dockerfile.control`
+- `agent` deploys use `docker/Dockerfile.agent`
+- `full` deploys force all services to use the original `Dockerfile`
+
 Commands:
 
 ```bash
@@ -36,6 +42,9 @@ docker compose --profile control up -d --build
 
 # Server B
 docker compose --profile agent up -d --build
+
+# Single host full stack (original Dockerfile)
+./deploy.sh full
 ```
 
 Critical singleton rule: only one `sip_dispatcher` instance should run across all servers.
