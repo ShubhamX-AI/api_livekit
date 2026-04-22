@@ -48,7 +48,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
   - `dispatched`: LiveKit room + provider dispatch created successfully
   - `failed`: permanently failed after retry exhaustion
 - Current dispatcher defaults:
-  - up to `8` concurrent active outbound sessions
+  - up to `12` concurrent active sessions (set by `MAX_CONCURRENT_JOBS`)
   - polls the queue every `2` seconds (fallback poll every `30s` when idle)
   - retries dispatch failures up to `3` times
 - Active-session protection also uses the worker load threshold in `src/core/agents/session.py` so the worker stops accepting new jobs around `65%` CPU load.
@@ -92,6 +92,7 @@ BACKEND_URL=http://localhost:8000  # Worker callback URL for webhook routing
 ENABLE_SIP_LISTENER=true   # Set "false" on api container when sip_dispatcher container is used
 ENABLE_DISPATCHER=true     # Set "false" on api container when sip_dispatcher container is used
 GUNICORN_WORKERS=1
+MAX_CONCURRENT_JOBS=12
 
 MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
 DATABASE_NAME=livekit_db
@@ -157,8 +158,42 @@ uv run -m src.core.agents.session dev
 Optional Docker flow:
 
 ```bash
-docker-compose up --build
+docker compose --profile control --profile agent up --build
 ```
+
+Dockerfile selection by deployment mode:
+
+- `control` mode builds with `Dockerfile.control`
+- `agent` mode builds with `Dockerfile.agent`
+- `full` mode builds all services with the original `Dockerfile`
+- role-specific dependency manifests:
+  - `docker/requirements-control.txt`
+  - `docker/requirements-agent.txt`
+
+Production dual-host deployment (recommended):
+
+```bash
+# Server A (control plane): api + sip_dispatcher
+./deploy.sh control
+
+# Server B (capacity node): agent only
+./deploy.sh agent
+
+# Single host full stack using original Dockerfile
+./deploy.sh full
+```
+
+Optional: if Server A has spare CPU, also run agent there:
+
+```bash
+docker compose --profile control --profile agent up -d --build
+```
+
+Suggested first capacity step:
+
+- Set `MAX_CONCURRENT_JOBS=20` in production `.env`.
+- Keep only one `sip_dispatcher` running across all servers.
+- Keep Exotel SIP/RTP public IP variables (`EXOTEL_CUSTOMER_IP`, `EXOTEL_MEDIA_IP`) pinned to the control-plane server.
 
 Run unit tests:
 
@@ -233,6 +268,11 @@ api_livekit/
 ├── uv.lock
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker/
+│   ├── Dockerfile.control
+│   ├── Dockerfile.agent
+│   ├── requirements-control.txt
+│   └── requirements-agent.txt
 ├── mkdocs.yml
 ├── server_run.py
 ├── sip_dispatcher_run.py

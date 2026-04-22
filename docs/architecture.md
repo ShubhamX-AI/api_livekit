@@ -15,6 +15,40 @@ In **single-container / dev** mode both services run inside the API process. In 
 
 Outbound request acceptance and outbound call execution are fully decoupled. The API enqueues calls and returns immediately; the dispatcher handles pacing and retry independently.
 
+### Two-Server Deployment Roles
+
+For horizontal scaling without Kubernetes, run containers by role:
+
+- **Server A (control plane):** `api` + `sip_dispatcher`
+- **Server B (capacity node):** `agent`
+- Optional: run extra `agent` on Server A if CPU headroom exists
+
+The project `docker-compose.yml` uses service profiles:
+
+- `control` profile: `api`, `sip_dispatcher`
+- `agent` profile: `agent`
+
+Dockerfile mode mapping:
+
+- `control` deploys use `docker/Dockerfile.control`
+- `agent` deploys use `docker/Dockerfile.agent`
+- `full` deploys force all services to use the original `Dockerfile`
+
+Commands:
+
+```bash
+# Server A
+docker compose --profile control up -d --build
+
+# Server B
+docker compose --profile agent up -d --build
+
+# Single host full stack (original Dockerfile)
+./deploy.sh full
+```
+
+Critical singleton rule: only one `sip_dispatcher` instance should run across all servers.
+
 ## Assistant Runtime Modes
 
 There are two runtime paths for assistant speech generation:
@@ -201,7 +235,7 @@ sequenceDiagram
 Capacity is calculated as:
 
 ```
-available_slots = MAX_CONCURRENT_JOBS(8) - active_sessions
+available_slots = MAX_CONCURRENT_JOBS(12 default) - active_sessions
 
 active_sessions = COUNT(CallRecord where status IN ["initiated","answered"])
                 + _dispatching_count  ← in-memory reservation for mid-dispatch calls
