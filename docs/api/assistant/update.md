@@ -30,6 +30,14 @@ Update an existing assistant. Only send fields you want to change.
 
 ---
 
+## LLM Config Rules
+
+- In `pipeline` mode, `assistant_llm_config` is optional.
+- In `pipeline` mode, only `assistant_llm_config.api_key` is used. It overrides the system `OPENAI_API_KEY`.
+- In `realtime` mode, `assistant_llm_config` is required only when switching into realtime.
+- In `realtime` mode, Gemini defaults still apply when fields are omitted: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`.
+- In `realtime` mode, `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
+
 ## Switching Modes
 
 === ":material-pipe: Switch to Pipeline"
@@ -68,7 +76,7 @@ Update an existing assistant. Only send fields you want to change.
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
     | `assistant_llm_mode` | string | Yes | Set to `realtime`. |
-    | `assistant_llm_config` | object | Yes | Realtime provider config (`provider`, `model`, `voice`, optional `api_key`). |
+    | `assistant_llm_config` | object | Yes | Realtime provider config. The object is required, but `provider`, `model`, and `voice` may be omitted to use defaults. |
 
     **Example request**
 
@@ -78,11 +86,7 @@ Update an existing assistant. Only send fields you want to change.
       -H "Authorization: Bearer <your_api_key>" \
       -d '{
         "assistant_llm_mode": "realtime",
-        "assistant_llm_config": {
-          "provider": "gemini",
-          "model": "gemini-3.1-flash-live-preview",
-          "voice": "Puck"
-        }
+        "assistant_llm_config": {}
       }'
     ```
 
@@ -91,6 +95,8 @@ Update an existing assistant. Only send fields you want to change.
 ## Validation Rules
 
 - TTS fields must come in pairs: send both `assistant_tts_model` and `assistant_tts_config`, or neither.
+- In `pipeline` mode, `assistant_llm_config` may be omitted entirely.
+- In `pipeline` mode, only `assistant_llm_config.api_key` affects runtime behavior.
 - Switching to `realtime` requires `assistant_llm_config`.
 - Switching to `pipeline` requires both `assistant_tts_model` and `assistant_tts_config`.
 

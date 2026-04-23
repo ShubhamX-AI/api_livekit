@@ -313,6 +313,7 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"Realtime mode | provider={realtime_provider} | model={llm_config.get('model')}")
     else:
         # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
+        llm_config = assistant.assistant_llm_config or {}
         _langs = interaction_config.preferred_languages
         if _langs:
             _lang_str = ", ".join(_langs)
@@ -342,7 +343,7 @@ async def entrypoint(ctx: JobContext):
                 interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
             modalities=["text"],
-            api_key=settings.OPENAI_API_KEY,
+            api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
         )
         logger.info("Half-cascade mode | llm=openai | tts=%s", assistant.assistant_tts_model)
 

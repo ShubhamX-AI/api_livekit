@@ -14,7 +14,9 @@ Supported TTS providers for `pipeline` mode are `cartesia`, `sarvam`, `elevenlab
 ## Mode Rules
 
 - `assistant_llm_mode="pipeline"` requires both `assistant_tts_model` and `assistant_tts_config`.
+- In `pipeline` mode, `assistant_llm_config` is optional. If present, only `assistant_llm_config.api_key` is used and it overrides the system `OPENAI_API_KEY`.
 - `assistant_llm_mode="realtime"` requires `assistant_llm_config`.
+- In `realtime` mode, Gemini fields still have defaults: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`. `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
 - `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
 - `assistant_interaction_config.speaks_first` works in both `pipeline` and `realtime` modes.

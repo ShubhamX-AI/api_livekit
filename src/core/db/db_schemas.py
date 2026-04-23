@@ -45,7 +45,7 @@ class Assistant(Document):
     assistant_name: str
     assistant_description: Optional[str] = None
     assistant_llm_mode: str = "pipeline"  # "pipeline" | "realtime"
-    assistant_llm_config: Optional[Dict] = None  # provider-specific config for realtime mode
+    assistant_llm_config: Optional[Dict] = None  # shared assistant LLM config; pipeline currently uses only api_key
     assistant_tts_model: Optional[str] = None  # required for pipeline, ignored for realtime
     assistant_tts_config: Optional[Dict] = None  # required for pipeline, ignored for realtime
     assistant_prompt: str = Field(default="")

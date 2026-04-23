@@ -23,7 +23,7 @@ Fetch full configuration for one assistant.
 | `data.assistant_description` | string | Assistant description. |
 | `data.assistant_prompt` | string | System prompt. |
 | `data.assistant_llm_mode` | string | `pipeline` or `realtime`. |
-| `data.assistant_llm_config` | object/null | Realtime LLM config. API key is masked when present. |
+| `data.assistant_llm_config` | object/null | Shared assistant LLM config. In `pipeline` mode only `api_key` affects runtime; in `realtime` mode Gemini fields are used. API key is masked when present. |
 | `data.assistant_tts_model` | string/null | TTS provider in pipeline mode. |
 | `data.assistant_tts_config` | object/null | TTS config. API key is masked when present. |
 | `data.assistant_start_instruction` | string/null | Start instruction. |
@@ -46,6 +46,8 @@ Fetch full configuration for one assistant.
 | 500 | Internal server error. |
 
 ## Example Response
+
+`assistant_llm_config.api_key` is always masked in detail responses. If no per-assistant key is stored, the response shows `Using System provided API Key`.
 
 ```json
 {

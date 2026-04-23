@@ -128,6 +128,7 @@ class RTPMediaBridge:
         logger.info(f"[RTP] Flushing {count} buffered frame(s) after SIP answer")
         while self._frame_buffer:
             await self._send_frame(self._frame_buffer.popleft())
+            await asyncio.sleep(0)  # yield between frames so concurrent bridges aren't starved
         logger.info(f"[RTP] Buffer flush complete ({count} frames sent)")
 
     async def start_inbound(self, room: rtc.Room):
@@ -265,6 +266,7 @@ class RTPMediaBridge:
         # Flush buffer once (after set_remote_endpoint called)
         while self._frame_buffer:
             await self._send_frame(self._frame_buffer.popleft())
+            await asyncio.sleep(0)  # yield between frames so concurrent bridges aren't starved
         await self._send_frame(frame)
 
     async def _send_frame(self, frame: rtc.AudioFrame):

@@ -250,10 +250,12 @@ Use these pages as the canonical payload contracts:
 - `pipeline` mode (default):
   - Requires `assistant_tts_model` and `assistant_tts_config`
   - Uses OpenAI realtime for STT+LLM and separate configured TTS for speech output
+  - `assistant_llm_config` is optional; if provided, only `assistant_llm_config.api_key` is used to override `OPENAI_API_KEY`
   - When `assistant_interaction_config.speaks_first=true`, the assistant sends the configured start instruction as the first response
 - `realtime` mode:
   - Requires `assistant_llm_config`
   - Uses Gemini realtime for STT+LLM+TTS in one model
+  - `assistant_llm_config.provider` defaults to `gemini`; `api_key` overrides `GOOGLE_API_KEY`
   - Ignores `assistant_tts_model` and `assistant_tts_config` at runtime
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
 

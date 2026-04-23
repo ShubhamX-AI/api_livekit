@@ -1,5 +1,7 @@
 import unittest
 
+from pydantic import ValidationError
+
 from src.api.models.api_schemas import (
     AssistantInteractionConfigSchema,
     CreateAssistant,
@@ -46,6 +48,72 @@ class TestAssistantSchemas(unittest.TestCase):
             assistant.assistant_interaction_config.model_dump(exclude_unset=True),
             {"thinking_sound_enabled": False},
         )
+
+    def test_create_pipeline_assistant_allows_missing_llm_config(self):
+        assistant = CreateAssistant(
+            assistant_name="Support Bot",
+            assistant_description="Test assistant",
+            assistant_prompt="You are helpful.",
+            assistant_llm_mode="pipeline",
+            assistant_tts_model="cartesia",
+            assistant_tts_config={"voice_id": "voice-1"},
+        )
+
+        self.assertIsNone(assistant.assistant_llm_config)
+
+    def test_create_pipeline_assistant_allows_api_key_only_llm_config(self):
+        assistant = CreateAssistant(
+            assistant_name="Support Bot",
+            assistant_description="Test assistant",
+            assistant_prompt="You are helpful.",
+            assistant_llm_mode="pipeline",
+            assistant_llm_config={"api_key": "sk-test-1234"},
+            assistant_tts_model="cartesia",
+            assistant_tts_config={"voice_id": "voice-1"},
+        )
+
+        self.assertEqual(assistant.assistant_llm_config.api_key, "sk-test-1234")
+        self.assertIsNone(assistant.assistant_llm_config.provider)
+
+    def test_update_pipeline_assistant_allows_api_key_only_llm_config(self):
+        assistant = UpdateAssistant(
+            assistant_llm_config={"api_key": "sk-test-1234"},
+        )
+
+        self.assertEqual(
+            assistant.assistant_llm_config.model_dump(exclude_unset=True),
+            {"api_key": "sk-test-1234"},
+        )
+
+    def test_switching_to_realtime_still_requires_llm_config(self):
+        with self.assertRaises(ValidationError) as exc:
+            UpdateAssistant(assistant_llm_mode="realtime")
+
+        self.assertIn(
+            "assistant_llm_config is required when switching to realtime mode.",
+            str(exc.exception),
+        )
+
+    def test_create_realtime_assistant_accepts_gemini_config(self):
+        assistant = CreateAssistant(
+            assistant_name="Gemini Bot",
+            assistant_description="Realtime assistant",
+            assistant_prompt="You are helpful.",
+            assistant_llm_mode="realtime",
+            assistant_llm_config={
+                "provider": "gemini",
+                "model": "gemini-3.1-flash-live-preview",
+                "voice": "Puck",
+                "api_key": "google-key",
+            },
+        )
+
+        self.assertEqual(assistant.assistant_llm_config.provider, "gemini")
+        self.assertEqual(
+            assistant.assistant_llm_config.model,
+            "gemini-3.1-flash-live-preview",
+        )
+        self.assertEqual(assistant.assistant_llm_config.voice, "Puck")
 
 
 if __name__ == "__main__":

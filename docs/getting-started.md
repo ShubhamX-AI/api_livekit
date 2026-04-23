@@ -33,6 +33,12 @@ Assistants support two execution modes:
 - `pipeline` (default): OpenAI realtime handles STT+LLM and a separate TTS provider speaks output.
 - `realtime`: Gemini realtime handles STT+LLM+TTS in one model.
 
+LLM config rules:
+
+- `pipeline`: `assistant_llm_config` is optional. If present, only `assistant_llm_config.api_key` is used, and it overrides `OPENAI_API_KEY`.
+- `realtime`: `assistant_llm_config` is required, but `provider`, `model`, and `voice` may be omitted to use defaults.
+- `realtime` defaults: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`.
+
 Both modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted).
 
 ### Example A: Create Assistant in `pipeline` mode
@@ -47,6 +53,9 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_prompt": "You are a helpful support agent.",
     "assistant_start_instruction": "Hello, thanks for calling support. How can I help you today?",
     "assistant_llm_mode": "pipeline",
+    "assistant_llm_config": {
+      "api_key": "sk-..."
+    },
     "assistant_tts_model": "mistral",
     "assistant_tts_config": {
       "voice_id": "your_mistral_voice_id"
@@ -81,6 +90,15 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
       "silence_reprompts": true
     }
   }'
+```
+
+Minimal realtime payload:
+
+```json
+{
+  "assistant_llm_mode": "realtime",
+  "assistant_llm_config": {}
+}
 ```
 
 Save the `assistant_id` from the response.

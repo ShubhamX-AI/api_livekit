@@ -47,12 +47,26 @@ class MistralTTSConfig(BaseModel):
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
 
 
-# ── LLM Realtime Config sub-models ───────────────────
-class GeminiRealtimeConfig(BaseModel):
-    provider: Literal["gemini"] = "gemini"
-    model: str = Field("gemini-3.1-flash-live-preview", description="Gemini Live API model")
-    voice: str = Field("Puck", description="Gemini voice name")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=200, description="Google API key (optional, falls back to system key)")
+# ── Assistant LLM Config sub-model ───────────────────
+class AssistantLLMConfig(BaseModel):
+    provider: Optional[Literal["gemini"]] = Field(
+        None,
+        description="Realtime provider. Supported today: gemini. Ignored in pipeline mode.",
+    )
+    model: Optional[str] = Field(
+        None,
+        description="Realtime model override. Ignored in pipeline mode.",
+    )
+    voice: Optional[str] = Field(
+        None,
+        description="Realtime voice override. Ignored in pipeline mode.",
+    )
+    api_key: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=200,
+        description="Provider API key override. In pipeline mode this overrides the OpenAI key; in realtime mode it overrides the Gemini key.",
+    )
 
 
 # Discriminated union type
@@ -93,7 +107,7 @@ class CreateAssistant(BaseModel):
     assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
     assistant_llm_mode: Literal["pipeline", "realtime"] = Field("pipeline", description="LLM pipeline mode: pipeline (separate TTS) or realtime (model handles STT+LLM+TTS)")
-    assistant_llm_config: Optional[GeminiRealtimeConfig] = Field(None, description="LLM config for realtime mode (required when llm_mode is 'realtime')")
+    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode.",)
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline mode)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline mode)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
@@ -116,6 +130,9 @@ class CreateAssistant(BaseModel):
                         "assistant_description": "Test Assistant Description(Optional)",
                         "assistant_prompt": "You are a helpful assistant.",
                         "assistant_llm_mode": "pipeline",
+                        "assistant_llm_config": {
+                            "api_key": "sk-..."
+                        },
                         "assistant_tts_model": "cartesia",
                         "assistant_tts_config": {
                             "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
@@ -189,7 +206,7 @@ class UpdateAssistant(BaseModel):
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
     assistant_llm_mode: Optional[Literal["pipeline", "realtime"]] = Field(None, description="LLM pipeline mode")
-    assistant_llm_config: Optional[GeminiRealtimeConfig] = Field(None, description="LLM config for realtime mode")
+    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. In pipeline mode only api_key is used; in realtime mode provider/model/voice/api_key are supported.",)
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (optional)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")

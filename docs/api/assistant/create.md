@@ -30,6 +30,7 @@ Create a new assistant configuration.
 
     **Pipeline mode** uses OpenAI Realtime for STT + LLM, with a separate TTS provider for audio output.
     If `assistant_interaction_config.speaks_first=true`, the opening response is spoken at session start.
+    `assistant_llm_config` is optional in this mode. If you send it, only `assistant_llm_config.api_key` is used; `provider`, `model`, and `voice` are ignored.
 
     **Required fields**
 
@@ -37,6 +38,12 @@ Create a new assistant configuration.
     | :--- | :--- | :--- | :--- |
     | `assistant_tts_model` | string | Yes | One of `cartesia`, `sarvam`, `elevenlabs`, `mistral`. |
     | `assistant_tts_config` | object | Yes | TTS config for the selected provider (see tabs below). |
+
+    **Optional pipeline LLM config** (`assistant_llm_config`)
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `api_key` | string | No | Optional per-assistant OpenAI key. Overrides system `OPENAI_API_KEY`. |
 
     **TTS provider configuration**
 
@@ -80,6 +87,9 @@ Create a new assistant configuration.
         "assistant_description": "First line support",
         "assistant_prompt": "You are a helpful customer support agent.",
         "assistant_llm_mode": "pipeline",
+        "assistant_llm_config": {
+          "api_key": "sk-..."
+        },
         "assistant_tts_model": "cartesia",
         "assistant_tts_config": {
           "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
@@ -101,6 +111,7 @@ Create a new assistant configuration.
 
     **Realtime mode** uses a single model (e.g. Gemini Live API) that handles STT, LLM, and TTS in one stream.
     If `assistant_interaction_config.speaks_first=true`, the opening response is sent at session start through the realtime conversation path.
+    `assistant_llm_config` is required in this mode, but its Gemini fields still have defaults.
 
     !!! note "Filler words are not available in realtime mode"
         Since there is no external TTS, `filler_words` is automatically disabled even if set to `true`.
@@ -115,10 +126,19 @@ Create a new assistant configuration.
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `provider` | string | No | Realtime provider. Current value: `gemini`. |
+    | `provider` | string | No | Realtime provider. Defaults to `gemini`. |
     | `model` | string | No | Gemini realtime model. Default: `gemini-3.1-flash-live-preview`. |
     | `voice` | string | No | Gemini voice. Default: `Puck`. |
     | `api_key` | string | No | Optional per-assistant Google key. Falls back to system `GOOGLE_API_KEY`. |
+
+    **Minimal realtime example**
+
+    ```json
+    {
+      "assistant_llm_mode": "realtime",
+      "assistant_llm_config": {}
+    }
+    ```
 
     **Example request**
 

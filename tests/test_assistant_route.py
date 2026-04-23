@@ -3,7 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from src.api.models.api_schemas import UpdateAssistant
-from src.api.routes.assistant import merge_interaction_config, update_assistant
+from src.api.routes.assistant import (
+    get_assistant_details,
+    merge_interaction_config,
+    update_assistant,
+)
 from src.core.db.db_schemas import AssistantInteractionConfig
 
 
@@ -74,6 +78,36 @@ class TestAssistantRoute(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged_from_model["thinking_sound_enabled"], False)
         self.assertEqual(merged_from_dict["speaks_first"], True)
         self.assertEqual(merged_from_dict["background_sound_enabled"], False)
+
+    async def test_get_assistant_details_masks_llm_config_api_key(self):
+        current_user = SimpleNamespace(user_email="user@example.com")
+        assistant = SimpleNamespace(
+            model_dump=lambda exclude=None: {
+                "assistant_id": "assistant-1",
+                "assistant_name": "Masked Bot",
+                "assistant_llm_config": {"api_key": "sk-test-12345678"},
+                "assistant_tts_config": None,
+            }
+        )
+
+        assistant_model = SimpleNamespace(
+            assistant_id=QueryField(),
+            assistant_created_by_email=QueryField(),
+            assistant_is_active=QueryField(),
+            find_one=AsyncMock(return_value=assistant),
+        )
+
+        with patch("src.api.routes.assistant.Assistant", assistant_model):
+            response = await get_assistant_details(
+                assistant_id="assistant-1",
+                current_user=current_user,
+            )
+
+        self.assertTrue(response.success)
+        self.assertEqual(
+            response.data["assistant_llm_config"]["api_key"],
+            "sk-t...5678",
+        )
 
 
 if __name__ == "__main__":
