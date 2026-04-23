@@ -1,6 +1,7 @@
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -139,9 +140,12 @@ app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 # Serve MkDocs documentation site
-if os.path.exists("site"):
+site_dir = Path(__file__).resolve().parents[2] / "site"
+if site_dir.exists():
     app.mount(
-        "/documentation", StaticFiles(directory="site", html=True), name="documentation"
+        "/documentation",
+        StaticFiles(directory=str(site_dir), html=True),
+        name="documentation",
     )
 
 if __name__ == "__main__":

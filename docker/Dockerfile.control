@@ -19,8 +19,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PORT=8001
 
 COPY src /app/src
+COPY docs /app/docs
+COPY mkdocs.yml /app/mkdocs.yml
 COPY server_run.py /app/server_run.py
 COPY sip_dispatcher_run.py /app/sip_dispatcher_run.py
+
+RUN mkdocs build -d /app/site
 
 EXPOSE 8001
 
