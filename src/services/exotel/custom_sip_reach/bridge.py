@@ -10,6 +10,7 @@ run_bridge() is the single entry point that:
 """
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import time
@@ -28,7 +29,6 @@ from .config import (
     validate_config,
 )
 from .inbound_listener import (
-    ensure_inbound_server,
     register_call_id,
     unregister_call_id,
 )
@@ -44,7 +44,7 @@ async def run_bridge(
     phone_number: str,
     room_name: str | None = None,
     sip_config: dict | None = None,
-    result_signal: asyncio.Queue | None = None,
+    result_signal: concurrent.futures.Future | None = None,
 ):
     if not validate_config():
         return
@@ -63,7 +63,7 @@ async def run_bridge(
     sip_domain = sip_config.get("sip_domain")
 
     pool = get_port_pool()
-    port = await pool.acquire()
+    port = pool.acquire()
     logger.info(f"[BRIDGE] phone={phone_number} room={room_name} rtp_port={port}")
 
     rtp_bridge = None
@@ -73,7 +73,6 @@ async def run_bridge(
     room = rtc.Room()
 
     try:
-        await ensure_inbound_server()
         rtp_bridge = RTPMediaBridge(public_ip=EXOTEL_MEDIA_IP, bind_port=port)
 
         sip_client_kwargs = {"callee": phone_number, "rtp_port": port}
@@ -130,9 +129,9 @@ async def run_bridge(
         res = await sip_client.send_invite()
         if not res:
             logger.error("[BRIDGE] SIP failed")
-            if result_signal:
+            if result_signal is not None and not result_signal.done():
                 error = sip_client.last_sip_error or "SIP INVITE failed"
-                await result_signal.put(
+                result_signal.set_result(
                     {
                         "success": False,
                         "call_status": sip_client.last_call_status or "failed",
@@ -144,8 +143,8 @@ async def run_bridge(
             return
 
         # Signal the API that the call is established; bridge loop continues below
-        if result_signal:
-            await result_signal.put(
+        if result_signal is not None and not result_signal.done():
+            result_signal.set_result(
                 {
                     "success": True,
                     "call_status": "answered",
@@ -229,7 +228,7 @@ async def run_bridge(
     except Exception as e:
         logger.error(f"[BRIDGE] Error: {e}", exc_info=True)
         # Signal failure if crash happened before the INVITE resolved
-        if result_signal:
+        if result_signal is not None and not result_signal.done():
             try:
                 call_status = "failed"
                 sip_status_code = None
@@ -238,7 +237,7 @@ async def run_bridge(
                     call_status = sip_client.last_call_status or "failed"
                     sip_status_code = sip_client.last_sip_status_code
                     sip_status_text = sip_client.last_sip_status_reason or str(e)
-                result_signal.put_nowait(
+                result_signal.set_result(
                     {
                         "success": False,
                         "call_status": call_status,
@@ -247,7 +246,7 @@ async def run_bridge(
                         "error": str(e),
                     }
                 )
-            except asyncio.QueueFull:
+            except concurrent.futures.InvalidStateError:
                 pass  # already signaled
 
     finally:
@@ -260,7 +259,7 @@ async def run_bridge(
             rtp_bridge.stop()
 
         await room.disconnect()
-        await pool.release(port)
+        pool.release(port)
         logger.info(f"[BRIDGE] Port {port} released")
         if sip_client:
             unregister_call_id(sip_client.call_id)

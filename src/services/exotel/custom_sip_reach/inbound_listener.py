@@ -7,6 +7,7 @@ bridge to tear down the call.
 """
 
 import asyncio
+import threading
 
 from .config import EXOTEL_CUSTOMER_SIP_PORT, EXOTEL_SIP_ALLOWED_IPS, INBOUND_SIP_LISTEN
 from .sip_client import ExotelSipClient
@@ -18,8 +19,10 @@ setup_logging()
 # ─────────────────────────────────────────────────────────────────────────────
 
 _inbound_server: asyncio.AbstractServer | None = None
-_inbound_lock = asyncio.Lock()
-_call_registry: dict[str, asyncio.Event] = {}
+_inbound_lock = threading.Lock()
+# threading.Event so bridge threads (each on their own event loop) can poll .is_set()
+_call_registry: dict[str, threading.Event] = {}
+_registry_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,16 +30,18 @@ _call_registry: dict[str, asyncio.Event] = {}
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def register_call_id(call_id: str) -> asyncio.Event:
-    """Register a call-ID and return an Event that fires on inbound BYE."""
-    event = asyncio.Event()
-    _call_registry[call_id] = event
+def register_call_id(call_id: str) -> threading.Event:
+    """Register a call-ID and return a threading.Event that fires on inbound BYE."""
+    event = threading.Event()
+    with _registry_lock:
+        _call_registry[call_id] = event
     return event
 
 
 def unregister_call_id(call_id: str):
     """Remove a call-ID from the registry."""
-    _call_registry.pop(call_id, None)
+    with _registry_lock:
+        _call_registry.pop(call_id, None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45,11 +50,11 @@ def unregister_call_id(call_id: str):
 
 
 async def ensure_inbound_server():
-    """Start the inbound SIP listener (once, idempotent)."""
+    """Start the inbound SIP listener (once, idempotent). Must be called from the main loop."""
     global _inbound_server
     if not INBOUND_SIP_LISTEN:
         return
-    async with _inbound_lock:
+    with _inbound_lock:
         if _inbound_server is not None:
             return
         try:
@@ -99,7 +104,7 @@ async def _handle_inbound_sip(
                 hdrs = {}
                 via_headers = []
                 record_routes = []
-                
+
                 for l in lines[1:]:
                     if ":" in l:
                         k, v = l.split(":", 1)
@@ -115,15 +120,17 @@ async def _handle_inbound_sip(
                 cl = int(hdrs.get("content-length", "0"))
                 if len(rest) < cl:
                     break
-                    
+
                 body = rest[:cl].decode(errors="replace")
                 buf = rest[cl:]
 
                 if start.startswith("BYE "):
                     call_id = hdrs.get("call-id")
                     logger.info(f"[SIP-IN] ← BYE from {peer} call-id={call_id}")
-                    if call_id and call_id in _call_registry:
-                        _call_registry[call_id].set()
+                    with _registry_lock:
+                        evt = _call_registry.get(call_id)
+                    if evt:
+                        evt.set()
                     writer.write(ExotelSipClient._response_200_ok(hdrs, via_headers=via_headers))
                     await writer.drain()
                     logger.info("[SIP-IN] → 200 OK (BYE)")

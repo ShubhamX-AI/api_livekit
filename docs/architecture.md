@@ -124,6 +124,8 @@ graph LR
 
 For Exotel custom SIP reach, a dedicated bridge handles SIP signaling, RTP relay, and LiveKit room connectivity.
 
+Each concurrent call runs in its own OS thread with a dedicated `asyncio.run()` event loop. This provides full audio-processing isolation — inbound RTP decode (`audioop` resampling) and outbound agent audio consumption (`AudioStream` draining) never compete with other calls for scheduling. The design supports 100–200 concurrent calls without audio queue overflow.
+
 ```mermaid
 graph TD
     subgraph External Telephony
@@ -169,7 +171,7 @@ graph TD
 
 - `POST /call/outbound` validates the request, inserts to `outbound_call_queue`, and returns `202 Accepted` with a `queue_id`. No LiveKit room is created at this point.
 - The event-driven dispatcher wakes immediately on enqueue and creates the LiveKit room + starts the SIP bridge when a capacity slot is available.
-- SIP setup outcome (`200 OK` / failure / timeout) is resolved out-of-band via `result_signal`; the caller can poll `GET /call/queue/{queue_id}` for status.
+- SIP setup outcome (`200 OK` / failure / timeout) is resolved out-of-band via a `concurrent.futures.Future` shared between the bridge thread and the dispatcher's monitor task; the caller can poll `GET /call/queue/{queue_id}` for status.
 - Agent speech and recording are gated by bridge `call_answered` signaling to avoid recording before answer.
 - After readiness is confirmed, start-instruction delivery applies to both runtime modes (`pipeline` and `realtime`).
 - Terminal status finalization and webhook emission are handled through a single lifecycle path to reduce duplicate or conflicting terminal updates.
@@ -208,8 +210,8 @@ sequenceDiagram
         Disp->>LK: Create agent dispatch
         Disp->>DB: Insert CallRecord (status=initiated)
         alt Exotel
-            Disp->>SIP: run_bridge (async task)
-            SIP-->>Disp: result_signal (INVITE resolved)
+            Disp->>SIP: run_bridge (dedicated OS thread + asyncio.run)
+            SIP-->>Disp: concurrent.futures.Future resolved (INVITE answered or failed)
         else Twilio
             Disp->>LK: create_sip_participant
         end
@@ -406,6 +408,7 @@ sequenceDiagram
     Bridge->>DB: Load active assistant
     Bridge->>LK: Create room
     Bridge->>LK: Create dispatch metadata
+    Bridge-->>Exotel: SIP 200 OK (port bound; bridge thread starts)
     LK->>Agent: Start session with metadata
     alt strategy_id present
         Agent->>DB: Load strategy
@@ -419,7 +422,7 @@ sequenceDiagram
         Agent->>Agent: Continue without context lookup
     end
     Agent->>Agent: Render prompt/start instruction
-    Bridge-->>Exotel: SIP 200 OK
+    Note over Bridge,LK: Bridge thread: LiveKit connect + RTP start_inbound
     Exotel->>Bridge: RTP audio uplink
     Bridge-->>Exotel: RTP audio downlink
     Bridge->>LK: Audio relay uplink
