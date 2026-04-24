@@ -36,6 +36,14 @@ from src.core.logger import logger, setup_logging
 setup_logging()
 
 
+def _decode_rtp_payload(payload: bytes, pt: int, rs_in) -> tuple[bytes, object]:
+    """Decode G.711 and resample 8 kHz → 48 kHz. Module-level so it's safe to run in a thread pool."""
+    pcm8 = audioop.alaw2lin(payload, 2) if pt == PCMA_PAYLOAD_TYPE else audioop.ulaw2lin(payload, 2)
+    pcm8 = audioop.mul(pcm8, 2, 3.0)
+    pcm48, new_rs = audioop.ratecv(pcm8, 2, 1, SAMPLE_RATE_SIP, SAMPLE_RATE_LK, rs_in)
+    return pcm48, new_rs
+
+
 class RTPMediaBridge:
     def __init__(self, public_ip: str, bind_port: int):
         """
@@ -207,17 +215,11 @@ class RTPMediaBridge:
             payload = data[RTP_HEADER_SIZE:]
 
             try:
-                pcm8 = (
-                    audioop.alaw2lin(payload, 2)
-                    if pt == PCMA_PAYLOAD_TYPE
-                    else audioop.ulaw2lin(payload, 2)
-                )
-
-                # Boost volume — phone audio is often very quiet after G.711 decode
-                pcm8 = audioop.mul(pcm8, 2, 3.0)  # 3x amplification, tune as needed
-
-                pcm48, self._rs_in = audioop.ratecv(
-                    pcm8, 2, 1, SAMPLE_RATE_SIP, SAMPLE_RATE_LK, self._rs_in
+                # Decode in thread pool so the event loop can schedule other coroutines
+                # (e.g. _frame_iter draining agent AudioStream) during the CPU work.
+                # rs_in is an immutable tuple — safe to pass across thread boundary.
+                pcm48, self._rs_in = await asyncio.to_thread(
+                    _decode_rtp_payload, payload, pt, self._rs_in
                 )
                 frame = rtc.AudioFrame(
                     data=pcm48,

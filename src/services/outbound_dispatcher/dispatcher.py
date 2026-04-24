@@ -1,4 +1,6 @@
 import asyncio
+import concurrent.futures
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -96,12 +98,14 @@ def release_slot() -> None:
 
 
 async def _monitor_exotel_result(
-    room_name: str, assistant_id: str, result_signal: asyncio.Queue
+    room_name: str, assistant_id: str, result_future: concurrent.futures.Future
 ) -> None:
-    """Mirror of the monitor logic from call.py — runs as a background task per call."""
+    """Monitor the outbound bridge result and update call status accordingly."""
     try:
         try:
-            sip_result = await asyncio.wait_for(result_signal.get(), timeout=60.0)
+            sip_result = await asyncio.wait_for(
+                asyncio.wrap_future(result_future), timeout=60.0
+            )
         except asyncio.TimeoutError:
             await livekit_services.update_call_status(
                 room_name=room_name,
@@ -140,6 +144,8 @@ async def _monitor_exotel_result(
             f"Exotel SIP answered | room={room_name} — status update deferred to agent session"
         )
 
+    except concurrent.futures.CancelledError:
+        logger.warning(f"Exotel result future cancelled | room={room_name}")
     except Exception as e:
         logger.error(f"Exotel monitor crashed | room={room_name}: {e}", exc_info=True)
         try:
@@ -213,17 +219,23 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 platform_number=sip_config.get("exotel_number"),
                 queue_id=item.queue_id,
             )
-            result_signal: asyncio.Queue = asyncio.Queue(maxsize=1)
+            result_future: concurrent.futures.Future = concurrent.futures.Future()
+
+            def _bridge_thread(phone=item.to_number, rm=room_name, cfg=sip_config, fut=result_future):
+                asyncio.run(run_bridge(
+                    phone_number=phone,
+                    room_name=rm,
+                    sip_config=cfg,
+                    result_signal=fut,
+                ))
+
+            threading.Thread(
+                target=_bridge_thread,
+                daemon=True,
+                name=f"bridge-out-{item.to_number}",
+            ).start()
             asyncio.create_task(
-                run_bridge(
-                    phone_number=item.to_number,
-                    room_name=room_name,
-                    sip_config=sip_config,
-                    result_signal=result_signal,
-                )
-            )
-            asyncio.create_task(
-                _monitor_exotel_result(room_name, item.assistant_id, result_signal)
+                _monitor_exotel_result(room_name, item.assistant_id, result_future)
             )
 
         item.status = "dispatched"

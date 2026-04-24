@@ -1,10 +1,14 @@
 """
 Main inbound bridge orchestrator — handles incoming SIP INVITEs from Exotel,
 wires up RTP, and connects an agent via LiveKit.
+
+handle_inbound_call (main loop): SIP negotiation, DB lookups, 200 OK response.
+_run_inbound_bridge (thread): LiveKit + RTP audio bridge lifecycle.
 """
 
 import asyncio
 import json
+import threading
 import uuid
 
 from livekit import rtc
@@ -58,6 +62,89 @@ def _build_sip_response(
     return ("\r\n".join(headers) + "\r\n\r\n").encode()
 
 
+async def _run_inbound_bridge(
+    rtp_bridge: RTPMediaBridge,
+    room_name: str,
+    port: int,
+    remote_ip: str,
+    remote_port: int,
+    pt: int,
+    call_id: str,
+    inbound_bye: threading.Event,
+    token: str,
+) -> None:
+    """
+    Runs in its own thread via asyncio.run().
+    Owns the LiveKit room + RTP bridge lifecycle for one inbound call.
+    """
+    pool = get_port_pool()
+    room = rtc.Room()
+
+    try:
+        @room.on("track_subscribed")
+        def on_track(track, publication, participant):
+            if track.kind == rtc.TrackKind.KIND_AUDIO:
+                logger.info(
+                    f"[INBOUND] Agent audio from {participant.identity} "
+                    f"(source={publication.source}) — adding to mixer"
+                )
+                rtp_bridge.add_outbound_track(track)
+                rtp_bridge.start_outbound_mixer()
+
+        await room.connect(LK_URL, token)
+        logger.info(f"[INBOUND] Bridge thread: LiveKit connected room={room_name}")
+        await rtp_bridge.start_inbound(room)
+        rtp_bridge.set_remote_endpoint(remote_ip, remote_port, pt)
+
+        # Wait for agent process to finish booting before signalling call_answered.
+        await asyncio.sleep(1.5)
+
+        try:
+            await room.local_participant.publish_data(
+                json.dumps({"event": "call_answered"}).encode(),
+                topic="sip_bridge_events",
+            )
+            logger.info("[INBOUND] Published call_answered event to agent")
+        except Exception as e:
+            logger.error(f"[INBOUND] Failed to publish call_answered event: {e}")
+
+        disconnect_reason = "unknown"
+        while True:
+            if room.connection_state != rtc.ConnectionState.CONN_CONNECTED:
+                disconnect_reason = "livekit_disconnected"
+                break
+            if inbound_bye.is_set():
+                disconnect_reason = "sip_bye"
+                break
+            since_rx = rtp_bridge.seconds_since_rx()
+            if (
+                since_rx is not None
+                and RTP_SILENCE_TIMEOUT_SECONDS > 0
+                and since_rx > RTP_SILENCE_TIMEOUT_SECONDS
+            ):
+                disconnect_reason = "rtp_silence_after_flow"
+                break
+            await asyncio.sleep(1)
+
+        logger.info(f"[INBOUND] Call ended — reason={disconnect_reason}")
+
+    except Exception as e:
+        logger.error(f"[INBOUND] Bridge error: {e}", exc_info=True)
+
+    finally:
+        try:
+            rtp_bridge.stop()
+        except Exception as e:
+            logger.warning(f"[INBOUND] rtp_bridge.stop() raised: {e}")
+        try:
+            await room.disconnect()
+        except Exception as e:
+            logger.warning(f"[INBOUND] room.disconnect() raised: {e}")
+        pool.release(port)
+        logger.info(f"[INBOUND] Port {port} released")
+        unregister_call_id(call_id)
+
+
 async def handle_inbound_call(
     sdp_body: str,
     writer: asyncio.StreamWriter,
@@ -68,6 +155,10 @@ async def handle_inbound_call(
     via_headers: list[str],
     record_routes: list[str],
 ):
+    """
+    Phase 1 (main loop): SIP validation, DB lookups, send SIP response, acquire port.
+    Phase 2 (bridge thread): LiveKit + RTP audio lifecycle via _run_inbound_bridge.
+    """
     if not validate_config():
         logger.error("[INBOUND] Config validation failed")
         writer.write(
@@ -93,7 +184,6 @@ async def handle_inbound_call(
         elif line.startswith("m=audio "):
             parts = line.split()
             remote_port = int(parts[1])
-            # Pick a real audio codec (8=PCMA, 0=PCMU), never 101 (DTMF)
             offered_pts = [int(p) for p in parts[3:] if p.isdigit()]
             for preferred in (PCMA_PAYLOAD_TYPE, PCMU_PAYLOAD_TYPE):
                 if preferred in offered_pts:
@@ -119,12 +209,10 @@ async def handle_inbound_call(
         await writer.drain()
         return
 
-    # Extract numbers from SIP headers
     dialed_number = _extract_sip_number(to_header)
     caller_number = _extract_sip_number(from_header)
     normalized_number = format_exotel_number(dialed_number)
-    
-    # Log incoming call details
+
     logger.info(f"[INBOUND] call-id={call_id} caller={caller_number} dialed={dialed_number} normalized={normalized_number}")
 
     inbound_mapping = await InboundSIP.find_one(
@@ -206,7 +294,6 @@ async def handle_inbound_call(
         release_slot()
         return
 
-    # Initialize call record for inbound call
     try:
         await livekit_service.initialize_call_record(
             room_name=room_name,
@@ -234,13 +321,12 @@ async def handle_inbound_call(
         await writer.drain()
         release_slot()
         return
-    # Release the in-memory reservation now that the CallRecord (status="initiated")
-    # is persisted — _get_active_session_count picks it up from the DB from this
-    # point forward, so keeping _dispatching_count incremented would double-count.
+
+    # Release in-memory reservation; CallRecord (status="initiated") now tracked via DB.
     release_slot()
 
     pool = get_port_pool()
-    port = await pool.acquire()
+    port = pool.acquire()
     logger.info(
         f"[INBOUND] call-id={call_id} phone={normalized_number} room={room_name} rtp_port={port}"
     )
@@ -274,15 +360,19 @@ async def handle_inbound_call(
         )
         try:
             await writer.drain()
-        except Exception as e:
-            logger.debug(f"[INBOUND] writer.drain() after 500 failed: {e}")
-        await pool.release(port)
+        except Exception as drain_err:
+            logger.debug(f"[INBOUND] writer.drain() after 500 failed: {drain_err}")
+        pool.release(port)
         return
 
-    rtp_bridge = None
-    inbound_bye = None
-    room = rtc.Room()
+    # Register call for inbound BYE detection (threading.Event, safe across loops).
+    inbound_bye = register_call_id(call_id)
 
+    # Bind RTP socket now so the port is in the 200 OK SDP before the bridge thread starts.
+    rtp_bridge = RTPMediaBridge(public_ip=EXOTEL_MEDIA_IP, bind_port=port)
+
+    # Build and send 200 OK — Exotel starts sending RTP after this.
+    # OS UDP socket buffer (~1 MB) holds early packets until start_inbound registers the reader.
     def build_200_ok() -> bytes:
         sdp = (
             f"v=0\r\n"
@@ -314,113 +404,47 @@ async def handle_inbound_call(
         )
         h.append("Content-Type: application/sdp")
         h.append(f"Content-Length: {len(sdp.encode())}")
-
         return ("\r\n".join(h) + "\r\n\r\n" + sdp).encode()
 
-    try:
-        inbound_bye = register_call_id(call_id)
-        rtp_bridge = RTPMediaBridge(public_ip=EXOTEL_MEDIA_IP, bind_port=port)
+    logger.info("[INBOUND] Sending 200 OK ->")
+    writer.write(build_200_ok())
+    await writer.drain()
 
-        @room.on("track_subscribed")
-        def on_track(track, publication, participant):  # type: ignore[reportUnusedFunction]
-            if track.kind == rtc.TrackKind.KIND_AUDIO:
-                logger.info(
-                    f"[INBOUND] Agent audio from {participant.identity} "
-                    f"(source={publication.source}) — adding to mixer"
-                )
-                rtp_bridge.add_outbound_track(track)
-                rtp_bridge.start_outbound_mixer()
+    # ── Phase 2: Bridge runs in its own thread + event loop ──────────────────
+    # Each bridge is isolated; no cross-call event-loop contention.
+    bridge_done = asyncio.Event()
+    main_loop = asyncio.get_running_loop()
 
-        token = (
-            AccessToken(LK_API_KEY, LK_API_SECRET)
-            .with_identity(f"sip-in-{normalized_number}")
-            .with_metadata(json.dumps({"source": "exotel_bridge"}))
-            .with_grants(VideoGrants(room_join=True, room=room_name))
-            .with_sip_grants(SIPGrants(admin=True, call=True))
-            .to_jwt()
-        )
-        await room.connect(LK_URL, token)
-        logger.info(f"[INBOUND] LiveKit connected: {room_name}")
-        await rtp_bridge.start_inbound(room)
+    token = (
+        AccessToken(LK_API_KEY, LK_API_SECRET)
+        .with_identity(f"sip-in-{normalized_number}")
+        .with_metadata(json.dumps({"source": "exotel_bridge"}))
+        .with_grants(VideoGrants(room_join=True, room=room_name))
+        .with_sip_grants(SIPGrants(admin=True, call=True))
+        .to_jwt()
+    )
 
-        # Set remote endpoint from what Exotel sent us
-        rtp_bridge.set_remote_endpoint(remote_ip, remote_port, pt)
-
-        # Send 200 OK Response
-        resp_200 = build_200_ok()
-        logger.info("[INBOUND] Sending 200 OK ->")
-        writer.write(resp_200)
-        await writer.drain()
-
-        # Stabilization delay: wait for the agent process to finish booting
-        # (session.start + TTS init) and register its data_received handler
-        # before we publish call_answered. Without this, the publish fires
-        # ~25ms after LiveKit connect, but the agent needs ~200-500ms to boot,
-        # so the data packet arrives with no listener and is silently dropped.
-        # NOTE: 200 OK is already sent above — Exotel's RTP path is live.
-        # This delay only controls when we signal the agent to start speaking.
-        logger.info(
-            "[INBOUND] Waiting for agent to stabilize before signalling call_answered..."
-        )
-        await asyncio.sleep(1.5)
-
-        # Let agent know call is connected
+    def _bridge_thread():
         try:
-            await room.local_participant.publish_data(
-                json.dumps({"event": "call_answered"}).encode(),
-                topic="sip_bridge_events",
-            )
-            logger.info("[INBOUND] Published call_answered event to agent")
-        except Exception as e:
-            logger.error(f"[INBOUND] Failed to publish call_answered event: {e}")
+            asyncio.run(_run_inbound_bridge(
+                rtp_bridge=rtp_bridge,
+                room_name=room_name,
+                port=port,
+                remote_ip=remote_ip,
+                remote_port=remote_port,
+                pt=pt,
+                call_id=call_id,
+                inbound_bye=inbound_bye,
+                token=token,
+            ))
+        finally:
+            main_loop.call_soon_threadsafe(bridge_done.set)
 
-        # Watch for BYE and RTP Silence
-        disconnect_reason = "unknown"
-        while True:
-            if room.connection_state != rtc.ConnectionState.CONN_CONNECTED:
-                disconnect_reason = "livekit_disconnected"
-                break
+    threading.Thread(
+        target=_bridge_thread,
+        daemon=True,
+        name=f"bridge-in-{call_id[:8]}",
+    ).start()
 
-            if inbound_bye and inbound_bye.is_set():
-                disconnect_reason = "sip_bye_inbound_tcp"
-                break
-
-            since_rx = rtp_bridge.seconds_since_rx()
-
-            if (
-                since_rx is not None
-                and RTP_SILENCE_TIMEOUT_SECONDS > 0
-                and since_rx > RTP_SILENCE_TIMEOUT_SECONDS
-            ):
-                disconnect_reason = "rtp_silence_after_flow"
-                break
-
-            await asyncio.sleep(1)
-
-        logger.info(f"[INBOUND] Call ended — reason={disconnect_reason}")
-
-    except Exception as e:
-        logger.error(f"[INBOUND] Error: {e}", exc_info=True)
-
-    finally:
-        if rtp_bridge:
-            try:
-                rtp_bridge.stop()
-            except Exception as e:
-                logger.warning(f"[INBOUND] rtp_bridge.stop() raised: {e}")
-
-        try:
-            await room.disconnect()
-        except Exception as e:
-            logger.warning(f"[INBOUND] room.disconnect() raised: {e}")
-
-        try:
-            await pool.release(port)
-            logger.info(f"[INBOUND] Port {port} released")
-        except Exception as e:
-            logger.warning(f"[INBOUND] pool.release({port}) raised: {e}")
-
-        try:
-            unregister_call_id(call_id)
-        except Exception as e:
-            logger.warning(f"[INBOUND] unregister_call_id({call_id}) raised: {e}")
+    await bridge_done.wait()
+    logger.info(f"[INBOUND] Bridge thread finished for call-id={call_id}")
