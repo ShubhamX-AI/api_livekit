@@ -338,7 +338,7 @@ async def entrypoint(ctx: JobContext):
             input_audio_noise_reduction="near_field",
             turn_detection=TurnDetection(
                 type="semantic_vad",
-                eagerness="medium",
+                eagerness="low",
                 create_response=True,
                 interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
@@ -353,6 +353,8 @@ async def entrypoint(ctx: JobContext):
         tts = create_tts(assistant)
         if tts is None:
             return
+        if hasattr(tts, "prewarm"):
+            tts.prewarm()
 
     # --- Session Setup ---
     if is_realtime:
@@ -368,15 +370,15 @@ async def entrypoint(ctx: JobContext):
                 turn_detection="realtime_llm",
                 endpointing={
                     "mode": "dynamic",
-                    "min_delay": 0.1,
+                    "min_delay": 0.4,
                     "max_delay": 3.0,
                 },
                 interruption={
                     "mode": "adaptive",
-                    "min_duration": 0.8,
-                    "min_words": 2,
+                    "min_duration": 1.5,
+                    "min_words": 4,
                     "discard_audio_if_uninterruptible": True,
-                    "false_interruption_timeout": 2.0,
+                    "false_interruption_timeout": 3.0,
                     "resume_false_interruption": True,
                 },
         )

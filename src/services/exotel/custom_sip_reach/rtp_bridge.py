@@ -324,6 +324,22 @@ class RTPMediaBridge:
         except Exception as e:
             logger.error(f"[RTP] Send error: {e}")
 
+    async def close_streams(self):
+        """Explicitly unsubscribe all AudioStreams from the FFI queue.
+
+        Must be called before room.disconnect() / loop close. The FFI client is a
+        process-wide singleton — under load, its native thread can't drain a closing
+        bridge's subscriptions fast enough, causing 'Event loop is closed' floods.
+        aclose() removes each stream from the FFI queue synchronously so nothing is
+        left to drain.
+        """
+        for stream in self._track_streams:
+            try:
+                await stream.aclose()
+            except Exception:
+                pass
+        self._track_streams.clear()
+
     def stop(self):
         self._running = False
         # Cancel the mixer output loop

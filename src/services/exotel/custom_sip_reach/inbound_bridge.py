@@ -133,6 +133,7 @@ async def _run_inbound_bridge(
 
     finally:
         try:
+            await rtp_bridge.close_streams()
             rtp_bridge.stop()
         except Exception as e:
             logger.warning(f"[INBOUND] rtp_bridge.stop() raised: {e}")

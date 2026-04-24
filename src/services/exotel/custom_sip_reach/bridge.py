@@ -102,16 +102,28 @@ async def run_bridge(
 
         sip_client.on_hold_change = lambda h: asyncio.create_task(_on_hold_change(h))
 
-        # Subscribe to ALL audio tracks (agent voice + background/thinking sounds)
+        # Tracks arriving before SIP 200 OK are queued; those arriving after are
+        # wired directly.  This prevents pre-answer agent audio from being
+        # buffered and dumped on pickup.
+        pending_tracks: list = []
+        sip_answered = False
+
         @room.on("track_subscribed")
         def on_track(track, publication, participant):
             if track.kind == rtc.TrackKind.KIND_AUDIO:
-                logger.info(
-                    f"[BRIDGE] Audio track from {participant.identity} "
-                    f"(source={publication.source}) — adding to mixer"
-                )
-                rtp_bridge.add_outbound_track(track)
-                rtp_bridge.start_outbound_mixer()
+                if sip_answered:
+                    logger.info(
+                        f"[BRIDGE] Audio track from {participant.identity} "
+                        f"(source={publication.source}) — adding to mixer"
+                    )
+                    rtp_bridge.add_outbound_track(track)
+                    rtp_bridge.start_outbound_mixer()
+                else:
+                    logger.info(
+                        f"[BRIDGE] Audio track from {participant.identity} "
+                        f"(source={publication.source}) — queued (SIP not yet answered)"
+                    )
+                    pending_tracks.append(track)
 
         token = (
             AccessToken(LK_API_KEY, LK_API_SECRET)
@@ -152,8 +164,14 @@ async def run_bridge(
                 }
             )
 
-        # Flush buffered agent audio + open RTP path
+        # Open RTP path; wire any tracks that arrived during ringing
         rtp_bridge.set_remote_endpoint(res["remote_ip"], res["remote_port"], res["pt"])
+        sip_answered = True
+        for track in pending_tracks:
+            rtp_bridge.add_outbound_track(track)
+        if pending_tracks:
+            rtp_bridge.start_outbound_mixer()
+            logger.info(f"[BRIDGE] Mixer started with {len(pending_tracks)} queued track(s)")
 
         answered_at = time.time()
 
@@ -256,6 +274,7 @@ async def run_bridge(
             await sip_client.close()
 
         if rtp_bridge:
+            await rtp_bridge.close_streams()
             rtp_bridge.stop()
 
         await room.disconnect()
