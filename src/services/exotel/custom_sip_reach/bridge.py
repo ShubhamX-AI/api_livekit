@@ -121,7 +121,7 @@ async def run_bridge(
             .with_sip_grants(SIPGrants(admin=True, call=True))
             .to_jwt()
         )
-        await room.connect(LK_URL, token)
+        await asyncio.wait_for(room.connect(LK_URL, token), timeout=15.0)
         logger.info(f"[BRIDGE] LiveKit connected: {room_name}")
         await rtp_bridge.start_inbound(room)
 

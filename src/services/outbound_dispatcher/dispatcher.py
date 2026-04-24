@@ -98,7 +98,11 @@ def release_slot() -> None:
 
 
 async def _monitor_exotel_result(
-    room_name: str, assistant_id: str, result_future: concurrent.futures.Future
+    room_name: str,
+    assistant_id: str,
+    result_future: concurrent.futures.Future,
+    bridge_loop: list,
+    bridge_task: list,
 ) -> None:
     """Monitor the outbound bridge result and update call status accordingly."""
     try:
@@ -107,6 +111,13 @@ async def _monitor_exotel_result(
                 asyncio.wrap_future(result_future), timeout=60.0
             )
         except asyncio.TimeoutError:
+            # Cancel the zombie bridge thread so it releases LiveKit connection + port
+            if bridge_loop and bridge_task:
+                try:
+                    bridge_loop[0].call_soon_threadsafe(bridge_task[0].cancel)
+                    logger.info(f"Bridge task cancelled after timeout | room={room_name}")
+                except Exception as e:
+                    logger.warning(f"Bridge cancel failed | room={room_name}: {e}")
             await livekit_services.update_call_status(
                 room_name=room_name,
                 call_status="timeout",
@@ -220,14 +231,16 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 queue_id=item.queue_id,
             )
             result_future: concurrent.futures.Future = concurrent.futures.Future()
+            _bridge_loop: list = []
+            _bridge_task: list = []
 
-            def _bridge_thread(phone=item.to_number, rm=room_name, cfg=sip_config, fut=result_future):
-                asyncio.run(run_bridge(
-                    phone_number=phone,
-                    room_name=rm,
-                    sip_config=cfg,
-                    result_signal=fut,
-                ))
+            def _bridge_thread(phone=item.to_number, rm=room_name, cfg=sip_config, fut=result_future,
+                               bl=_bridge_loop, bt=_bridge_task):
+                async def _run():
+                    bl.append(asyncio.get_running_loop())
+                    bt.append(asyncio.current_task())
+                    await run_bridge(phone_number=phone, room_name=rm, sip_config=cfg, result_signal=fut)
+                asyncio.run(_run())
 
             threading.Thread(
                 target=_bridge_thread,
@@ -235,7 +248,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 name=f"bridge-out-{item.to_number}",
             ).start()
             asyncio.create_task(
-                _monitor_exotel_result(room_name, item.assistant_id, result_future)
+                _monitor_exotel_result(room_name, item.assistant_id, result_future, _bridge_loop, _bridge_task)
             )
 
         item.status = "dispatched"
