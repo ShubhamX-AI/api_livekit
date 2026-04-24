@@ -280,11 +280,11 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
             pool = get_port_pool()
             bridge_port = pool.acquire()
             bridge_call_id = str(uuid.uuid4())
-            inbound_bye = multiprocessing.Event()
-            register_call_id_with_event(bridge_call_id, inbound_bye)
-            result_queue: multiprocessing.Queue = multiprocessing.Queue()
-
             ctx = multiprocessing.get_context("spawn")
+            inbound_bye = ctx.Event()
+            register_call_id_with_event(bridge_call_id, inbound_bye)
+            result_queue: multiprocessing.Queue = ctx.Queue()
+
             bridge_process = ctx.Process(
                 target=_bridge_subprocess_entry,
                 args=(item.to_number, room_name, sip_config, result_queue,
