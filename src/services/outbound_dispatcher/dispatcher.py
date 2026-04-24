@@ -1,6 +1,6 @@
 import asyncio
-import concurrent.futures
-import threading
+import multiprocessing
+import queue as _stdlib_queue
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -100,24 +100,32 @@ def release_slot() -> None:
 async def _monitor_exotel_result(
     room_name: str,
     assistant_id: str,
-    result_future: concurrent.futures.Future,
-    bridge_loop: list,
-    bridge_task: list,
+    result_queue: multiprocessing.Queue,
+    bridge_process: multiprocessing.Process,
+    port: int,
+    call_id: str,
 ) -> None:
-    """Monitor the outbound bridge result and update call status accordingly."""
+    """Monitor the outbound bridge subprocess result and update call status."""
+    from src.services.exotel.custom_sip_reach.port_pool import get_port_pool
+    from src.services.exotel.custom_sip_reach.inbound_listener import unregister_call_id
+
+    pool = get_port_pool()
+    sip_result = None
+
     try:
-        try:
-            sip_result = await asyncio.wait_for(
-                asyncio.wrap_future(result_future), timeout=60.0
-            )
-        except asyncio.TimeoutError:
-            # Cancel the zombie bridge thread so it releases LiveKit connection + port
-            if bridge_loop and bridge_task:
-                try:
-                    bridge_loop[0].call_soon_threadsafe(bridge_task[0].cancel)
-                    logger.info(f"Bridge task cancelled after timeout | room={room_name}")
-                except Exception as e:
-                    logger.warning(f"Bridge cancel failed | room={room_name}: {e}")
+        # Poll result_queue up to 60s; get_nowait avoids blocking the event loop
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 60.0
+        while loop.time() < deadline:
+            try:
+                sip_result = result_queue.get_nowait()
+                break
+            except _stdlib_queue.Empty:
+                await asyncio.sleep(0.5)
+
+        if sip_result is None:
+            bridge_process.terminate()
+            logger.info(f"Bridge process terminated after timeout | room={room_name}")
             await livekit_services.update_call_status(
                 room_name=room_name,
                 call_status="timeout",
@@ -155,8 +163,6 @@ async def _monitor_exotel_result(
             f"Exotel SIP answered | room={room_name} — status update deferred to agent session"
         )
 
-    except concurrent.futures.CancelledError:
-        logger.warning(f"Exotel result future cancelled | room={room_name}")
     except Exception as e:
         logger.error(f"Exotel monitor crashed | room={room_name}: {e}", exc_info=True)
         try:
@@ -173,11 +179,14 @@ async def _monitor_exotel_result(
         except Exception:
             pass
 
+    finally:
+        pool.release(port)
+        unregister_call_id(call_id)
+        logger.info(f"[MONITOR] Port {port} released, call_id {call_id} unregistered | room={room_name}")
+
 
 async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
     """Perform the actual LiveKit room creation + SIP dispatch for one queued call."""
-    global _dispatching_count
-    _dispatching_count += 1  # reserve slot immediately (released in finally via release_slot)
     try:
         trunk = await OutboundSIP.find_one(
             OutboundSIP.trunk_id == item.trunk_id,
@@ -215,7 +224,9 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
             )
 
         elif item.call_service == "exotel":
-            from src.services.exotel.custom_sip_reach.bridge import run_bridge
+            from src.services.exotel.custom_sip_reach.bridge import _bridge_subprocess_entry
+            from src.services.exotel.custom_sip_reach.port_pool import get_port_pool
+            from src.services.exotel.custom_sip_reach.inbound_listener import register_call_id_with_event
 
             sip_config = trunk.trunk_config
             await livekit_services.initialize_call_record(
@@ -230,28 +241,30 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 platform_number=sip_config.get("exotel_number"),
                 queue_id=item.queue_id,
             )
-            result_future: concurrent.futures.Future = concurrent.futures.Future()
-            _bridge_loop: list = []
-            _bridge_task: list = []
 
-            def _bridge_thread(phone=item.to_number, rm=room_name, cfg=sip_config, fut=result_future,
-                               bl=_bridge_loop, bt=_bridge_task):
-                async def _run():
-                    bl.append(asyncio.get_running_loop())
-                    bt.append(asyncio.current_task())
-                    await run_bridge(phone_number=phone, room_name=rm, sip_config=cfg, result_signal=fut)
-                try:
-                    asyncio.run(_run())
-                except asyncio.CancelledError:
-                    pass  # monitor cancelled on timeout; run_bridge finally block handles cleanup
+            # Pre-allocate resources in parent so monitor can release them
+            # regardless of how the subprocess exits.
+            pool = get_port_pool()
+            bridge_port = pool.acquire()
+            bridge_call_id = str(uuid.uuid4())
+            inbound_bye = multiprocessing.Event()
+            register_call_id_with_event(bridge_call_id, inbound_bye)
+            result_queue: multiprocessing.Queue = multiprocessing.Queue()
 
-            threading.Thread(
-                target=_bridge_thread,
+            ctx = multiprocessing.get_context("spawn")
+            bridge_process = ctx.Process(
+                target=_bridge_subprocess_entry,
+                args=(item.to_number, room_name, sip_config, result_queue,
+                      bridge_port, bridge_call_id, inbound_bye),
                 daemon=True,
                 name=f"bridge-out-{item.to_number}",
-            ).start()
+            )
+            bridge_process.start()
             asyncio.create_task(
-                _monitor_exotel_result(room_name, item.assistant_id, result_future, _bridge_loop, _bridge_task)
+                _monitor_exotel_result(
+                    room_name, item.assistant_id, result_queue,
+                    bridge_process, bridge_port, bridge_call_id,
+                )
             )
 
         item.status = "dispatched"
@@ -309,6 +322,7 @@ async def _process_pending() -> None:
         for item in pending:
             item.status = "dispatching"
             await item.save()
+            _dispatching_count += 1  # reserve before task starts to prevent double-dispatch
             asyncio.create_task(_dispatch_queued_call(item))
 
         logger.info(

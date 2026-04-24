@@ -7,6 +7,8 @@ bridge to tear down the call.
 """
 
 import asyncio
+import multiprocessing
+import multiprocessing.synchronize
 import threading
 
 from .config import EXOTEL_CUSTOMER_SIP_PORT, EXOTEL_SIP_ALLOWED_IPS, INBOUND_SIP_LISTEN
@@ -20,8 +22,10 @@ setup_logging()
 
 _inbound_server: asyncio.AbstractServer | None = None
 _inbound_lock = threading.Lock()
-# threading.Event so bridge threads (each on their own event loop) can poll .is_set()
-_call_registry: dict[str, threading.Event] = {}
+# Values are multiprocessing.Event objects (OS-level shared memory). The parent process sets
+# them here when Exotel sends BYE. Each bridge subprocess receives its own event handle via
+# argument — it does NOT look up this dict. The dict is only used by the inbound listener.
+_call_registry: dict[str, multiprocessing.synchronize.Event] = {}
 _registry_lock = threading.Lock()
 
 
@@ -30,12 +34,22 @@ _registry_lock = threading.Lock()
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def register_call_id(call_id: str) -> threading.Event:
-    """Register a call-ID and return a threading.Event that fires on inbound BYE."""
-    event = threading.Event()
+def register_call_id(call_id: str) -> multiprocessing.synchronize.Event:
+    """Register a call-ID and return a multiprocessing.Event that fires on inbound BYE."""
+    event = multiprocessing.Event()
     with _registry_lock:
         _call_registry[call_id] = event
     return event
+
+
+def register_call_id_with_event(call_id: str, event: multiprocessing.synchronize.Event) -> None:
+    """Register a pre-created multiprocessing.Event for a call-ID.
+
+    Used by the dispatcher when it pre-generates call_id before spawning the bridge
+    subprocess, so the inbound listener can signal the subprocess on BYE.
+    """
+    with _registry_lock:
+        _call_registry[call_id] = event
 
 
 def unregister_call_id(call_id: str):
