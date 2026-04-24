@@ -240,7 +240,10 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                     bl.append(asyncio.get_running_loop())
                     bt.append(asyncio.current_task())
                     await run_bridge(phone_number=phone, room_name=rm, sip_config=cfg, result_signal=fut)
-                asyncio.run(_run())
+                try:
+                    asyncio.run(_run())
+                except asyncio.CancelledError:
+                    pass  # monitor cancelled on timeout; run_bridge finally block handles cleanup
 
             threading.Thread(
                 target=_bridge_thread,
