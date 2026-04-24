@@ -333,6 +333,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
 
 async def _process_pending() -> None:
     """Check queue and dispatch as many calls as current capacity allows."""
+    global _dispatching_count
     try:
         active = await _get_active_session_count()
         slots = settings.MAX_CONCURRENT_JOBS - active
