@@ -338,7 +338,7 @@ async def entrypoint(ctx: JobContext):
             input_audio_noise_reduction="near_field",
             turn_detection=TurnDetection(
                 type="semantic_vad",
-                eagerness="low",
+                eagerness="auto",
                 create_response=True,
                 interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
@@ -370,7 +370,7 @@ async def entrypoint(ctx: JobContext):
                 turn_detection="realtime_llm",
                 endpointing={
                     "mode": "dynamic",
-                    "min_delay": 0.4,
+                    "min_delay": 0.5,
                     "max_delay": 3.0,
                 },
                 interruption={

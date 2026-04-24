@@ -25,6 +25,7 @@ from .config import (
     LK_URL,
     NO_RTP_AFTER_ANSWER_SECONDS,
     RTP_SILENCE_TIMEOUT_SECONDS,
+    SAMPLE_RATE_LK,
     validate_config,
 )
 from .inbound_listener import (
@@ -126,11 +127,19 @@ async def run_bridge(
 
         sip_client.on_hold_change = lambda h: asyncio.create_task(_on_hold_change(h))
 
-        # Tracks arriving before SIP 200 OK are queued; those arriving after are
-        # wired directly.  This prevents pre-answer agent audio from being
-        # buffered and dumped on pickup.
-        pending_tracks: list = []
+        # Tracks arriving before SIP 200 OK: create AudioStream immediately and
+        # drain frames to /dev/null. This prevents the LiveKit FFI from buffering
+        # pre-answer agent audio. After 200 OK, close the drain stream and open
+        # a fresh one — fresh stream starts with an empty queue.
+        pending_tracks: list = []  # entries: (track, drain_stream, drain_task)
         sip_answered = False
+
+        async def _drain(stream: rtc.AudioStream):
+            try:
+                async for _ in stream:
+                    pass
+            except asyncio.CancelledError:
+                pass
 
         @room.on("track_subscribed")
         def on_track(track, publication, participant):
@@ -145,9 +154,13 @@ async def run_bridge(
                 else:
                     logger.info(
                         f"[BRIDGE] Audio track from {participant.identity} "
-                        f"(source={publication.source}) — queued (SIP not yet answered)"
+                        f"(source={publication.source}) — draining pre-answer frames"
                     )
-                    pending_tracks.append(track)
+                    drain_stream = rtc.AudioStream(
+                        track, sample_rate=SAMPLE_RATE_LK, num_channels=1
+                    )
+                    drain_task = asyncio.create_task(_drain(drain_stream))
+                    pending_tracks.append((track, drain_stream, drain_task))
 
         token = (
             AccessToken(LK_API_KEY, LK_API_SECRET)
@@ -181,11 +194,18 @@ async def run_bridge(
             "room_name": room_name,
         })
 
-        # Open RTP path; wire any tracks that arrived during ringing
+        # Open RTP path; swap drain streams for live mixer streams.
+        # Cancel drain → aclose drain stream (drops FFI queue) → add fresh stream.
         rtp_bridge.set_remote_endpoint(res["remote_ip"], res["remote_port"], res["pt"])
         sip_answered = True
-        for track in pending_tracks:
-            rtp_bridge.add_outbound_track(track)
+        for track, drain_stream, drain_task in pending_tracks:
+            drain_task.cancel()
+            try:
+                await drain_task            # wait for actual exit before touching stream
+            except asyncio.CancelledError:
+                pass
+            await drain_stream.aclose()     # flush FFI ref, drop any residual frames
+            rtp_bridge.add_outbound_track(track)  # fresh stream, no history
         if pending_tracks:
             rtp_bridge.start_outbound_mixer()
             logger.info(f"[BRIDGE] Mixer started with {len(pending_tracks)} queued track(s)")
