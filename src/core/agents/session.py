@@ -562,13 +562,13 @@ async def entrypoint(ctx: JobContext):
                     logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
                     answered = await gate.wait_until_ready(timeout=60.0)
                     if answered:
-                        recording_ready = await recorder.ensure_started(timeout=8.0)
+                        recording_ready = await recorder.ensure_started(timeout=12.0)
                         if not recording_ready:
                             logger.warning(
                                 "[EXOTEL] Recording did not become ready before first reply; proceeding"
                             )
-                        logger.info("[EXOTEL] call_answered confirmed — sleeping 0.5s for RTP stabilization")
-                        await asyncio.sleep(0.5)
+                        logger.info("[EXOTEL] call_answered confirmed — sleeping 2s for RTP + egress warmup")
+                        await asyncio.sleep(2.0)
                     else:
                         logger.warning("[EXOTEL] Timed out waiting for call_answered — skipping start instruction")
 
