@@ -129,6 +129,19 @@ async def _monitor_exotel_result(
     Port and call_id are released in finally, guaranteeing cleanup regardless
     of how the subprocess exits (normal end, crash, SIGTERM, or OOM).
     """
+    async def _safe_finalize(reason: str) -> None:
+        try:
+            await livekit_services.update_call_status(
+                room_name=room_name,
+                call_status="failed",
+                call_status_reason=reason,
+                ended_at=datetime.now(timezone.utc),
+                call_duration_minutes=0,
+            )
+            await livekit_services.send_end_call_webhook(room_name=room_name, assistant_id=assistant_id)
+        except Exception:
+            pass
+
     from src.services.exotel.custom_sip_reach.port_pool import get_port_pool
     from src.services.exotel.custom_sip_reach.inbound_listener import unregister_call_id
 
@@ -192,22 +205,18 @@ async def _monitor_exotel_result(
             await asyncio.sleep(2.0)
         logger.info(f"Bridge process exited | room={room_name}")
 
+    except asyncio.CancelledError:
+        # Server shutting down — task cancelled. Write terminal status before re-raising
+        # so the call doesn't stay stuck in 'initiated'/'answered' across restart.
+        logger.warning(f"Monitor task cancelled (server shutdown) | room={room_name}")
+        _terminate_bridge(bridge_process)
+        await _safe_finalize("Server shutdown during active call")
+        raise
+
     except Exception as e:
         logger.error(f"Exotel monitor crashed | room={room_name}: {e}", exc_info=True)
         _terminate_bridge(bridge_process)
-        try:
-            await livekit_services.update_call_status(
-                room_name=room_name,
-                call_status="failed",
-                call_status_reason=f"Monitor error: {e}",
-                ended_at=datetime.now(timezone.utc),
-                call_duration_minutes=0,
-            )
-            await livekit_services.send_end_call_webhook(
-                room_name=room_name, assistant_id=assistant_id
-            )
-        except Exception:
-            pass
+        await _safe_finalize(f"Monitor error: {e}")
 
     finally:
         # Reap zombie before releasing port — prevents the OS from keeping the

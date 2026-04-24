@@ -68,9 +68,11 @@ class RTPMediaBridge:
         )
 
         self._remote_addr: tuple[str, int] | None = None
-        # Outbound send is gated on this flag, not _remote_addr.
-        # _remote_addr can be auto-learned from early-media RTP during ringing,
-        # but we must NOT send agent audio until SIP 200 OK has arrived.
+        # Gates both directions until SIP 200 OK arrives.
+        # Outbound: blocks send_to_rtp / _send_frame.
+        # Inbound: _recv_loop drops early-media packets so the agent hears nothing
+        # during ringing (_remote_addr can be auto-learned before 200 OK, so we
+        # cannot gate on _remote_addr alone).
         self._tx_ready = False
         self._running = False
         self.negotiated_pt = PCMA_PAYLOAD_TYPE
@@ -211,6 +213,10 @@ class RTPMediaBridge:
 
             self._rx += 1
             self._last_rx_ts = time.time()
+
+            if not self._tx_ready:
+                continue  # early-media: count packet but don't forward to agent
+
             pt = data[1] & 0x7F
             payload = data[RTP_HEADER_SIZE:]
 
