@@ -97,6 +97,22 @@ def release_slot() -> None:
         _dispatching_count -= 1
 
 
+def _terminate_bridge(process: multiprocessing.Process) -> None:
+    """Send SIGTERM to bridge subprocess; ignore if already dead."""
+    try:
+        process.terminate()
+    except OSError:
+        pass  # process already exited
+
+
+def _reap_bridge(process: multiprocessing.Process) -> None:
+    """Join (reap) bridge subprocess to prevent zombie accumulation."""
+    try:
+        process.join(timeout=3)
+    except Exception:
+        pass
+
+
 async def _monitor_exotel_result(
     room_name: str,
     assistant_id: str,
@@ -105,7 +121,14 @@ async def _monitor_exotel_result(
     port: int,
     call_id: str,
 ) -> None:
-    """Monitor the outbound bridge subprocess result and update call status."""
+    """Monitor the outbound bridge subprocess for its full lifetime.
+
+    Phase 1 — SIP setup (max 60 s): poll result_queue for INVITE outcome.
+    Phase 2 — Active call: wait for process to exit before releasing port.
+
+    Port and call_id are released in finally, guaranteeing cleanup regardless
+    of how the subprocess exits (normal end, crash, SIGTERM, or OOM).
+    """
     from src.services.exotel.custom_sip_reach.port_pool import get_port_pool
     from src.services.exotel.custom_sip_reach.inbound_listener import unregister_call_id
 
@@ -113,7 +136,7 @@ async def _monitor_exotel_result(
     sip_result = None
 
     try:
-        # Poll result_queue up to 60s; get_nowait avoids blocking the event loop
+        # ── Phase 1: wait for SIP setup result ──────────────────────────────
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 60.0
         while loop.time() < deadline:
@@ -124,7 +147,7 @@ async def _monitor_exotel_result(
                 await asyncio.sleep(0.5)
 
         if sip_result is None:
-            bridge_process.terminate()
+            _terminate_bridge(bridge_process)
             logger.info(f"Bridge process terminated after timeout | room={room_name}")
             await livekit_services.update_call_status(
                 room_name=room_name,
@@ -159,12 +182,19 @@ async def _monitor_exotel_result(
             )
             return
 
+        # ── Phase 2: SIP answered — wait for full call to end ────────────────
+        # Port must NOT be released here; subprocess still owns the UDP socket.
+        # Poll is_alive() so the event loop stays free during the call duration.
         logger.info(
-            f"Exotel SIP answered | room={room_name} — status update deferred to agent session"
+            f"Exotel SIP answered | room={room_name} — waiting for bridge process to exit"
         )
+        while bridge_process.is_alive():
+            await asyncio.sleep(2.0)
+        logger.info(f"Bridge process exited | room={room_name}")
 
     except Exception as e:
         logger.error(f"Exotel monitor crashed | room={room_name}: {e}", exc_info=True)
+        _terminate_bridge(bridge_process)
         try:
             await livekit_services.update_call_status(
                 room_name=room_name,
@@ -180,6 +210,9 @@ async def _monitor_exotel_result(
             pass
 
     finally:
+        # Reap zombie before releasing port — prevents the OS from keeping the
+        # socket FD open in a zombie process while a new call tries to bind it.
+        _reap_bridge(bridge_process)
         pool.release(port)
         unregister_call_id(call_id)
         logger.info(f"[MONITOR] Port {port} released, call_id {call_id} unregistered | room={room_name}")
