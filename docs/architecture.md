@@ -124,7 +124,42 @@ graph LR
 
 For Exotel custom SIP reach, a dedicated bridge handles SIP signaling, RTP relay, and LiveKit room connectivity.
 
-Each concurrent call runs in its own OS thread with a dedicated `asyncio.run()` event loop. This provides full audio-processing isolation — inbound RTP decode (`audioop` resampling) and outbound agent audio consumption (`AudioStream` draining) never compete with other calls for scheduling. The design supports 100–200 concurrent calls without audio queue overflow.
+### Bridge Concurrency Model
+
+#### v1 — Thread-per-bridge (historical)
+
+Each concurrent call ran in its own OS thread with a dedicated `asyncio.run()` event loop. This isolated asyncio scheduling across calls but did **not** isolate the native audio queue.
+
+The LiveKit Python SDK uses a process-wide Rust FFI singleton (`livekit-ffi`) with a single internal frame queue. All `rtc.AudioStream` objects in all threads competed for the same native queue. Under load (>5–8 concurrent calls), the queue saturated, causing:
+
+- `native audio stream queue overflow; dropped N queued frames` warnings
+- `signal client closed: "ping timeout"` reconnect cycles
+- `signal_event taking too much time` stalls
+- `Bridge task cancelled after timeout` / `TX=0` on outbound calls
+
+```
+FastAPI process (single PID)
+├── Thread: bridge-out-A  → rtc.AudioStream ──┐
+├── Thread: bridge-out-B  → rtc.AudioStream ──┤── shared FFI queue ← OVERFLOW at scale
+└── Thread: bridge-out-C  → rtc.AudioStream ──┘
+```
+
+#### v2 — Process-per-bridge (current)
+
+Each outbound bridge runs in its own **OS process** spawned with `multiprocessing.get_context("spawn")`. Each process loads its own copy of the Rust FFI shared library — a completely separate native queue with no contention.
+
+```
+FastAPI process (PID 1234)
+├── Process: bridge-out-A (PID 1235) → rtc.AudioStream → own FFI queue ✓
+├── Process: bridge-out-B (PID 1236) → rtc.AudioStream → own FFI queue ✓
+└── Process: bridge-out-C (PID 1237) → rtc.AudioStream → own FFI queue ✓
+```
+
+**Memory profile**: `spawn` starts a fresh Python interpreter per process (~30–50 MB new pages each). At 100 concurrent outbound calls, total bridge memory is ~3–5 GB. This is a known trade-off vs. the thread model's near-zero overhead.
+
+**Why `spawn` not `fork`**: forking from inside an asyncio event loop is unsafe (inherited locks, stale loop state). `spawn` starts a clean interpreter with no inherited asyncio state. All arguments passed to the subprocess must be picklable (`str`, `dict`, `multiprocessing.Queue`, `multiprocessing.synchronize.Event` all are).
+
+**Inbound bridges** still use `threading.Thread` (lower concurrent volume; typically 1–5 simultaneous inbound calls). The same FFI pressure does not arise at that scale.
 
 ```mermaid
 graph TD
@@ -171,7 +206,16 @@ graph TD
 
 - `POST /call/outbound` validates the request, inserts to `outbound_call_queue`, and returns `202 Accepted` with a `queue_id`. No LiveKit room is created at this point.
 - The event-driven dispatcher wakes immediately on enqueue and creates the LiveKit room + starts the SIP bridge when a capacity slot is available.
-- SIP setup outcome (`200 OK` / failure / timeout) is resolved out-of-band via a `concurrent.futures.Future` shared between the bridge thread and the dispatcher's monitor task; the caller can poll `GET /call/queue/{queue_id}` for status.
+- Before spawning the bridge subprocess, the dispatcher pre-allocates three resources in the parent process:
+    - **RTP port** — acquired from `PortPool`; subprocess uses the number directly; parent monitor releases it on exit.
+    - **`call_id`** — UUID pre-generated so the parent can register the inbound BYE event before the subprocess starts.
+    - **`inbound_bye` event** — `multiprocessing.synchronize.Event` (OS shared memory); registered with the inbound SIP listener in the parent; subprocess polls it to detect BYE arriving on a new TCP connection.
+- SIP setup outcome (`200 OK` / failure / timeout) is resolved out-of-band via a `multiprocessing.Queue` written by the bridge subprocess and polled every 500 ms by the dispatcher's monitor coroutine; the caller can poll `GET /call/queue/{queue_id}` for status.
+
+    !!! note "Historical: thread-based IPC"
+        In v1 (thread-per-bridge), a `concurrent.futures.Future` was shared in-memory between the bridge thread and the monitor task. The monitor used `asyncio.wrap_future()` to await it. This worked because threads share the same process address space. With subprocess isolation (v2), `Future` cannot cross process boundaries; `multiprocessing.Queue` is used instead.
+
+- On SIP setup timeout, the dispatcher calls `bridge_process.terminate()` (SIGTERM). The parent monitor's `finally` block always releases the pre-allocated port and unregisters the `call_id` regardless of how the subprocess exits.
 - Agent speech and recording are gated by bridge `call_answered` signaling to avoid recording before answer.
 - After readiness is confirmed, start-instruction delivery applies to both runtime modes (`pipeline` and `realtime`).
 - Terminal status finalization and webhook emission are handled through a single lifecycle path to reduce duplicate or conflicting terminal updates.
@@ -210,8 +254,11 @@ sequenceDiagram
         Disp->>LK: Create agent dispatch
         Disp->>DB: Insert CallRecord (status=initiated)
         alt Exotel
-            Disp->>SIP: run_bridge (dedicated OS thread + asyncio.run)
-            SIP-->>Disp: concurrent.futures.Future resolved (INVITE answered or failed)
+            Disp->>Disp: Pre-allocate port + call_id + inbound_bye Event
+            Disp->>SIP: spawn subprocess → _bridge_subprocess_entry
+            Note over Disp,SIP: Each subprocess owns its own FFI singleton (no shared queue)
+            SIP-->>Disp: multiprocessing.Queue.put() (INVITE answered or failed)
+            Note over Disp: Monitor polls Queue every 500ms; terminates process on 60s timeout
         else Twilio
             Disp->>LK: create_sip_participant
         end
@@ -291,7 +338,26 @@ Both Change Stream watchers auto-restart on error with 5s backoff. No new infras
 src/services/outbound_dispatcher/
 ├── __init__.py      # re-exports outbound_dispatcher_loop
 └── dispatcher.py    # constants, capacity helpers, Change Stream watchers, dispatch logic, loop
+
+src/services/exotel/custom_sip_reach/
+├── bridge.py              # run_bridge() coroutine + _bridge_subprocess_entry() (spawn target)
+├── inbound_bridge.py      # inbound SIP → LiveKit bridge (thread-per-call, low volume)
+├── inbound_listener.py    # TCP SIP listener; BYE/OPTIONS handler; call-id → Event registry
+├── rtp_bridge.py          # UDP RTP ↔ LiveKit AudioStream/AudioSource
+├── sip_client.py          # SIP INVITE/BYE/auth over TCP
+├── port_pool.py           # Thread-safe UDP port allocator
+└── config.py              # Env-var constants
 ```
+
+**Key IPC boundary (v2):**
+
+| Resource | Owner | How shared |
+|---|---|---|
+| RTP port number | Parent (PortPool) | Passed as `int` arg to subprocess |
+| `call_id` | Parent (pre-generated UUID) | Passed as `str` arg; used in SipClient + inbound listener |
+| `inbound_bye` | Parent (registered in listener) | `multiprocessing.synchronize.Event` — OS semaphore, visible across processes |
+| SIP result | Subprocess | `multiprocessing.Queue.put()` → parent monitor polls |
+| Port release | Parent monitor `finally` | Always runs regardless of subprocess exit reason |
 
 Consumers import from the package root:
 

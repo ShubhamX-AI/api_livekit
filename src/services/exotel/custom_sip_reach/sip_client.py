@@ -73,6 +73,7 @@ class ExotelSipClient:
         from_domain: str = EXOTEL_FROM_DOMAIN,
         username: str = EXOTEL_AUTH_USERNAME,
         password: str = EXOTEL_AUTH_PASSWORD,
+        call_id: str | None = None,
     ):
         self.callee = format_exotel_number(callee)
         self.rtp_port = rtp_port
@@ -85,7 +86,7 @@ class ExotelSipClient:
 
         self._branch = f"z9hG4bK-{uuid.uuid4().hex}"
         self._tag = f"trunk{random.randint(10000, 99999)}"
-        self._call_id = str(uuid.uuid4())
+        self._call_id = call_id or str(uuid.uuid4())
         self._cseq = 1
         self._to_tag = None
         self._remote_contact_uri = None
