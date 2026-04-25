@@ -205,6 +205,18 @@ async def _monitor_exotel_result(
             await asyncio.sleep(2.0)
         logger.info(f"Bridge process exited | room={room_name}")
 
+        # Safety net: if session.py's end_call failed (DB error, task crash),
+        # the record stays "answered" and blocks new calls. Force it to "completed"
+        # so the dispatcher slot frees. Webhook is session.py's responsibility — not sent here.
+        try:
+            await livekit_services.update_call_status(
+                room_name=room_name,
+                call_status="completed",
+                ended_at=datetime.now(timezone.utc),
+            )
+        except Exception as e:
+            logger.error(f"Failed to finalize completed call | room={room_name}: {e}")
+
     except asyncio.CancelledError:
         # Server shutting down — task cancelled. Write terminal status before re-raising
         # so the call doesn't stay stuck in 'initiated'/'answered' across restart.
