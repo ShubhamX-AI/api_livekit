@@ -135,6 +135,7 @@ async def entrypoint(ctx: JobContext):
     if render_data:
         logger.info("Successfully processed metadata placeholders in assistant instructions")
 
+
     interaction_config = assistant.assistant_interaction_config
     # Filler words require external TTS (session.say), disabled in realtime mode
     filler_words_enabled = bool(interaction_config.filler_words) and not is_realtime
