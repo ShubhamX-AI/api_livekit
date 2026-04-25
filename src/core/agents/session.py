@@ -257,8 +257,14 @@ async def entrypoint(ctx: JobContext):
         transcript_worker.cancel()
         await asyncio.gather(transcript_worker, return_exceptions=True)
         await _persist_usage()
-        await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
-        await livekit_services.delete_room(room_name=ctx.room.name)
+        try:
+            await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
+        except Exception as e:
+            logger.error(f"end_call failed — call may stay stuck in 'answered' | room={ctx.room.name}: {e}", exc_info=True)
+        try:
+            await livekit_services.delete_room(room_name=ctx.room.name)
+        except Exception as e:
+            logger.error(f"delete_room failed | room={ctx.room.name}: {e}")
 
     # Custom end_call tool — LLM speaks goodbye first, tool waits for playout before stopping recording
     if getattr(assistant, "assistant_end_call_enabled", False):
