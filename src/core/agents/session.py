@@ -596,18 +596,21 @@ async def entrypoint(ctx: JobContext):
                             logger.error("Realtime provider not supported")
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
-                        # RealtimeModel with capabilities.turn_detection=True silently resets
-                        # allow_interruptions=False to NOT_GIVEN in _generate_reply. The SpeechHandle
-                        # then falls back to activity.allow_interruptions → _agent._allow_interruptions.
-                        # Setting it here ensures the first message's SpeechHandle is truly uninterruptible.
-                        # NOTE: _allow_interruptions is a private library attr — verify on livekit-agents upgrades.
                         allow_int = getattr(interaction_config, "allow_interruptions", False)
-                        if not allow_int:
-                            agent_instance._allow_interruptions = False
+                        _saved_td = None
                         try:
+                            if not allow_int:
+                                agent_instance._allow_interruptions = False
+                            # Disable server-side VAD during first speech — pre-call RTP noise
+                            # triggers input_speech_started which crashes the uninterruptible SpeechHandle.
+                            if not allow_int and isinstance(llm, realtime.RealtimeModel):
+                                _saved_td = llm._opts.turn_detection
+                                llm.update_options(turn_detection=None)
                             await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
                         finally:
                             agent_instance._allow_interruptions = NOT_GIVEN
+                            if _saved_td is not None:
+                                llm.update_options(turn_detection=_saved_td)
                     if silence_watchdog:
                         silence_watchdog.on_assistant_message(start_instruction)
                     logger.info("Start instruction sent successfully")
