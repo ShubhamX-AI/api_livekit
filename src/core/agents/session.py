@@ -345,7 +345,7 @@ async def entrypoint(ctx: JobContext):
             input_audio_noise_reduction="near_field",
             turn_detection=TurnDetection(
                 type="semantic_vad",
-                eagerness="auto",
+                eagerness="high",
                 create_response=True,
                 interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
@@ -372,20 +372,20 @@ async def entrypoint(ctx: JobContext):
             tts=tts,
             preemptive_generation=True,
             use_tts_aligned_transcript=True,
-            aec_warmup_duration=0.8,  # seconds
+            aec_warmup_duration=1.0,  # seconds
             turn_handling=TurnHandlingOptions(
                 turn_detection="realtime_llm",
                 endpointing={
                     "mode": "dynamic",
-                    "min_delay": 0.5,
-                    "max_delay": 3.0,
+                    "min_delay": 0.3,
+                    "max_delay": 1.5,
                 },
                 interruption={
                     "mode": "adaptive",
-                    "min_duration": 1.5,
-                    "min_words": 4,
+                    "min_duration": 0.5,
+                    "min_words": 0,
                     "discard_audio_if_uninterruptible": True,
-                    "false_interruption_timeout": 3.0,
+                    "false_interruption_timeout": 0.8,
                     "resume_false_interruption": True,
                 },
         )
@@ -596,18 +596,21 @@ async def entrypoint(ctx: JobContext):
                             logger.error("Realtime provider not supported")
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
-                        # RealtimeModel with capabilities.turn_detection=True silently resets
-                        # allow_interruptions=False to NOT_GIVEN in _generate_reply. The SpeechHandle
-                        # then falls back to activity.allow_interruptions → _agent._allow_interruptions.
-                        # Setting it here ensures the first message's SpeechHandle is truly uninterruptible.
-                        # NOTE: _allow_interruptions is a private library attr — verify on livekit-agents upgrades.
                         allow_int = getattr(interaction_config, "allow_interruptions", False)
-                        if not allow_int:
-                            agent_instance._allow_interruptions = False
+                        _saved_td = None
                         try:
+                            if not allow_int:
+                                agent_instance._allow_interruptions = False
+                            # Disable server-side VAD during first speech — pre-call RTP noise
+                            # triggers input_speech_started which crashes the uninterruptible SpeechHandle.
+                            if not allow_int and isinstance(llm, realtime.RealtimeModel):
+                                _saved_td = llm._opts.turn_detection
+                                llm.update_options(turn_detection=None)
                             await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
                         finally:
                             agent_instance._allow_interruptions = NOT_GIVEN
+                            if _saved_td is not None:
+                                llm.update_options(turn_detection=_saved_td)
                     if silence_watchdog:
                         silence_watchdog.on_assistant_message(start_instruction)
                     logger.info("Start instruction sent successfully")
