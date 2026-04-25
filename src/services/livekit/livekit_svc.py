@@ -371,6 +371,21 @@ class LiveKitService:
                 "timeout",
                 "failed",
             }:
+                # Dispatcher safety net may have set status="completed" before session.py ran
+                # end_call(), skipping duration. Patch it here without re-sending the webhook.
+                if call_record.call_duration_minutes is None:
+                    ended_at = call_record.ended_at or datetime.now(timezone.utc)
+                    duration_start = call_record.answered_at or call_record.started_at
+                    if duration_start is None:
+                        logger.warning(f"Cannot patch duration for room {room_name}: no start time on record")
+                    else:
+                        call_record.call_duration_minutes = (ended_at - duration_start).total_seconds() / 60
+                        call_record.billable_duration_minutes = calculate_billable_duration_minutes(
+                            call_status=call_record.call_status,
+                            call_duration_minutes=call_record.call_duration_minutes,
+                        )
+                        await call_record.save()
+                        logger.info(f"Patched missing duration for room: {room_name} | {call_record.call_duration_minutes:.2f}min")
                 logger.info(
                     f"Call already ended with status={call_record.call_status} for room: {room_name}; skipping duplicate webhook"
                 )
