@@ -345,7 +345,7 @@ async def entrypoint(ctx: JobContext):
             input_audio_noise_reduction="near_field",
             turn_detection=TurnDetection(
                 type="semantic_vad",
-                eagerness="auto",
+                eagerness="high",
                 create_response=True,
                 interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
@@ -372,20 +372,20 @@ async def entrypoint(ctx: JobContext):
             tts=tts,
             preemptive_generation=True,
             use_tts_aligned_transcript=True,
-            aec_warmup_duration=0.8,  # seconds
+            aec_warmup_duration=1.0,  # seconds
             turn_handling=TurnHandlingOptions(
                 turn_detection="realtime_llm",
                 endpointing={
                     "mode": "dynamic",
-                    "min_delay": 0.5,
-                    "max_delay": 3.0,
+                    "min_delay": 0.3,
+                    "max_delay": 1.5,
                 },
                 interruption={
                     "mode": "adaptive",
-                    "min_duration": 1.5,
-                    "min_words": 4,
+                    "min_duration": 0.5,
+                    "min_words": 0,
                     "discard_audio_if_uninterruptible": True,
-                    "false_interruption_timeout": 3.0,
+                    "false_interruption_timeout": 0.8,
                     "resume_false_interruption": True,
                 },
         )
