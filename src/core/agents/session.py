@@ -566,7 +566,18 @@ async def entrypoint(ctx: JobContext):
     if should_speak_first:
         start_instruction = agent_instance.start_instruction
         if start_instruction:
+            allow_int = getattr(interaction_config, "allow_interruptions", False)
+            _saved_td = None
+            should_send_instruction = True
             try:
+                # Disable server-side VAD before the Exotel gate wait, not just before generate_reply.
+                # Pre-answer RTP audio (183, ring tone) during the 60s wait triggers the framework's
+                # own generate_reply, which races with ours and logs spurious timeouts. Each call has
+                # its own llm instance so this is safe under concurrency.
+                if is_exotel_bridge and not allow_int and isinstance(llm, realtime.RealtimeModel):
+                    _saved_td = llm._opts.turn_detection
+                    llm.update_options(turn_detection=None)
+
                 if is_exotel_bridge:
                     logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
                     answered = await gate.wait_until_ready(timeout=60.0)
@@ -580,8 +591,9 @@ async def entrypoint(ctx: JobContext):
                         await asyncio.sleep(2.0)
                     else:
                         logger.warning("[EXOTEL] Timed out waiting for call_answered — skipping start instruction")
+                        should_send_instruction = False
 
-                if gate.is_active:
+                if should_send_instruction:
                     if is_realtime:
                         logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input | provider = %s", realtime_provider)
 
@@ -596,26 +608,25 @@ async def entrypoint(ctx: JobContext):
                             logger.error("Realtime provider not supported")
                     else:
                         logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
-                        allow_int = getattr(interaction_config, "allow_interruptions", False)
-                        _saved_td = None
                         try:
                             if not allow_int:
                                 agent_instance._allow_interruptions = False
-                            # Disable server-side VAD during first speech — pre-call RTP noise
-                            # triggers input_speech_started which crashes the uninterruptible SpeechHandle.
-                            if not allow_int and isinstance(llm, realtime.RealtimeModel):
-                                _saved_td = llm._opts.turn_detection
+                            # For non-Exotel pipeline calls: disable VAD here (Exotel already did it above).
+                            if not allow_int and not is_exotel_bridge and isinstance(llm, realtime.RealtimeModel):
+                                if _saved_td is None:
+                                    _saved_td = llm._opts.turn_detection
                                 llm.update_options(turn_detection=None)
                             await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
                         finally:
                             agent_instance._allow_interruptions = NOT_GIVEN
-                            if _saved_td is not None:
-                                llm.update_options(turn_detection=_saved_td)
                     if silence_watchdog:
                         silence_watchdog.on_assistant_message(start_instruction)
                     logger.info("Start instruction sent successfully")
             except Exception as e:
                 logger.error(f"Failed to send start instruction: {e}", exc_info=True)
+            finally:
+                if _saved_td is not None:
+                    llm.update_options(turn_detection=_saved_td)
     else:
         logger.info(
             "assistant_speaks_first=False — skipping start instruction; "
