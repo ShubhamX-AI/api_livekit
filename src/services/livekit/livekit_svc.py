@@ -432,6 +432,12 @@ class LiveKitService:
         except Exception as e:
             logger.warning(f"Failed to mute room audio inputs: {e}")
 
+    async def room_exists(self, room_name: str) -> bool:
+        """Return True if the LiveKit room is still active."""
+        async with self.get_livekit_api() as lkapi:
+            result = await lkapi.room.list_rooms(api.ListRoomsRequest(names=[room_name]))
+            return len(result.rooms) > 0
+
     async def delete_room(self, room_name: str):
         """Delete a LiveKit room, terminating all SIP connections and participants."""
         try:

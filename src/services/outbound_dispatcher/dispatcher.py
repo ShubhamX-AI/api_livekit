@@ -18,6 +18,8 @@ STUCK_DISPATCHING_MINUTES = 5
 
 MAX_RETRIES = 3           # permanent failure after this many attempts
 
+ORPHAN_REAPER_INTERVAL_SECONDS = 30 * 60  # how often the orphan reaper sweeps
+
 livekit_services = LiveKitService()
 
 _new_call_event = asyncio.Event()
@@ -46,6 +48,39 @@ async def _fail_all_active_calls() -> None:
         logger.warning(
             f"Startup cleanup: marked {len(stale)} call record(s) as failed"
         )
+
+
+async def _reap_orphaned_calls() -> None:
+    """Mark initiated/answered call records as failed when their LiveKit room no longer exists.
+
+    Catches all orphan paths: agent crash, Twilio with no safety net, web token
+    issued but client never joined, inbound bridge died without calling end_call().
+    Runs every 15 minutes. Skips records whose room is still alive (long calls safe).
+    """
+    stale = await CallRecord.find(
+        In(CallRecord.call_status, ["initiated", "answered"]),
+    ).to_list()
+    if not stale:
+        return
+
+    reaped = 0
+    for record in stale:
+        try:
+            exists = await livekit_services.room_exists(record.room_name)
+        except Exception as e:
+            logger.warning(f"Reaper: could not check room {record.room_name}: {e}")
+            continue
+        if not exists:
+            record.call_status = "failed"
+            record.call_status_reason = "Orphaned: LiveKit room no longer exists"
+            if record.ended_at is None:
+                record.ended_at = datetime.now(timezone.utc)
+            await record.save()
+            reaped += 1
+            logger.warning(f"Reaper: marked orphaned call failed | room={record.room_name}")
+
+    if reaped:
+        logger.warning(f"Reaper: cleaned up {reaped} orphaned call record(s)")
 
 
 async def _recover_stuck_dispatching() -> None:
@@ -428,6 +463,16 @@ async def _watch_for_call_completions() -> None:
             await asyncio.sleep(5)
 
 
+async def _orphan_reaper_loop() -> None:
+    """Run _reap_orphaned_calls() on a fixed interval forever."""
+    while True:
+        await asyncio.sleep(ORPHAN_REAPER_INTERVAL_SECONDS)
+        try:
+            await _reap_orphaned_calls()
+        except Exception as e:
+            logger.error(f"Orphan reaper error: {e}", exc_info=True)
+
+
 async def outbound_dispatcher_loop() -> None:
     """Event-driven dispatcher: wakes instantly when a call is enqueued or completes.
 
@@ -440,6 +485,7 @@ async def outbound_dispatcher_loop() -> None:
 
     asyncio.create_task(_watch_for_new_calls())
     asyncio.create_task(_watch_for_call_completions())
+    asyncio.create_task(_orphan_reaper_loop())
 
     while True:
         try:
