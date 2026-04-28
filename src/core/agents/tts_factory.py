@@ -36,7 +36,7 @@ def create_tts(assistant):
         return sarvam.TTS(
             model="bulbul:v3",
             pace=1.1,
-            speech_sample_rate=16000,
+            speech_sample_rate=24000,
             target_language_code=tts_config.get("target_language_code", "en-IN"),
             speaker=speaker,
             api_key=api_key,
