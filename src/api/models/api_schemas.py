@@ -205,9 +205,9 @@ class UpdateAssistant(BaseModel):
     assistant_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant's name (optional)")
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
-    assistant_llm_mode: Optional[Literal["pipeline", "realtime"]] = Field(None, description="LLM pipeline mode")
-    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. In pipeline mode only api_key is used; in realtime mode provider/model/voice/api_key are supported.",)
-    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (optional)")
+    assistant_llm_mode: Optional[Literal["pipeline", "realtime"]] = Field(None, description="LLM pipeline mode. When switching to 'pipeline', any stored realtime llm_config is cleared automatically unless you provide a new one.")
+    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. In pipeline mode only api_key is used (overrides system OPENAI_API_KEY); in realtime mode provider/model/voice/api_key are supported.")
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider. Required when switching to pipeline mode only if no TTS config is already stored on the assistant.")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
     assistant_interaction_config: Optional[UpdateAssistantInteractionConfigSchema] = Field(None, description="Update interaction settings")
@@ -259,11 +259,6 @@ class UpdateAssistant(BaseModel):
         if self.assistant_llm_mode == "realtime" and not self.assistant_llm_config:
             raise ValueError(
                 "assistant_llm_config is required when switching to realtime mode."
-            )
-        # Switching to pipeline requires TTS fields
-        if self.assistant_llm_mode == "pipeline" and not self.assistant_tts_model:
-            raise ValueError(
-                "assistant_tts_model and assistant_tts_config are required when switching to pipeline mode."
             )
         return self
 
