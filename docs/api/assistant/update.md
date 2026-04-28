@@ -32,8 +32,9 @@ Update an existing assistant. Only send fields you want to change.
 
 ## LLM Config Rules
 
-- In `pipeline` mode, `assistant_llm_config` is optional.
-- In `pipeline` mode, only `assistant_llm_config.api_key` is used. It overrides the system `OPENAI_API_KEY`.
+- In `pipeline` mode, `assistant_llm_config` is optional. Only `api_key` is used; `provider`, `model`, and `voice` are ignored.
+- In `pipeline` mode, `assistant_llm_config.api_key` overrides the system `OPENAI_API_KEY`. Omit `assistant_llm_config` entirely to use the system key.
+- You can update `assistant_llm_config` alone (without re-sending `assistant_llm_mode` or TTS fields) and the existing TTS config is preserved.
 - In `realtime` mode, `assistant_llm_config` is required only when switching into realtime.
 - In `realtime` mode, Gemini defaults still apply when fields are omitted: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`.
 - In `realtime` mode, `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
@@ -42,17 +43,33 @@ Update an existing assistant. Only send fields you want to change.
 
 === ":material-pipe: Switch to Pipeline"
 
-    When switching to `pipeline` mode, you **must** provide both TTS fields in the same request.
+    When switching to `pipeline` mode, TTS fields are **only required if no TTS config is already stored on the assistant** (e.g. this assistant was created in pipeline mode before being switched to realtime — the original TTS config is preserved in the DB and reused automatically).
 
-    **Required fields**
+    If the assistant has never had a TTS config (e.g. it was originally created in realtime mode), you must provide both TTS fields in the same request.
+
+    **Fields**
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
     | `assistant_llm_mode` | string | Yes | Set to `pipeline`. |
-    | `assistant_tts_model` | string | Yes | One of `cartesia`, `sarvam`, `elevenlabs`, `mistral`. |
-    | `assistant_tts_config` | object | Yes | TTS config for the selected provider. |
+    | `assistant_tts_model` | string | Conditional | Required only if no TTS config exists in DB. |
+    | `assistant_tts_config` | object | Conditional | Required if `assistant_tts_model` is provided. Must be sent together. |
 
-    **Example request**
+    !!! note "Stale realtime LLM config is cleared automatically"
+        When switching back to pipeline mode, any Gemini/realtime `assistant_llm_config` stored from the previous realtime session is automatically cleared. The assistant will fall back to the system `OPENAI_API_KEY` unless you explicitly provide a new `assistant_llm_config.api_key`.
+
+    **Example — switching back when TTS already exists in DB**
+
+    ```bash
+    curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_llm_mode": "pipeline"
+      }'
+    ```
+
+    **Example — switching when no TTS exists in DB**
 
     ```bash
     curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
@@ -98,7 +115,8 @@ Update an existing assistant. Only send fields you want to change.
 - In `pipeline` mode, `assistant_llm_config` may be omitted entirely.
 - In `pipeline` mode, only `assistant_llm_config.api_key` affects runtime behavior.
 - Switching to `realtime` requires `assistant_llm_config`.
-- Switching to `pipeline` requires both `assistant_tts_model` and `assistant_tts_config`.
+- Switching to `pipeline` requires TTS fields **only if no TTS config exists in DB**. If the assistant previously had a TTS config, it is preserved and reused — you do not need to re-send it.
+- When switching to `pipeline`, any stored realtime `assistant_llm_config` (e.g. Gemini keys) is automatically cleared unless you explicitly provide a new one.
 
 ## Runtime Behavior Notes
 

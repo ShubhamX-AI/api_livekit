@@ -99,6 +99,19 @@ async def update_assistant(
             update_data["assistant_interaction_config"],
         )
 
+    # Mode-switch guards (need DB state for full validation)
+    new_mode = update_data.get("assistant_llm_mode")
+    if new_mode == "pipeline":
+        # Switching to pipeline: ensure TTS exists (in request or already in DB)
+        if not update_data.get("assistant_tts_model") and not assistant.assistant_tts_model:
+            raise HTTPException(
+                status_code=400,
+                detail="assistant_tts_model and assistant_tts_config are required when switching to pipeline mode (none found in DB).",
+            )
+        # Clear stale realtime llm_config only when actually leaving realtime mode
+        if assistant.assistant_llm_mode == "realtime" and "assistant_llm_config" not in update_data:
+            update_data["assistant_llm_config"] = None
+
     logger.info(f"Updating assistant {assistant_id}")
     update_data.update(
         {
