@@ -244,8 +244,18 @@ async def run_bridge(
             lk_disconnected.set()
 
         lk_task = asyncio.create_task(lk_disconnected.wait())
+
+        async def _watch_inbound_bye():
+            """Poll multiprocessing.Event with a short timeout so the worker
+            thread releases promptly when the call ends via another path.
+            (asyncio.Task cancel does not interrupt threads running to_thread,
+            so an unbounded Event.wait would leak a thread for up to 300s.)"""
+            while True:
+                if await asyncio.to_thread(inbound_bye.wait, 1.0):
+                    return
+
         inbound_bye_task = (
-            asyncio.create_task(asyncio.to_thread(inbound_bye.wait))
+            asyncio.create_task(_watch_inbound_bye())
             if inbound_bye is not None
             else None
         )
