@@ -212,7 +212,10 @@ async def run_bridge(
 
         answered_at = time.time()
 
-        # Notify agent that call is answered
+        # Notify agent that call is answered.
+        # The 0.5s gap is intentional: lets mixer + FFI outbound pipeline settle
+        # so the agent's first words aren't clipped or mixed with drain-stream
+        # residue from the pre-answer ringing phase. Do NOT remove.
         try:
             await asyncio.sleep(0.5)
             await room.local_participant.publish_data(
@@ -225,57 +228,82 @@ async def run_bridge(
 
         disconnect_reason = "unknown"
         sip_mon = asyncio.create_task(sip_client.wait_for_disconnection())
-        while True:
-            # ── Signal 1: LiveKit room disconnected ──
-            if room.connection_state != rtc.ConnectionState.CONN_CONNECTED:
-                disconnect_reason = "livekit_disconnected"
-                logger.info("[BRIDGE] LiveKit room disconnected")
-                break
 
-            # ── Signal 2: SIP BYE on outbound TCP (same connection as INVITE) ──
-            if sip_mon.done():
-                disconnect_reason = "sip_bye_outbound_tcp"
-                ended_by_remote_bye = True
-                logger.info("[BRIDGE] SIP BYE received on outbound TCP")
-                break
+        # Event-driven teardown: wake immediately on LiveKit disconnect, SIP BYE
+        # (outbound TCP or inbound TCP listener). Only the RTP silence/no-RTP
+        # check needs polling — use a short tick (200ms) so hangup detection is
+        # bounded by network timeout, not by the loop cadence.
+        lk_disconnected = asyncio.Event()
 
-            # ── Signal 3: SIP BYE on inbound TCP listener (new connection from Exotel) ──
-            if inbound_bye and inbound_bye.is_set():
-                disconnect_reason = "sip_bye_inbound_tcp"
-                ended_by_remote_bye = True
-                logger.info("[BRIDGE] SIP BYE received on inbound TCP listener")
-                break
+        @room.on("disconnected")
+        def _on_lk_disconnected(*_args, **_kwargs):
+            lk_disconnected.set()
 
-            since_rx = rtp_bridge.seconds_since_rx()
+        # If LiveKit already disconnected before the listener was attached, set now.
+        if room.connection_state != rtc.ConnectionState.CONN_CONNECTED:
+            lk_disconnected.set()
 
-            # ── Signal 4: No RTP ever arrived after answer — call setup failure ──
-            if (
-                since_rx is None
-                and NO_RTP_AFTER_ANSWER_SECONDS > 0
-                and (time.time() - answered_at) > NO_RTP_AFTER_ANSWER_SECONDS
-            ):
-                disconnect_reason = "no_rtp_after_answer"
+        lk_task = asyncio.create_task(lk_disconnected.wait())
+        inbound_bye_task = (
+            asyncio.create_task(asyncio.to_thread(inbound_bye.wait))
+            if inbound_bye is not None
+            else None
+        )
+
+        async def _rtp_watchdog():
+            """Returns when no-RTP-after-answer or RTP-silence-after-flow fires."""
+            while True:
+                since_rx = rtp_bridge.seconds_since_rx()
+                if (
+                    since_rx is None
+                    and NO_RTP_AFTER_ANSWER_SECONDS > 0
+                    and (time.time() - answered_at) > NO_RTP_AFTER_ANSWER_SECONDS
+                ):
+                    return "no_rtp_after_answer"
+                if (
+                    since_rx is not None
+                    and RTP_SILENCE_TIMEOUT_SECONDS > 0
+                    and since_rx > RTP_SILENCE_TIMEOUT_SECONDS
+                ):
+                    return "rtp_silence_after_flow"
+                await asyncio.sleep(0.2)
+
+        rtp_task = asyncio.create_task(_rtp_watchdog())
+
+        wait_set = {sip_mon, lk_task, rtp_task}
+        if inbound_bye_task is not None:
+            wait_set.add(inbound_bye_task)
+
+        done, _pending = await asyncio.wait(wait_set, return_when=asyncio.FIRST_COMPLETED)
+
+        if sip_mon in done:
+            disconnect_reason = "sip_bye_outbound_tcp"
+            ended_by_remote_bye = True
+            logger.info("[BRIDGE] SIP BYE received on outbound TCP")
+        elif inbound_bye_task is not None and inbound_bye_task in done:
+            disconnect_reason = "sip_bye_inbound_tcp"
+            ended_by_remote_bye = True
+            logger.info("[BRIDGE] SIP BYE received on inbound TCP listener")
+        elif lk_task in done:
+            disconnect_reason = "livekit_disconnected"
+            logger.info("[BRIDGE] LiveKit room disconnected")
+        elif rtp_task in done:
+            disconnect_reason = rtp_task.result()
+            if disconnect_reason == "no_rtp_after_answer":
                 logger.error(
                     "[RTP] No inbound RTP after %ss — call never connected, ending",
                     NO_RTP_AFTER_ANSWER_SECONDS,
                 )
-                break
-
-            # ── Signal 5: RTP was flowing but stopped — caller hung up ──
-            if (
-                since_rx is not None
-                and RTP_SILENCE_TIMEOUT_SECONDS > 0
-                and since_rx > RTP_SILENCE_TIMEOUT_SECONDS
-            ):
-                disconnect_reason = "rtp_silence_after_flow"
+            else:
                 logger.info(
-                    "[RTP] No audio for %.0fs (threshold=%ss) — caller hung up",
-                    since_rx,
+                    "[RTP] RTP silence > %ss — caller hung up",
                     RTP_SILENCE_TIMEOUT_SECONDS,
                 )
-                break
 
-            await asyncio.sleep(1)
+        # Cancel everything still pending so the finally block isn't blocked.
+        for t in (sip_mon, lk_task, rtp_task, inbound_bye_task):
+            if t is not None and not t.done():
+                t.cancel()
 
         logger.info(f"[BRIDGE] Call ended — reason={disconnect_reason}")
 

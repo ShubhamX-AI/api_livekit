@@ -15,12 +15,9 @@ import random
 import socket
 import struct
 import time
-import warnings
 from collections.abc import AsyncIterator
 
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", DeprecationWarning)
-    import audioop
+import audioop
 
 from livekit import rtc
 
@@ -103,14 +100,20 @@ class RTPMediaBridge:
         # G.711 encodes 1:1, so payload = 160 bytes. Total RTP = 172 bytes.
         # LiveKit sends 10ms frames, so we pack 2 frames → 1 RTP packet.
         self._PTIME_BYTES = 320  # 20ms at 8kHz 16-bit mono (160 samples * 2 bytes)
-        self._pcm_accumulator = b""
+        self._pcm_accumulator = bytearray()
 
-        # Multi-track mixer: combines agent voice + background/thinking sounds
+        # Multi-track mixer: combines agent voice + background/thinking sounds.
+        # blocksize=480 (10ms @ 48kHz) matches LiveKit's native frame size — no extra buffering.
+        # stream_timeout_ms=20: emit silence after one missed frame instead of waiting 200ms.
         self._mixer = rtc.AudioMixer(
-            SAMPLE_RATE_LK, 1, blocksize=960, stream_timeout_ms=200, capacity=50
+            SAMPLE_RATE_LK, 1, blocksize=480, stream_timeout_ms=20, capacity=50
         )
         self._mixer_task: asyncio.Task | None = None
         self._track_streams: list[rtc.AudioStream] = []
+
+        # Bounded inbound RTP queue. ~1s @ 50pps. _on_rtp_readable drops oldest on overflow
+        # so playback can't drift behind real-time under bursty input.
+        self._recv_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
 
     def set_remote_endpoint(self, ip: str, port: int, pt: int = PCMA_PAYLOAD_TYPE):
         self._remote_addr = (ip, port)
@@ -122,7 +125,7 @@ class RTPMediaBridge:
         # INVITE / ringing phase.  We cannot await here (sync method) so we
         # schedule it as a fire-and-forget task on the running event loop.
         if self._frame_buffer:
-            asyncio.ensure_future(self._flush_buffer())
+            asyncio.create_task(self._flush_buffer())
 
     async def _flush_buffer(self):
         """Drain frames that arrived before the SIP call was answered.
@@ -152,7 +155,6 @@ class RTPMediaBridge:
         )
         await room.local_participant.publish_track(self._local_track, publish_options)
         self._running = True
-        self._recv_queue: asyncio.Queue = asyncio.Queue()
 
         # add_reader works with uvloop — sock_recvfrom does NOT
         loop = asyncio.get_running_loop()
@@ -181,7 +183,15 @@ class RTPMediaBridge:
             # from a prior call (port reuse) leaking audio into the wrong room.
             if self._remote_addr and addr != self._remote_addr:
                 return
-            self._recv_queue.put_nowait((data, addr))
+            try:
+                self._recv_queue.put_nowait((data, addr))
+            except asyncio.QueueFull:
+                # Drop oldest to keep playback aligned with real-time.
+                try:
+                    self._recv_queue.get_nowait()
+                    self._recv_queue.put_nowait((data, addr))
+                except Exception:
+                    pass
         except BlockingIOError:
             pass  # no data yet, ignore
         except Exception as e:
@@ -293,13 +303,13 @@ class RTPMediaBridge:
             pcm8, self._rs_out = audioop.ratecv(
                 raw, 2, 1, frame.sample_rate, SAMPLE_RATE_SIP, self._rs_out
             )
-            self._pcm_accumulator += pcm8
+            self._pcm_accumulator.extend(pcm8)
 
             # Send one packet per full 20ms chunk; discard any remainder
             # (remainder is < 10ms and will be completed by the next frame)
             while len(self._pcm_accumulator) >= self._PTIME_BYTES:
-                chunk = self._pcm_accumulator[: self._PTIME_BYTES]
-                self._pcm_accumulator = self._pcm_accumulator[self._PTIME_BYTES :]
+                chunk = bytes(self._pcm_accumulator[: self._PTIME_BYTES])
+                del self._pcm_accumulator[: self._PTIME_BYTES]
 
                 payload = (
                     audioop.lin2alaw(chunk, 2)
@@ -352,10 +362,12 @@ class RTPMediaBridge:
         if self._mixer_task and not self._mixer_task.done():
             self._mixer_task.cancel()
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             loop.remove_reader(self._sock.fileno())
+        except RuntimeError:
+            # no running loop (test teardown / late cleanup) — skip
+            pass
         except Exception:
-            # might not be registered or loop might be closed
             pass
         try:
             self._sock.close()
