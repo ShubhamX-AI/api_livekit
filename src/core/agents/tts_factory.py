@@ -40,6 +40,9 @@ def create_tts(assistant):
             target_language_code=tts_config.get("target_language_code", "en-IN"),
             speaker=speaker,
             api_key=api_key,
+            min_buffer_size=30,
+            max_chunk_length=50,
+            temperature=0.3,
         )
 
     if model == "elevenlabs":
