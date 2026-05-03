@@ -13,6 +13,7 @@ import asyncio
 import random
 import time
 import uuid
+from collections.abc import Callable
 
 from .config import (
     EXOTEL_AUTH_PASSWORD,
@@ -97,7 +98,9 @@ class ExotelSipClient:
         self.last_sip_status_code: int | None = None
         self.last_sip_status_reason: str | None = None
         self.last_call_status: str | None = None
-        self.on_hold_change: callable | None = None  # called with bool (True=hold, False=resume)
+        # Called with bool (True=hold, False=resume). Return type is `object` to allow
+        # implementations that schedule async work (e.g. asyncio.create_task) and return a Task.
+        self.on_hold_change: Callable[[bool], object] | None = None
 
     @staticmethod
     def _map_call_status_from_sip(code: int) -> str:
@@ -250,7 +253,7 @@ class ExotelSipClient:
         return await self._recv_loop()
 
     async def _recv_loop(self) -> dict | None:
-        buf = b""
+        buf = bytearray()
         while True:
             try:
                 chunk = await asyncio.wait_for(self._reader.read(8192), timeout=60.0)
@@ -258,17 +261,19 @@ class ExotelSipClient:
                     return None
                 buf += chunk
 
-                while b"\r\n\r\n" in buf:
-                    he = buf.index(b"\r\n\r\n")
-                    hb = buf[:he].decode(errors="replace")
+                while True:
+                    he = buf.find(b"\r\n\r\n")
+                    if he == -1:
+                        break
+                    hb = bytes(buf[:he]).decode(errors="replace")
                     rest = buf[he + 4 :]
                     lines = hb.split("\r\n")
                     status = lines[0]
                     hdrs = {}
                     record_routes = []
-                    for l in lines[1:]:
-                        if ":" in l:
-                            k, v = l.split(":", 1)
+                    for line in lines[1:]:
+                        if ":" in line:
+                            k, v = line.split(":", 1)
                             k = k.strip().lower()
                             v = v.strip()
                             if k == "record-route":
@@ -372,7 +377,7 @@ class ExotelSipClient:
 
     async def wait_for_disconnection(self):
         try:
-            buf = b""
+            buf = bytearray()
             while True:
                 data = await asyncio.wait_for(self._reader.read(4096), timeout=3600.0)
                 if not data:
@@ -380,16 +385,18 @@ class ExotelSipClient:
                     break
 
                 buf += data
-                while b"\r\n\r\n" in buf:
-                    he = buf.index(b"\r\n\r\n")
-                    hb = buf[:he].decode(errors="replace")
+                while True:
+                    he = buf.find(b"\r\n\r\n")
+                    if he == -1:
+                        break
+                    hb = bytes(buf[:he]).decode(errors="replace")
                     rest = buf[he + 4 :]
                     lines = hb.split("\r\n")
                     start = lines[0]
                     hdrs = {
-                        l.split(":", 1)[0].strip().lower(): l.split(":", 1)[1].strip()
-                        for l in lines[1:]
-                        if ":" in l
+                        line.split(":", 1)[0].strip().lower(): line.split(":", 1)[1].strip()
+                        for line in lines[1:]
+                        if ":" in line
                     }
                     cl = int(hdrs.get("content-length", "0"))
                     if len(rest) < cl:
