@@ -13,6 +13,7 @@ Outbound calls are now queued first, then dispatched into LiveKit and the select
 ## Endpoints and Guides
 
 - [Trigger Outbound Call](trigger.md)
+- [Passthrough Call (Web ↔ SIP, No AI Agent)](passthrough.md)
 - [Queue Status](queue-status.md)
 - [Generate Web Call Token](web-call.md)
 - [Call Flow](flow.md)

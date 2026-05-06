@@ -1,13 +1,17 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Body
+from fastapi import APIRouter, HTTPException, Depends, Request, Body, Query
 from fastapi.responses import JSONResponse
-from src.api.models.api_schemas import TriggerOutboundCall
+from typing import Optional
+from datetime import datetime
+from src.api.models.api_schemas import TriggerOutboundCall, TriggerPassthroughCall
 from src.api.models.response_models import apiResponse
-from src.core.db.db_schemas import OutboundSIP, APIKey, Assistant, OutboundCallQueue
+from src.core.db.db_schemas import OutboundSIP, APIKey, Assistant, OutboundCallQueue, CallRecord
 from src.api.dependencies import get_current_user
 from src.core.logger import logger, setup_logging
+from src.services.livekit.livekit_svc import LiveKitService
 
 router = APIRouter()
 setup_logging()
+_livekit_services = LiveKitService()
 
 
 @router.post("/outbound", status_code=202)
@@ -90,6 +94,155 @@ async def get_queue_status(
             "retry_count": item.retry_count,
             "last_error": item.last_error,
         },
+    )
+
+
+@router.post("/outbound_passthrough", status_code=202)
+async def trigger_passthrough_call(
+    request: TriggerPassthroughCall, current_user: APIKey = Depends(get_current_user)
+):
+    """Start a passthrough call: web user ↔ SIP with no AI agent.
+
+    Creates the LiveKit room synchronously and returns a room token so the
+    web client can connect immediately while the SIP call is dialled in the background.
+    """
+    trunk = await OutboundSIP.find_one(
+        OutboundSIP.trunk_id == request.trunk_id,
+        OutboundSIP.trunk_created_by_email == current_user.user_email,
+        OutboundSIP.trunk_is_active == True,
+    )
+    if not trunk:
+        raise HTTPException(status_code=404, detail="Trunk not found")
+
+    if not trunk.passthrough_mode:
+        raise HTTPException(
+            status_code=400,
+            detail="Trunk does not have passthrough_mode enabled",
+        )
+
+    # Create room now so web user gets a token before SIP dial begins.
+    room_name = await _livekit_services.create_room()
+    room_token = await _livekit_services.create_token(room_name)
+    if not room_token:
+        raise HTTPException(status_code=500, detail="Failed to generate room token")
+
+    # Resolve platform number from whichever trunk type is in use.
+    if trunk.trunk_type == "exotel":
+        platform_number = trunk.trunk_config.get("exotel_number")
+    else:
+        platform_number = (trunk.trunk_config.get("numbers") or [None])[0]
+
+    queue_item = OutboundCallQueue(
+        user_email=current_user.user_email,
+        trunk_id=trunk.trunk_id,
+        to_number=request.to_number,
+        call_service=trunk.trunk_type,
+        job_metadata=request.metadata or {},
+        passthrough_room_name=room_name,
+    )
+    await queue_item.insert()
+
+    # Initialize call record immediately so status is visible before SIP connects.
+    await _livekit_services.initialize_call_record(
+        room_name=room_name,
+        to_number=request.to_number,
+        call_status="initiated",
+        created_by_email=current_user.user_email,
+        call_type="outbound",
+        call_service=trunk.trunk_type,
+        platform_number=platform_number,
+        queue_id=queue_item.queue_id,
+        is_passthrough=True,
+    )
+
+    logger.info(
+        f"Enqueued passthrough call {queue_item.queue_id} | "
+        f"to={request.to_number} room={room_name} user={current_user.user_email}"
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content=apiResponse(
+            success=True,
+            message="Passthrough call queued successfully",
+            data={
+                "queue_id": queue_item.queue_id,
+                "room_name": room_name,
+                "room_token": room_token,
+                "status": "queued",
+            },
+        ).model_dump(),
+    )
+
+
+@router.get("/records")
+async def list_call_records(
+    passthrough_only: bool = Query(False, description="Return only passthrough calls (no AI agent)"),
+    to_number: Optional[str] = Query(None, description="Filter by destination phone number"),
+    call_status: Optional[str] = Query(None, description="Filter by status (completed, failed, busy, no_answer, ...)"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: APIKey = Depends(get_current_user),
+):
+    """List call records for the authenticated user.
+
+    Use passthrough_only=true to retrieve passthrough calls (no assistant).
+    Use to_number to filter by the dialled phone number.
+    """
+    query = {"created_by_email": current_user.user_email}
+
+    if passthrough_only:
+        query["is_passthrough"] = True
+
+    if to_number:
+        query["to_number"] = to_number
+
+    if call_status:
+        query["call_status"] = call_status
+
+    if start_date or end_date:
+        query["started_at"] = {}
+        if start_date:
+            query["started_at"]["$gte"] = start_date
+        if end_date:
+            query["started_at"]["$lte"] = end_date
+
+    records = (
+        await CallRecord.find(query)
+        .sort("-started_at")
+        .skip(offset)
+        .limit(limit)
+        .to_list()
+    )
+
+    return apiResponse(
+        success=True,
+        message="Call records fetched successfully",
+        data=[
+            {
+                "room_name": r.room_name,
+                "queue_id": r.queue_id,
+                "assistant_id": r.assistant_id,
+                "assistant_name": r.assistant_name,
+                "to_number": r.to_number,
+                "call_status": r.call_status,
+                "call_status_reason": r.call_status_reason,
+                "call_type": r.call_type,
+                "call_service": r.call_service,
+                "platform_number": r.platform_number,
+                "answered_at": r.answered_at.isoformat() if r.answered_at else None,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+                "call_duration_minutes": r.call_duration_minutes,
+                "is_passthrough": r.is_passthrough,
+                "recording_path": r.recording_path,
+                "sip_status_code": r.sip_status_code,
+                "sip_status_text": r.sip_status_text,
+            }
+            for r in records
+        ],
     )
 
 

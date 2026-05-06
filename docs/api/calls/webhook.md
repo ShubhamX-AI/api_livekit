@@ -1,6 +1,9 @@
 # End Call Webhook
 
-If the assistant has `assistant_end_call_url` configured, a POST request is sent when the call reaches a terminal state.
+A POST request is sent when a call reaches a terminal state:
+
+- **AI calls**: if the assistant has `assistant_end_call_url` configured
+- **Passthrough calls**: if the trunk has `passthrough_webhook_url` configured (fires on **all** terminal outcomes — completed, busy, no_answer, timeout, failed)
 
 ### Webhook Request
 
@@ -70,8 +73,9 @@ Content-Type: application/json
 | `data`                         | object  | Complete call details.                     |
 | `data.room_name`               | string  | The LiveKit room name.                     |
 | `data.queue_id`                | string  | The queue ID from `POST /call/outbound`. Present for outbound calls, `null` for inbound/web. Use this to correlate the webhook with the original trigger response. |
-| `data.assistant_id`            | string  | ID of the assistant used.                  |
-| `data.assistant_name`          | string  | Name of the assistant.                     |
+| `data.assistant_id`            | string  | ID of the assistant used. `null` for passthrough calls. |
+| `data.assistant_name`          | string  | Name of the assistant. `null` for passthrough calls.    |
+| `data.is_passthrough`          | boolean | `true` for passthrough (no AI agent) calls, `false` for AI calls. |
 | `data.to_number`               | string  | Phone number that was called.              |
 | `data.call_status`             | string  | Call lifecycle status (`initiated`, `answered`, `completed`) or terminal SIP outcome (`busy`, `no_answer`, `rejected`, `cancelled`, `unreachable`, `timeout`, `failed`). |
 | `data.call_status_reason`      | string  | Optional detailed reason for non-success outcomes. |
@@ -79,7 +83,7 @@ Content-Type: application/json
 | `data.sip_status_text`         | string  | SIP reason text when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
 | `data.answered_at`             | string  | Timestamp when the user answered (if answered). |
 | `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
-| `data.transcripts`             | array   | List of conversation messages.             |
+| `data.transcripts`             | array   | List of conversation messages. Always `[]` for passthrough calls (no STT). |
 | `data.transcripts[].speaker`   | string  | Who spoke (`agent` or `user`).             |
 | `data.transcripts[].text`      | string  | The transcribed text.                      |
 | `data.transcripts[].timestamp` | string  | ISO 8601 timestamp.                        |

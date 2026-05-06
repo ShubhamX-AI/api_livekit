@@ -20,6 +20,8 @@ from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog, UsageReco
 
 setup_logging()
 
+PASSTHROUGH_ROOM_PREFIX = "passthrough"
+
 
 class LiveKitService:
     # Shared client reused across all operations to avoid per-call connection overhead
@@ -48,11 +50,11 @@ class LiveKitService:
         yield self._get_client()
 
     # Create livekit room
-    async def create_room(self, assistant_id: str) -> str:
-        """Create and return a unique LiveKit room name for an assistant."""
+    async def create_room(self, assistant_id: Optional[str] = None) -> str:
+        """Create and return a unique LiveKit room name."""
         async with self.get_livekit_api() as lkapi:
-            # Create a unique room name with agent name
-            unique_room_name = f"{assistant_id}_{uuid.uuid4().hex[:8]}"
+            prefix = assistant_id if assistant_id else PASSTHROUGH_ROOM_PREFIX
+            unique_room_name = f"{prefix}_{uuid.uuid4().hex[:8]}"
 
             # Create room
             room = await lkapi.room.create_room(
@@ -172,9 +174,9 @@ class LiveKitService:
     async def initialize_call_record(
         self,
         room_name: str,
-        assistant_id: str,
-        assistant_name: str,
-        to_number: str,
+        to_number: str = "",
+        assistant_id: Optional[str] = None,
+        assistant_name: Optional[str] = None,
         call_status: Literal[
             "initiated",
             "answered",
@@ -193,6 +195,7 @@ class LiveKitService:
         call_service: Optional[str] = None,
         platform_number: Optional[str] = None,
         queue_id: Optional[str] = None,
+        is_passthrough: bool = False,
     ):
         """Create a call record if missing, or refresh base call metadata if present."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
@@ -202,6 +205,7 @@ class LiveKitService:
             call_record.to_number = to_number
             call_record.call_status = call_status
             call_record.call_status_reason = call_status_reason
+            call_record.is_passthrough = is_passthrough
             if created_by_email:
                 call_record.created_by_email = created_by_email
             if call_type:
@@ -228,6 +232,7 @@ class LiveKitService:
             call_type=call_type,
             call_service=call_service,
             platform_number=platform_number,
+            is_passthrough=is_passthrough,
         )
         await call_record.insert()
         return call_record
@@ -280,24 +285,31 @@ class LiveKitService:
         await call_record.save()
         return call_record
 
-    async def send_end_call_webhook(self, room_name: str, assistant_id: str):
-        """Send post-call details to the assistant's configured end-call webhook URL."""
+    async def send_end_call_webhook(self, room_name: str, assistant_id: Optional[str] = None, webhook_url: Optional[str] = None):
+        """Send post-call details to a webhook URL.
+
+        webhook_url takes priority; if absent, falls back to assistant's end_call_url.
+        """
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if not call_record:
             logger.info(f"No call record found for room: {room_name}; skipping webhook")
             return
 
-        assistant = await Assistant.find_one(
-            Assistant.assistant_id == assistant_id,
-            Assistant.assistant_end_call_url != None,
-            Assistant.assistant_end_call_url != "",
-        )
-        logger.info(f"Assistant found with assistant_id: {assistant_id}")
+        # Resolve webhook target
+        end_call_url = webhook_url
+        assistant = None
+        if not end_call_url and assistant_id:
+            assistant = await Assistant.find_one(
+                Assistant.assistant_id == assistant_id,
+                Assistant.assistant_end_call_url != None,
+                Assistant.assistant_end_call_url != "",
+            )
+            logger.info(f"Assistant found with assistant_id: {assistant_id}")
+            if assistant and assistant.assistant_end_call_url:
+                end_call_url = assistant.assistant_end_call_url
 
-        if not (assistant and assistant.assistant_end_call_url):
+        if not end_call_url:
             return
-
-        end_call_url = assistant.assistant_end_call_url
         full_data = json.loads(call_record.model_dump_json())
         filtered_data = {key: value for key, value in full_data.items() if key not in ["id"]}
 
@@ -320,6 +332,7 @@ class LiveKitService:
             "data": filtered_data,
         }
 
+        log_owner = (assistant.assistant_created_by_email if assistant else None) or call_record.created_by_email or "unknown"
         start_ms = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -328,7 +341,7 @@ class LiveKitService:
                 logger.info(f"Call details sent to end call url: {end_call_url}")
                 try:
                     await ActivityLog(
-                        user_email=assistant.assistant_created_by_email,
+                        user_email=log_owner,
                         log_type="end_call_webhook",
                         assistant_id=assistant_id,
                         room_name=room_name,
@@ -344,7 +357,7 @@ class LiveKitService:
             logger.error(f"Failed to send call details to webhook: {e}")
             try:
                 await ActivityLog(
-                    user_email=assistant.assistant_created_by_email,
+                    user_email=log_owner,
                     log_type="end_call_webhook",
                     assistant_id=assistant_id,
                     room_name=room_name,
@@ -357,7 +370,7 @@ class LiveKitService:
                 logger.warning(f"Failed to write activity log: {log_err}")
 
     # Update And send Details at the end of the call
-    async def end_call(self, room_name: str, assistant_id: str):
+    async def end_call(self, room_name: str, assistant_id: Optional[str] = None):
         """Mark a call as completed, store duration, and trigger end-call webhook."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
@@ -447,14 +460,15 @@ class LiveKitService:
         except Exception as e:
             logger.error(f"Failed to delete room {room_name}: {e}", exc_info=True)
 
-    async def start_room_recording(self, room_name: str, assistant_id: str) -> Optional[dict]:
+    async def start_room_recording(self, room_name: str, assistant_id: Optional[str] = None) -> Optional[dict]:
         """Start recording the room using LiveKit Egress"""
         try:
             async with self.get_livekit_api() as lkapi:
                 # Store the recording in Year/Month/Day/Timestamp.ogg format
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                 folder_path = datetime.now(timezone.utc).strftime('%Y/%m/%d')
-                filepath = f"lvk_call_recordings/{folder_path}/{assistant_id}/{timestamp}.ogg"
+                path_key = assistant_id if assistant_id else "passthrough"
+                filepath = f"lvk_call_recordings/{folder_path}/{path_key}/{timestamp}.ogg"
 
                 # Set the file output
                 file_output = api.EncodedFileOutput(

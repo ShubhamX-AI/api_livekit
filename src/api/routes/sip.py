@@ -61,6 +61,8 @@ async def create_outbound_trunk(
             trunk_name=request.trunk_name,
             trunk_type=request.trunk_type,
             trunk_config=trunk_config_to_save,
+            passthrough_mode=request.passthrough_mode,
+            passthrough_webhook_url=request.passthrough_webhook_url,
             trunk_created_by_email=current_user.user_email,
             trunk_updated_by_email=current_user.user_email,
         )

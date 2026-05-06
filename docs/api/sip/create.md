@@ -9,11 +9,13 @@ Configure a SIP trunk for outbound calls.
 
 ### Request Body
 
-| Field          | Type   | Required | Description                                       |
-| :------------- | :----- | :------- | :------------------------------------------------ |
-| `trunk_name`   | string | Yes      | Name of the trunk (1-100 characters).             |
-| `trunk_type`   | string | Yes      | Provider type. One of: `twilio`, `exotel`.        |
-| `trunk_config` | object | Yes      | The trunk configuration object (see below).       |
+| Field                     | Type    | Required | Description                                                                                     |
+| :------------------------ | :------ | :------- | :---------------------------------------------------------------------------------------------- |
+| `trunk_name`              | string  | Yes      | Name of the trunk (1-100 characters).                                                           |
+| `trunk_type`              | string  | Yes      | Provider type. One of: `twilio`, `exotel`.                                                      |
+| `trunk_config`            | object  | Yes      | The trunk configuration object (see below).                                                     |
+| `passthrough_mode`        | boolean | No       | Default `false`. When `true`, trunk is used for human-to-SIP passthrough calls (no AI agent).   |
+| `passthrough_webhook_url` | string  | No       | URL to POST call details when a passthrough call ends. Fires on all outcomes (completed/failed/busy/no_answer/timeout). |
 
 ### Trunk Configuration
 
@@ -101,3 +103,30 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbo
            }
          }'
 ```
+
+### Example: Passthrough Trunk (No AI Agent)
+
+Use this when a human web user needs to speak directly to a phone caller with no AI agent involved.
+
+```bash
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbound-trunk" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_api_key>" \
+     -d '{
+           "trunk_name": "Human Agent Trunk",
+           "trunk_type": "twilio",
+           "trunk_config": {
+             "address": "example.pstn.twilio.com",
+             "numbers": ["+15550100000"],
+             "username": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+             "password": "your_auth_token_here"
+           },
+           "passthrough_mode": true,
+           "passthrough_webhook_url": "https://your-app.com/webhooks/call-ended"
+         }'
+```
+
+!!! note
+    A trunk with `passthrough_mode: true` can only be used with `POST /call/outbound_passthrough`.
+    Normal AI outbound calls (`POST /call/outbound`) require a trunk with `passthrough_mode: false` (the default).
+    See [Passthrough Calls](../calls/passthrough.md) for the full implementation guide.

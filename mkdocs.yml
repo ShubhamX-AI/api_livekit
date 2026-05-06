@@ -115,7 +115,8 @@ nav:
 
     - Outbound Calls:
       - Overview: api/calls/index.md
-      - Trigger Call: api/calls/trigger.md
+      - Trigger Call (AI Agent): api/calls/trigger.md
+      - Passthrough Call (No AI Agent): api/calls/passthrough.md
       - Queue Status: api/calls/queue-status.md
       - Generate Web Call Token: api/calls/web-call.md
       - Call Flow: api/calls/flow.md

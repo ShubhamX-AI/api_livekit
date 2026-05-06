@@ -150,11 +150,13 @@ def _reap_bridge(process: multiprocessing.Process) -> None:
 
 async def _monitor_exotel_result(
     room_name: str,
-    assistant_id: str,
+    assistant_id: str | None,
     result_queue: multiprocessing.Queue,
     bridge_process: multiprocessing.Process,
     port: int,
     call_id: str,
+    is_passthrough: bool = False,
+    passthrough_webhook_url: str | None = None,
 ) -> None:
     """Monitor the outbound bridge subprocess for its full lifetime.
 
@@ -173,7 +175,13 @@ async def _monitor_exotel_result(
                 ended_at=datetime.now(timezone.utc),
                 call_duration_minutes=0,
             )
-            await livekit_services.send_end_call_webhook(room_name=room_name, assistant_id=assistant_id)
+            # passthrough_webhook_url fires for failure outcomes too (busy/no-answer/timeout).
+            # For normal calls it is None, so falls back to assistant's webhook URL as before.
+            await livekit_services.send_end_call_webhook(
+                room_name=room_name,
+                assistant_id=assistant_id,
+                webhook_url=passthrough_webhook_url,
+            )
         except Exception:
             pass
 
@@ -182,6 +190,7 @@ async def _monitor_exotel_result(
 
     pool = get_port_pool()
     sip_result = None
+    passthrough_egress_id: str | None = None  # hoisted so CancelledError handler can reference it
 
     try:
         # ── Phase 1: wait for SIP setup result ──────────────────────────────
@@ -207,7 +216,7 @@ async def _monitor_exotel_result(
                 call_duration_minutes=0,
             )
             await livekit_services.send_end_call_webhook(
-                room_name=room_name, assistant_id=assistant_id
+                room_name=room_name, assistant_id=assistant_id, webhook_url=passthrough_webhook_url
             )
             logger.warning(f"Exotel SIP setup timed out | room={room_name}")
             return
@@ -223,7 +232,7 @@ async def _monitor_exotel_result(
                 call_duration_minutes=0,
             )
             await livekit_services.send_end_call_webhook(
-                room_name=room_name, assistant_id=assistant_id
+                room_name=room_name, assistant_id=assistant_id, webhook_url=passthrough_webhook_url
             )
             logger.warning(
                 f"Exotel SIP setup failed | room={room_name} | reason={sip_result.get('error', 'unknown')}"
@@ -236,9 +245,41 @@ async def _monitor_exotel_result(
         logger.info(
             f"Exotel SIP answered | room={room_name} — waiting for bridge process to exit"
         )
+
+        # Mark answered so call_duration_minutes is measured from pickup, not ring.
+        await livekit_services.update_call_status(
+            room_name=room_name,
+            call_status="answered",
+            answered_at=datetime.now(timezone.utc),
+        )
+
+        # Passthrough: no session.py running, so start recording here.
+        if is_passthrough:
+            try:
+                recording_info = await livekit_services.start_room_recording(room_name)
+                if recording_info and recording_info.get("success"):
+                    passthrough_egress_id = recording_info["data"]["egress_id"]
+                    logger.info(f"Passthrough recording started | egress={passthrough_egress_id}")
+            except Exception as e:
+                logger.error(f"Passthrough recording start failed | room={room_name}: {e}")
+
         while bridge_process.is_alive():
             await asyncio.sleep(2.0)
         logger.info(f"Bridge process exited | room={room_name}")
+
+        if is_passthrough:
+            # end_call() stops the egress recording (via call_record.recording_egress_id)
+            # and marks status=completed. No session.py runs for passthrough calls.
+            try:
+                await livekit_services.end_call(room_name=room_name)
+                if passthrough_webhook_url:
+                    await livekit_services.send_end_call_webhook(
+                        room_name=room_name,
+                        webhook_url=passthrough_webhook_url,
+                    )
+            except Exception as e:
+                logger.error(f"Passthrough end_call finalization failed | room={room_name}: {e}")
+            return
 
         # Safety net: if session.py's end_call failed (DB error, task crash),
         # the record stays "answered" and blocks new calls. Force it to "completed"
@@ -257,6 +298,9 @@ async def _monitor_exotel_result(
         # so the call doesn't stay stuck in 'initiated'/'answered' across restart.
         logger.warning(f"Monitor task cancelled (server shutdown) | room={room_name}")
         _terminate_bridge(bridge_process)
+        # Stop any passthrough recording that was started before cancellation.
+        if is_passthrough and passthrough_egress_id:
+            await livekit_services.stop_room_recording(passthrough_egress_id)
         await _safe_finalize("Server shutdown during active call")
         raise
 
@@ -284,13 +328,19 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
         if not trunk:
             raise ValueError(f"Trunk {item.trunk_id} not found or inactive")
 
-        room_name = await livekit_services.create_room(item.assistant_id)
+        is_passthrough = trunk.passthrough_mode
 
-        job_metadata = dict(item.job_metadata)
-        job_metadata["to_number"] = item.to_number
-        job_metadata["call_service"] = item.call_service
-
-        await livekit_services.create_agent_dispatch(room_name, job_metadata)
+        if is_passthrough and item.passthrough_room_name:
+            # Passthrough: room pre-created by endpoint, no AI agent dispatched.
+            # Audio flows web-user ↔ RTP-bridge ↔ SIP with no session.py running.
+            room_name = item.passthrough_room_name
+        else:
+            # Normal AI call: create room and dispatch agent worker.
+            room_name = await livekit_services.create_room(item.assistant_id)
+            job_metadata = dict(item.job_metadata)
+            job_metadata["to_number"] = item.to_number
+            job_metadata["call_service"] = item.call_service
+            await livekit_services.create_agent_dispatch(room_name, job_metadata)
 
         if item.call_service == "twilio":
             await livekit_services.initialize_call_record(
@@ -311,6 +361,13 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 trunk_id=item.trunk_id,
                 participant_identity=uuid.uuid4().hex,
             )
+            # Passthrough: no session.py runs, start recording here.
+            # LiveKit SIP participant handles call lifecycle; orphan reaper finalizes the record.
+            if is_passthrough:
+                try:
+                    await livekit_services.start_room_recording(room_name)
+                except Exception as e:
+                    logger.error(f"Twilio passthrough recording start failed | room={room_name}: {e}")
 
         elif item.call_service == "exotel":
             from src.services.exotel.custom_sip_reach.bridge import _bridge_subprocess_entry
@@ -353,6 +410,8 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 _monitor_exotel_result(
                     room_name, item.assistant_id, result_queue,
                     bridge_process, bridge_port, bridge_call_id,
+                    is_passthrough=is_passthrough,
+                    passthrough_webhook_url=trunk.passthrough_webhook_url,
                 )
             )
 

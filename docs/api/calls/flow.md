@@ -1,6 +1,6 @@
 # Call Flow
 
-There are three distinct call flows depending on the integration type.
+There are four distinct call flows depending on the integration type.
 
 ## Web Call Flow
 
@@ -73,7 +73,7 @@ When you trigger an outbound call, the flow differs based on the provider.
 ### Dispatcher Capacity Rules
 
 - The dispatcher only starts new work when active sessions are below the configured limit.
-- Current defaults are `8` active outbound jobs, a `2` second polling interval, and `3` retry attempts before permanent failure.
+- Current defaults are `12` active outbound jobs (`MAX_CONCURRENT_JOBS`), a `2` second polling interval, and `3` retry attempts before permanent failure.
 - The worker also advertises reduced intake at higher CPU load (`load_threshold=0.65`), which complements the queue by preventing uncontrolled fan-out.
 
 ### Exotel Runtime Gating
@@ -95,6 +95,65 @@ When you trigger an outbound call, the flow differs based on the provider.
   - Any in-progress agent speech is interrupted
   - Transcript processing is suppressed
 - On resume, the bridge publishes `call_resume` and the agent returns to normal operation.
+
+---
+
+## Passthrough Call Flow (Web ↔ SIP, No AI Agent)
+
+Passthrough mode bridges a human web user directly to a phone caller over SIP. No AI agent is dispatched — no STT, LLM, or TTS runs.
+
+**Key difference from normal outbound:** the LiveKit room is created synchronously in the API response so the web client gets a token immediately. The SIP dial happens in the background via the same dispatcher queue.
+
+1. **Request**: Client calls `POST /call/outbound_passthrough` with `trunk_id` and `to_number`.
+2. **Synchronous Room**: API creates LiveKit room and returns `room_token` + `room_name` immediately.
+3. **Web Connect**: Web client connects to LiveKit with `room_token` and publishes mic audio.
+4. **Queue**: API inserts queue item with the pre-created `room_name`.
+5. **Dispatch**: Dispatcher skips agent dispatch — starts SIP bridge only.
+6. **SIP Answer**: Once answered, audio flows bidirectionally: web mic ↔ RTP bridge ↔ SIP ↔ mobile.
+7. **Recording**: Starts after SIP answer (no session.py required).
+8. **End**: Bridge exits → `end_call()` marks record `completed`, stops recording, fires webhook.
+
+```mermaid
+sequenceDiagram
+    participant WebClient as Web Client (Browser)
+    participant API
+    participant Queue as Outbound Queue
+    participant Dispatcher
+    participant Bridge as RTP Bridge
+    participant Provider as SIP Provider
+    participant Phone
+
+    WebClient->>API: POST /call/outbound_passthrough
+    API->>API: Validate trunk (passthrough_mode=true)
+    API->>API: Create LiveKit room synchronously
+    API->>Queue: Insert queue item (passthrough_room_name set)
+    API-->>WebClient: 202 + { room_token, room_name, queue_id }
+    WebClient->>WebClient: Connect LiveKit with room_token, enable mic
+
+    Dispatcher->>Queue: Poll pending items
+    Dispatcher->>Bridge: Start SIP bridge (no agent dispatch)
+    Bridge->>Provider: SIP INVITE
+    Provider->>Phone: Ring
+    Phone-->>Provider: Answer
+    Provider-->>Bridge: SIP 200 OK
+    Bridge->>Bridge: Mark status=answered, start recording
+    loop Active call
+        WebClient->>Bridge: Web mic audio (via LiveKit)
+        Bridge->>Phone: RTP audio
+        Phone->>Bridge: RTP audio
+        Bridge->>WebClient: Audio (via LiveKit)
+    end
+    Phone->>Provider: Hang up
+    Provider-->>Bridge: SIP BYE
+    Bridge->>Bridge: end_call() → stop recording, status=completed
+    Bridge->>Bridge: POST passthrough_webhook_url
+```
+
+For the full implementation guide including code examples, see [Passthrough Calls](passthrough.md).
+
+---
+
+### AI Outbound Call — Summary Diagram
 
 ```mermaid
 sequenceDiagram

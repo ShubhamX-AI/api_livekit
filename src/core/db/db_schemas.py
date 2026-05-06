@@ -78,6 +78,8 @@ class OutboundSIP(Document):
     trunk_name: str
     trunk_type: str = "twilio"  # "twilio" or "exotel"
     trunk_config: Dict = {}  # Stores Twilio or Exotel specific config
+    passthrough_mode: bool = False  # when True, bridges web user directly to SIP (no AI agent)
+    passthrough_webhook_url: Optional[str] = None  # POST target for end-of-call notification in passthrough mode
     trunk_created_by_email: EmailStr
     trunk_updated_by_email: EmailStr
     trunk_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -140,8 +142,9 @@ class InboundContextStrategy(Document):
 class CallRecord(Document):
     room_name: Indexed(str, unique=True)
     queue_id: Optional[str] = None   # set for outbound calls dispatched via queue
-    assistant_id: str
-    assistant_name: str
+    assistant_id: Optional[str] = None
+    assistant_name: Optional[str] = None
+    is_passthrough: bool = False  # True when web user talks directly to SIP with no AI agent
     to_number: str
     call_status: Literal[
         "initiated",
@@ -216,8 +219,8 @@ class OutboundCallQueue(Document):
 
     queue_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     user_email: str
-    assistant_id: str
-    assistant_name: str
+    assistant_id: Optional[str] = None
+    assistant_name: Optional[str] = None
     trunk_id: str
     to_number: str
     call_service: Literal["twilio", "exotel"]
@@ -228,6 +231,7 @@ class OutboundCallQueue(Document):
     room_name: Optional[str] = None
     retry_count: int = 0
     last_error: Optional[str] = None
+    passthrough_room_name: Optional[str] = None  # pre-created room for passthrough calls
 
     class Settings:
         name = "outbound_call_queue"

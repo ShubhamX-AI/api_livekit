@@ -53,6 +53,43 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
   - retries dispatch failures up to `3` times
 - Active-session protection also uses the worker load threshold in `src/core/agents/session.py` so the worker stops accepting new jobs around `65%` CPU load.
 
+## Passthrough Mode (Web ↔ SIP, No AI Agent)
+
+Passthrough mode lets a human web user speak directly to a phone caller through SIP without any AI agent involved.
+
+### How it works
+
+1. Enable passthrough on a trunk: set `passthrough_mode: true` when creating the trunk via `POST /sip/create-outbound-trunk`.
+2. Web client calls `POST /call/outbound_passthrough` with `trunk_id` and `to_number`.
+3. API synchronously creates a LiveKit room and returns a `room_token` and `room_name` in the `202` response.
+4. Web client connects to LiveKit using `room_token` and publishes mic audio.
+5. The SIP call is dialled in the background (via the outbound dispatcher). Once answered, audio flows bidirectionally: web mic → SIP → mobile and mobile → SIP → web speaker.
+6. No AI agent is dispatched. No STT/LLM/TTS runs.
+7. Recording and end-of-call webhook (if `passthrough_webhook_url` is set on the trunk) are handled by the dispatcher monitor rather than session.py.
+
+### Call error handling
+
+All SIP error outcomes (busy, no-answer, timeout, rejection) are handled identically to normal outbound calls:
+- `busy` — SIP 486 / 600
+- `no_answer` — SIP 408 or RTP silence timeout
+- `timeout` — SIP setup timeout (60 s)
+- `failed` — any other SIP error or bridge crash
+
+Use `GET /call/queue/{queue_id}` to poll queue state. Final call status is in the `CallRecord` (use analytics or direct DB query).
+
+### Recording
+
+Recording starts after SIP answers and stops when the bridge exits. The S3 URL is stored in `CallRecord.recording_path`. If `passthrough_webhook_url` is set on the trunk, a full call-details webhook (same shape as the AI call webhook) is POST'd on **all** terminal outcomes — completed, busy, no-answer, timeout, failed.
+
+### Call logs
+
+Use `GET /call/records?passthrough_only=true` to list all passthrough call records. Supports filtering by `call_status`, `to_number`, `start_date`, `end_date`, `limit`, `offset`. Each record includes `is_passthrough: true` so call type is always identifiable. Since passthrough calls have no assistant, they do not appear in `/analytics/calls/by-assistant`.
+
+### Limitations
+
+- No transcript is generated (no STT).
+- Hold detection events are published to the LiveKit room but no one acts on them (no session.py).
+
 ## Hold Detection & Suppression
 
 - Exotel calls: Hold is detected instantly via SIP re-INVITE (`a=sendonly` or `a=inactive` in SDP).
@@ -238,6 +275,8 @@ Use these pages as the canonical payload contracts:
 - `/sip`
 - `/call`
 - `/call/queue/{queue_id}`
+- `/call/outbound_passthrough` — start a passthrough call (web ↔ SIP, no agent)
+- `/call/records` — list call records with optional filters; `passthrough_only=true` for passthrough-only view
 - `/inbound`
 - `/inbound_context_strategy`
 - `/logs`

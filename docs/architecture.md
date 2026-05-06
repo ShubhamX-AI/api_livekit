@@ -428,6 +428,83 @@ Three event handlers check `hold_controller.is_on_hold` and suppress activity:
 !!! note "Provider coverage"
     Hold detection via SIP re-INVITE works for **Exotel** calls only. Twilio and other providers do not currently have hold detection — the agent may respond to hold music if the call is placed on hold for extended periods.
 
+## Passthrough Mode Architecture
+
+Passthrough mode reuses the same outbound infrastructure but skips the AI agent entirely. A human web user's mic is bridged directly to the phone caller via SIP.
+
+```
+NORMAL AI OUTBOUND:
+  Web/SIP ↔ RTP Bridge ↔ LiveKit Room ↔ AI Agent (STT → LLM → TTS)
+
+PASSTHROUGH:
+  Web User ↔ LiveKit Room ↔ RTP Bridge ↔ SIP ↔ Mobile
+                 ↑
+         No AI agent, no STT/LLM/TTS
+```
+
+### Key Differences from Normal Outbound
+
+| Aspect | Normal AI Call | Passthrough Call |
+| :----- | :------------- | :--------------- |
+| Agent dispatch | `create_agent_dispatch()` called | Skipped entirely |
+| Room creation | Dispatcher creates room | API endpoint creates room synchronously (web client needs token immediately) |
+| Token returned | No token in API response | `room_token` returned in `POST /call/outbound_passthrough` response |
+| Recording start | After bridge `call_answered` event in `session.py` | After SIP 200 OK in `_monitor_exotel_result` (Exotel) or after `create_sip_participant` (Twilio) |
+| Call finalization | `session.py` calls `end_call()` | Dispatcher monitor calls `end_call()` after bridge exits |
+| Transcript | STT produces full transcript | Always empty — no STT runs |
+| Webhook trigger | `assistant_end_call_url` on assistant | `passthrough_webhook_url` on trunk |
+| Analytics | Appears in all analytics endpoints | Excluded from `by-assistant`; use `GET /call/records?passthrough_only=true` |
+
+### Passthrough Outbound Queue Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Web Client
+    participant API as API Server
+    participant DB as MongoDB
+    participant Disp as Dispatcher
+    participant Bridge as SIP Bridge
+    participant LK as LiveKit
+
+    Client->>API: POST /call/outbound_passthrough
+    API->>LK: create_room() synchronously
+    API->>DB: initialize_call_record (is_passthrough=true)
+    API->>DB: Insert OutboundCallQueue (passthrough_room_name=room_name)
+    API-->>Client: 202 + { room_token, room_name, queue_id }
+    Client->>LK: Connect with room_token, publish mic
+
+    Note over Disp: Change Stream fires → dispatcher wakes
+    Disp->>DB: Fetch pending queue item
+    Disp->>Disp: is_passthrough=true → skip create_agent_dispatch
+    Disp->>Bridge: spawn bridge subprocess (Exotel) or create_sip_participant (Twilio)
+    Bridge->>Bridge: SIP INVITE → answered
+    Bridge->>DB: update_call_status(answered, answered_at=now)
+    Bridge->>LK: start_room_recording
+    Note over Client,Bridge: Audio flows bidirectionally
+    Bridge->>Bridge: Bridge exits (BYE or error)
+    Bridge->>DB: end_call() → completed, stop recording
+    Bridge->>Bridge: POST passthrough_webhook_url
+```
+
+### Audio Routing in Passthrough
+
+The `rtp_bridge.py` component does not need changes for passthrough. Its `on_track_subscribed` handler generically subscribes to **any** participant's audio track and feeds it into the RTP mixer. When the web user publishes their mic track, the bridge automatically routes it to SIP — exactly the same as it would route an AI agent's audio track.
+
+```
+Web user's mic track
+      ↓
+LiveKit room (web participant)
+      ↓
+on_track_subscribed (rtp_bridge.py) — same generic handler, no passthrough-specific logic
+      ↓
+AudioMixer → G.711 RTP → Exotel/Twilio SIP → Mobile phone
+```
+
+The mobile phone's audio comes back the same way in reverse, appearing as an audio track from the SIP bridge participant that the web user's LiveKit SDK plays back automatically.
+
+---
+
 ## Provider Support Matrix
 
 | Provider | Inbound | Outbound | Implementation path |

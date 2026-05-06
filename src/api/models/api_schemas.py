@@ -297,6 +297,8 @@ class CreateOutboundTrunk(BaseModel):
     trunk_name: str = Field(..., min_length=1, max_length=100, description="Trunk name (cannot be empty)")
     trunk_type: Literal["twilio", "exotel"] = Field(..., description="Trunk type")
     trunk_config: TrunkConfig = Field(..., description="Trunk configuration object (varies by type)")
+    passthrough_mode: bool = Field(False, description="When true, bridges web user directly to SIP with no AI agent")
+    passthrough_webhook_url: Optional[str] = Field(None, description="Webhook URL for end-of-call notification in passthrough mode")
 
     class Config:
         # Strip whitespace from string fields
@@ -340,6 +342,22 @@ class TriggerOutboundCall(BaseModel):
                 "to_number": "Test To Number",
                 "call_service": "exotel",
                 "metadata": {"extra": "value about the call"},
+            }
+        }
+
+
+class TriggerPassthroughCall(BaseModel):
+    """Initiates a passthrough call: web user ↔ SIP with no AI agent."""
+    trunk_id: str = Field(..., min_length=1, max_length=100)
+    to_number: str = Field(..., min_length=1, max_length=100)
+    metadata: Optional[dict] = Field(None)
+
+    class Config:
+        str_strip_whitespace = True
+        json_schema_extra = {
+            "example": {
+                "trunk_id": "trunk_abc123",
+                "to_number": "+919876543210",
             }
         }
 
