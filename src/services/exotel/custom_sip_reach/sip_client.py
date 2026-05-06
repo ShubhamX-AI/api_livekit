@@ -101,6 +101,9 @@ class ExotelSipClient:
         # Called with bool (True=hold, False=resume). Return type is `object` to allow
         # implementations that schedule async work (e.g. asyncio.create_task) and return a Task.
         self.on_hold_change: Callable[[bool], object] | None = None
+        # Called with (ip, port, pt) when 183 Session Progress carries early-media SDP.
+        # Passthrough calls use this to let the human hear ringback/busy before 200 OK.
+        self.on_early_media: Callable[[str, int, int], object] | None = None
 
     @staticmethod
     def _map_call_status_from_sip(code: int) -> str:
@@ -115,6 +118,23 @@ class ExotelSipClient:
         if code in (404, 410, 484):
             return "unreachable"
         return "failed"
+
+    @staticmethod
+    def _parse_audio_endpoint(sdp_body: str) -> tuple[str | None, int, int]:
+        """Extract (ip, port, payload_type) from an SDP body."""
+        ip, port, pt = None, 0, PCMA_PAYLOAD_TYPE
+        for line in sdp_body.splitlines():
+            if line.startswith("c=IN IP4"):
+                ip = line.split()[-1]
+            elif line.startswith("m=audio"):
+                parts = line.split()
+                port = int(parts[1])
+                offered = [int(p) for p in parts[3:] if p.isdigit()]
+                for preferred in (PCMA_PAYLOAD_TYPE, PCMU_PAYLOAD_TYPE):
+                    if preferred in offered:
+                        pt = preferred
+                        break
+        return ip, port, pt
 
     # ── SDP / Message Builders ───────────────────────────────────────────
 
@@ -291,6 +311,12 @@ class ExotelSipClient:
                     if code in (100,):
                         continue
                     if 180 <= code <= 183:
+                        # 183 with early-media SDP: let passthrough callers hear ringback/busy.
+                        if code == 183 and body and "m=audio" in body and self.on_early_media:
+                            em_ip, em_port, em_pt = self._parse_audio_endpoint(body)
+                            if em_ip and em_port:
+                                logger.info(f"[SIP] 183 early media → {em_ip}:{em_port} PT={em_pt}")
+                                self.on_early_media(em_ip, em_port, em_pt)
                         continue
 
                     if code in (401, 407):
@@ -332,23 +358,7 @@ class ExotelSipClient:
                         await self._writer.drain()
                         logger.info("[SIP] ✅ 200 OK — ACK sent")
 
-                        rip, rport, rpt = None, 0, PCMA_PAYLOAD_TYPE
-                        for line in body.splitlines():
-                            if line.startswith("c=IN IP4"):
-                                rip = line.split()[-1]
-                            if line.startswith("m=audio"):
-                                parts = line.split()
-                                rport = int(parts[1])
-                                # Pick a real audio codec (8=PCMA, 0=PCMU), never 101 (DTMF)
-                                offered_pts = [int(p) for p in parts[3:] if p.isdigit()]
-                                for preferred in (PCMA_PAYLOAD_TYPE, PCMU_PAYLOAD_TYPE):
-                                    if preferred in offered_pts:
-                                        rpt = preferred
-                                        break
-                                else:
-                                    logger.warning(
-                                        f"[SIP] No supported audio PT in SDP: {offered_pts}"
-                                    )
+                        rip, rport, rpt = self._parse_audio_endpoint(body)
                         logger.info(f"[SIP] Remote RTP: {rip}:{rport} PT={rpt}")
                         return {"remote_ip": rip, "remote_port": rport, "pt": rpt}
 
