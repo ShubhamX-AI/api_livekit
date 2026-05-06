@@ -65,12 +65,11 @@ class RTPMediaBridge:
         )
 
         self._remote_addr: tuple[str, int] | None = None
-        # Gates both directions until SIP 200 OK arrives.
-        # Outbound: blocks send_to_rtp / _send_frame.
-        # Inbound: _recv_loop drops early-media packets so the agent hears nothing
-        # during ringing (_remote_addr can be auto-learned before 200 OK, so we
-        # cannot gate on _remote_addr alone).
+        # _tx_ready: gates outbound (web→SIP). Set only after 200 OK.
+        # _rx_ready: gates inbound (SIP→web). Set after 200 OK for agent calls;
+        #            set after 183+SDP for passthrough calls so humans hear ringback.
         self._tx_ready = False
+        self._rx_ready = False
         self._running = False
         self.negotiated_pt = PCMA_PAYLOAD_TYPE
 
@@ -115,11 +114,20 @@ class RTPMediaBridge:
         # so playback can't drift behind real-time under bursty input.
         self._recv_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
 
+    def set_early_media_endpoint(self, ip: str, port: int, pt: int = PCMA_PAYLOAD_TYPE):
+        """Unlock inbound RTP (SIP→web) before answer. Used by passthrough calls on 183+SDP.
+        TX stays locked — we don't send web audio to SIP until 200 OK."""
+        self._remote_addr = (ip, port)
+        self.negotiated_pt = pt
+        self._rx_ready = True
+        logger.info(f"[RTP] Early media endpoint → {ip}:{port} PT={pt} (RX only)")
+
     def set_remote_endpoint(self, ip: str, port: int, pt: int = PCMA_PAYLOAD_TYPE):
         self._remote_addr = (ip, port)
         self.negotiated_pt = pt
-        # Unlock outbound — called only after SIP 200 OK.
+        # Unlock both directions after SIP 200 OK.
         self._tx_ready = True
+        self._rx_ready = True
         logger.info(f"[RTP] Remote endpoint → {ip}:{port} PT={pt}")
         # Immediately flush any agent audio that was buffered during the SIP
         # INVITE / ringing phase.  We cannot await here (sync method) so we
@@ -224,8 +232,8 @@ class RTPMediaBridge:
             self._rx += 1
             self._last_rx_ts = time.time()
 
-            if not self._tx_ready:
-                continue  # early-media: count packet but don't forward to agent
+            if not self._rx_ready:
+                continue  # gates closed: agent calls wait for 200 OK, passthrough opens on 183
 
             pt = data[1] & 0x7F
             payload = data[RTP_HEADER_SIZE:]

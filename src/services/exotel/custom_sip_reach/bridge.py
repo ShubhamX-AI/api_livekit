@@ -48,6 +48,7 @@ async def run_bridge(
     preallocated_port: int | None = None,
     call_id: str | None = None,
     inbound_bye_event=None,
+    is_passthrough: bool = False,
 ):
     """
     result_queue       : multiprocessing.Queue — put() result dict when SIP resolves.
@@ -126,6 +127,11 @@ async def run_bridge(
                 logger.error(f"[BRIDGE] Failed to publish {event_name}: {e}")
 
         sip_client.on_hold_change = lambda h: asyncio.create_task(_on_hold_change(h))
+
+        # Passthrough: let human hear ringback/busy before 200 OK.
+        # On 183+SDP, unlock inbound RTP (SIP→web) while keeping TX locked (web→SIP stays blocked).
+        if is_passthrough:
+            sip_client.on_early_media = rtp_bridge.set_early_media_endpoint
 
         # Tracks arriving before SIP 200 OK: create AudioStream immediately and
         # drain frames to /dev/null. This prevents the LiveKit FFI from buffering
@@ -375,6 +381,7 @@ def _bridge_subprocess_entry(
     preallocated_port: int,
     call_id: str,
     inbound_bye_event,
+    is_passthrough: bool = False,
 ):
     """Top-level subprocess entry point — must be module-level to be picklable for spawn."""
     asyncio.run(run_bridge(
@@ -385,4 +392,5 @@ def _bridge_subprocess_entry(
         preallocated_port=preallocated_port,
         call_id=call_id,
         inbound_bye_event=inbound_bye_event,
+        is_passthrough=is_passthrough,
     ))

@@ -404,7 +404,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
             bridge_process = ctx.Process(
                 target=_bridge_subprocess_entry,
                 args=(item.to_number, room_name, sip_config, result_queue,
-                      bridge_port, bridge_call_id, inbound_bye),
+                      bridge_port, bridge_call_id, inbound_bye, is_passthrough),
                 daemon=True,
                 name=f"bridge-out-{item.to_number}",
             )
