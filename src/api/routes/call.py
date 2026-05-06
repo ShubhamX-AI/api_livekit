@@ -180,69 +180,46 @@ async def list_call_records(
     passthrough_only: bool = Query(False, description="Return only passthrough calls (no AI agent)"),
     to_number: Optional[str] = Query(None, description="Filter by destination phone number"),
     call_status: Optional[str] = Query(None, description="Filter by status (completed, failed, busy, no_answer, ...)"),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    start_date: Optional[datetime] = Query(None, description="Start date for filtering (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="End date for filtering (ISO 8601)"),
+    sort_by: str = Query("started_at", description="Field to sort by (e.g., started_at, ended_at, call_duration_minutes)"),
+    sort_order: str = Query("desc", description="Sort order: 'asc' or 'desc'"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Items per page"),
     current_user: APIKey = Depends(get_current_user),
 ):
-    """List call records for the authenticated user.
-
-    Use passthrough_only=true to retrieve passthrough calls (no assistant).
-    Use to_number to filter by the dialled phone number.
-    """
-    query = {"created_by_email": current_user.user_email}
+    query_conditions = [CallRecord.created_by_email == current_user.user_email]
 
     if passthrough_only:
-        query["is_passthrough"] = True
-
+        query_conditions.append(CallRecord.is_passthrough == True)
     if to_number:
-        query["to_number"] = to_number
-
+        query_conditions.append(CallRecord.to_number == to_number)
     if call_status:
-        query["call_status"] = call_status
+        query_conditions.append(CallRecord.call_status == call_status)
+    if start_date:
+        query_conditions.append(CallRecord.started_at >= start_date)
+    if end_date:
+        query_conditions.append(CallRecord.started_at <= end_date)
 
-    if start_date or end_date:
-        query["started_at"] = {}
-        if start_date:
-            query["started_at"]["$gte"] = start_date
-        if end_date:
-            query["started_at"]["$lte"] = end_date
+    sort_field = f"{'-' if sort_order == 'desc' else '+'}{sort_by}"
+    skip = (page - 1) * limit
 
-    records = (
-        await CallRecord.find(query)
-        .sort("-started_at")
-        .skip(offset)
-        .limit(limit)
-        .to_list()
-    )
+    records_query = CallRecord.find(*query_conditions)
+    total = await records_query.count()
+    records = await records_query.sort(sort_field).skip(skip).limit(limit).to_list()
 
     return apiResponse(
         success=True,
         message="Call records fetched successfully",
-        data=[
-            {
-                "room_name": r.room_name,
-                "queue_id": r.queue_id,
-                "assistant_id": r.assistant_id,
-                "assistant_name": r.assistant_name,
-                "to_number": r.to_number,
-                "call_status": r.call_status,
-                "call_status_reason": r.call_status_reason,
-                "call_type": r.call_type,
-                "call_service": r.call_service,
-                "platform_number": r.platform_number,
-                "answered_at": r.answered_at.isoformat() if r.answered_at else None,
-                "started_at": r.started_at.isoformat() if r.started_at else None,
-                "ended_at": r.ended_at.isoformat() if r.ended_at else None,
-                "call_duration_minutes": r.call_duration_minutes,
-                "is_passthrough": r.is_passthrough,
-                "recording_path": r.recording_path,
-                "sip_status_code": r.sip_status_code,
-                "sip_status_text": r.sip_status_text,
-            }
-            for r in records
-        ],
+        data={
+            "records": [r.model_dump(exclude={"id"}) for r in records],
+            "pagination": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": (total + limit - 1) // limit,
+            },
+        },
     )
 
 

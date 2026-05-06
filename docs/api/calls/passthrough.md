@@ -425,22 +425,44 @@ curl "https://api-livekit-vyom.indusnettechnologies.com/call/records?passthrough
 curl "https://api-livekit-vyom.indusnettechnologies.com/call/records?to_number=%2B918099990000" \
      -H "Authorization: Bearer <your_api_key>"
 
-# Filter by status
-curl "https://api-livekit-vyom.indusnettechnologies.com/call/records?passthrough_only=true&call_status=completed&limit=20" \
+# Filter by status, page 2
+curl "https://api-livekit-vyom.indusnettechnologies.com/call/records?passthrough_only=true&call_status=completed&limit=20&page=2" \
+     -H "Authorization: Bearer <your_api_key>"
+
+# Sort by duration descending
+curl "https://api-livekit-vyom.indusnettechnologies.com/call/records?sort_by=call_duration_minutes&sort_order=desc" \
      -H "Authorization: Bearer <your_api_key>"
 ```
 
 ### Query Parameters
 
-| Parameter          | Type    | Default | Description                                               |
-| :----------------- | :------ | :------ | :-------------------------------------------------------- |
-| `passthrough_only` | boolean | `false` | Returns only passthrough calls when `true`                |
-| `to_number`        | string  | —       | Filter by destination phone number (E.164)                |
-| `call_status`      | string  | —       | `completed`, `failed`, `busy`, `no_answer`, `timeout`     |
-| `start_date`       | datetime| —       | ISO 8601 start of date range (inclusive)                  |
-| `end_date`         | datetime| —       | ISO 8601 end of date range (inclusive)                    |
-| `limit`            | integer | `50`    | Max records (1–200)                                       |
-| `offset`           | integer | `0`     | Pagination offset                                         |
+| Parameter          | Type     | Default      | Description                                                   |
+| :----------------- | :------- | :----------- | :------------------------------------------------------------ |
+| `passthrough_only` | boolean  | `false`      | Returns only passthrough calls when `true`                    |
+| `to_number`        | string   | —            | Filter by destination phone number (E.164)                    |
+| `call_status`      | string   | —            | `completed`, `failed`, `busy`, `no_answer`, `timeout`         |
+| `start_date`       | datetime | —            | ISO 8601 start of date range (inclusive)                      |
+| `end_date`         | datetime | —            | ISO 8601 end of date range (inclusive)                        |
+| `sort_by`          | string   | `started_at` | Field to sort by: `started_at`, `ended_at`, `call_duration_minutes` |
+| `sort_order`       | string   | `desc`       | `asc` or `desc`                                               |
+| `page`             | integer  | `1`          | Page number (minimum: 1)                                      |
+| `limit`            | integer  | `10`         | Items per page (1–100)                                        |
+
+### Response Pagination
+
+```json
+{
+  "data": {
+    "records": [...],
+    "pagination": {
+      "total": 42,
+      "page": 1,
+      "limit": 10,
+      "total_pages": 5
+    }
+  }
+}
+```
 
 Every record includes `"is_passthrough": true` so call type is always identifiable even in mixed (non-filtered) queries.
 

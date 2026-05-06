@@ -28,16 +28,32 @@ The webhook payload includes `data.queue_id` for outbound calls — this matches
 
 See [End Call Webhook](webhook.md) for the complete payload contract.
 
-### Option 3 — Query Call Logs
+### Option 3 — Query Call Logs (by assistant)
 
-Use `GET /assistant/call-logs/{assistant_id}` to look up past and current call records.
+Use `GET /assistant/call-logs/{assistant_id}` to look up past and current call records for a specific assistant.
 
 ```bash
-curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/call-logs/ASSISTANT_ID?limit=10" \
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/call-logs/ASSISTANT_ID?page=1&limit=10" \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
 Full query parameters (pagination, date range, sort) are documented in [Call Logs](../assistant/logs.md).
+
+### Option 4 — Query All Call Records (cross-assistant)
+
+Use `GET /call/records` to query across all calls for your account — including passthrough calls (which have no assistant).
+
+```bash
+# All calls, newest first
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/call/records?page=1&limit=10" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# Passthrough calls only
+curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/call/records?passthrough_only=true" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+Supports `passthrough_only`, `to_number`, `call_status`, `start_date`, `end_date`, `sort_by`, `sort_order`, `page`, and `limit`. See [Passthrough Calls](passthrough.md#get-call-records) for full parameter reference.
 
 ---
 
