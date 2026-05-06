@@ -355,6 +355,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 call_service="twilio",
                 platform_number=(trunk.trunk_config.get("numbers") or [None])[0],
                 queue_id=item.queue_id,
+                is_passthrough=is_passthrough,
             )
             await livekit_services.create_sip_participant(
                 room_name=room_name,
@@ -387,6 +388,7 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                 call_service="exotel",
                 platform_number=sip_config.get("exotel_number"),
                 queue_id=item.queue_id,
+                is_passthrough=is_passthrough,
             )
 
             # Pre-allocate resources in parent so monitor can release them
