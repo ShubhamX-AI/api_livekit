@@ -551,7 +551,7 @@ sequenceDiagram
     Bridge->>DB: Load active assistant
     Bridge->>LK: Create room
     Bridge->>LK: Create dispatch metadata
-    Bridge-->>Exotel: SIP 200 OK (port bound; bridge thread starts)
+    Bridge-->>Exotel: SIP 200 OK (port bound, bridge thread starts)
     LK->>Agent: Start session with metadata
     alt strategy_id present and lookup succeeds
         Agent->>DB: Load strategy
@@ -565,7 +565,7 @@ sequenceDiagram
         Agent->>Agent: Continue without context lookup
     end
     Agent->>Agent: Render prompt/start instruction
-    Note over Bridge,LK: Bridge thread: LiveKit connect + RTP start_inbound
+    Note over Bridge,LK: Bridge thread — LiveKit connect + RTP start_inbound
     Exotel->>Bridge: RTP audio uplink
     Bridge-->>Exotel: RTP audio downlink
     Bridge->>LK: Audio relay uplink
