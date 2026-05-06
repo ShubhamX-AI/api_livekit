@@ -234,10 +234,17 @@ async def run_bridge(
         # check needs polling — use a short tick (200ms) so hangup detection is
         # bounded by network timeout, not by the loop cadence.
         lk_disconnected = asyncio.Event()
+        bridge_identity = f"sip-{phone_number}"
 
         @room.on("disconnected")
         def _on_lk_disconnected(*_args, **_kwargs):
             lk_disconnected.set()
+
+        @room.on("participant_disconnected")
+        def _on_participant_disconnected(participant: rtc.RemoteParticipant):
+            if participant.identity != bridge_identity:
+                logger.info(f"[BRIDGE] Web participant {participant.identity!r} left room — ending call")
+                lk_disconnected.set()
 
         # If LiveKit already disconnected before the listener was attached, set now.
         if room.connection_state != rtc.ConnectionState.CONN_CONNECTED:

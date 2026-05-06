@@ -279,6 +279,7 @@ async def _monitor_exotel_result(
                     )
             except Exception as e:
                 logger.error(f"Passthrough end_call finalization failed | room={room_name}: {e}")
+            await livekit_services.delete_room(room_name=room_name)
             return
 
         # Safety net: if session.py's end_call failed (DB error, task crash),
