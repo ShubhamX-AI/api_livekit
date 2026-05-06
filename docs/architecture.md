@@ -255,10 +255,10 @@ sequenceDiagram
         Disp->>DB: Insert CallRecord (status=initiated)
         alt Exotel
             Disp->>Disp: Pre-allocate port + call_id + inbound_bye Event
-            Disp->>SIP: spawn subprocess → _bridge_subprocess_entry
+            Disp->>SIP: spawn subprocess _bridge_subprocess_entry
             Note over Disp,SIP: Each subprocess owns its own FFI singleton (no shared queue)
-            SIP-->>Disp: multiprocessing.Queue.put() (INVITE answered or failed)
-            Note over Disp: Monitor polls Queue every 500ms; terminates process on 60s timeout
+            SIP-->>Disp: multiprocessing Queue result (INVITE answered or failed)
+            Note over Disp: Monitor polls Queue every 500ms, terminates process on 60s timeout
         else Twilio
             Disp->>LK: create_sip_participant
         end
@@ -266,8 +266,8 @@ sequenceDiagram
         LK->>Agent: Start session
     end
 
-    User->>API: GET /call/queue/{queue_id}
-    API-->>User: { status, dispatched_at, ... }
+    User->>API: GET /call/queue/queue_id
+    API-->>User: status, dispatched_at, ...
 ```
 
 ### Queue States
@@ -393,10 +393,10 @@ sequenceDiagram
 
     Remote->>Exotel: Put on hold
     Exotel->>SIP: SIP re-INVITE (a=sendonly)
-    SIP->>SIP: _sdp_is_hold() → True
+    SIP->>SIP: _sdp_is_hold() = True
     SIP->>Exotel: 200 OK
     SIP->>Bridge: on_hold_change(True)
-    Bridge->>LK: publish_data({"event":"call_hold"})
+    Bridge->>LK: publish_data event call_hold
     LK->>Session: data_received (sip_bridge_events)
     Session->>HC: signal_hold(True)
     HC->>HC: stop watchdog + fillers
@@ -406,10 +406,10 @@ sequenceDiagram
 
     Remote->>Exotel: Resume call
     Exotel->>SIP: SIP re-INVITE (a=sendrecv)
-    SIP->>SIP: _sdp_is_hold() → False
+    SIP->>SIP: _sdp_is_hold() = False
     SIP->>Exotel: 200 OK
     SIP->>Bridge: on_hold_change(False)
-    Bridge->>LK: publish_data({"event":"call_resume"})
+    Bridge->>LK: publish_data event call_resume
     LK->>Session: data_received (sip_bridge_events)
     Session->>HC: signal_hold(False)
     HC->>HC: restart watchdog
@@ -471,19 +471,19 @@ sequenceDiagram
     API->>LK: create_room() synchronously
     API->>DB: initialize_call_record (is_passthrough=true)
     API->>DB: Insert OutboundCallQueue (passthrough_room_name=room_name)
-    API-->>Client: 202 + { room_token, room_name, queue_id }
+    API-->>Client: 202 + room_token, room_name, queue_id
     Client->>LK: Connect with room_token, publish mic
 
-    Note over Disp: Change Stream fires → dispatcher wakes
+    Note over Disp: MongoDB Change Stream fires, dispatcher wakes
     Disp->>DB: Fetch pending queue item
-    Disp->>Disp: is_passthrough=true → skip create_agent_dispatch
+    Disp->>Disp: is_passthrough=true, skip create_agent_dispatch
     Disp->>Bridge: spawn bridge subprocess (Exotel) or create_sip_participant (Twilio)
-    Bridge->>Bridge: SIP INVITE → answered
+    Bridge->>Bridge: SIP INVITE answered
     Bridge->>DB: update_call_status(answered, answered_at=now)
     Bridge->>LK: start_room_recording
     Note over Client,Bridge: Audio flows bidirectionally
     Bridge->>Bridge: Bridge exits (BYE or error)
-    Bridge->>DB: end_call() → completed, stop recording
+    Bridge->>DB: end_call(), completed, stop recording
     Bridge->>Bridge: POST passthrough_webhook_url
 ```
 
@@ -553,14 +553,14 @@ sequenceDiagram
     Bridge->>LK: Create dispatch metadata
     Bridge-->>Exotel: SIP 200 OK (port bound; bridge thread starts)
     LK->>Agent: Start session with metadata
-    alt strategy_id present
+    alt strategy_id present and lookup succeeds
         Agent->>DB: Load strategy
         Agent->>Webhook: Request inbound caller context
-        alt Lookup succeeds
-            Webhook-->>Agent: {context: {...}}
-        else Lookup fails/times out
-            Webhook-->>Agent: error or invalid payload
-        end
+        Webhook-->>Agent: context payload
+    else strategy_id present but lookup fails or times out
+        Agent->>DB: Load strategy
+        Agent->>Webhook: Request inbound caller context
+        Webhook-->>Agent: error or invalid payload
     else strategy_id missing
         Agent->>Agent: Continue without context lookup
     end

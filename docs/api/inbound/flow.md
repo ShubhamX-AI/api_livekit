@@ -92,24 +92,19 @@ sequenceDiagram
         Bridge->>LK: Create room and dispatch agent
         Bridge-->>Exotel: 200 OK
         LK->>Agent: Start session with dispatch metadata
-        alt strategy_id exists
-            Agent->>DB: Load active strategy
-            alt Strategy found
-                Agent->>Webhook: POST caller/context lookup
-                alt Valid response {context: {...}}
-                    Webhook-->>Agent: context payload
-                else Timeout or invalid response
-                    Webhook-->>Agent: error or invalid payload
-                end
-            else Strategy missing/inactive
-                Agent->>Agent: Skip lookup and continue
-            end
-        else No strategy
-            Agent->>Agent: Continue without lookup
-        end
-        Agent->>Agent: Render prompt/start instruction
-        Bridge->>Agent: Publish call_answered event
-        Exotel->>Bridge: RTP audio
-        Agent->>Bridge: RTP audio
     end
+    alt strategy_id exists and strategy found
+        Agent->>DB: Load active strategy
+        Agent->>Webhook: POST caller/context lookup
+        Webhook-->>Agent: context payload or error/timeout
+    else strategy_id exists but strategy missing/inactive
+        Agent->>DB: Load active strategy
+        Agent->>Agent: Skip lookup and continue
+    else No strategy_id
+        Agent->>Agent: Continue without lookup
+    end
+    Agent->>Agent: Render prompt/start instruction
+    Bridge->>Agent: Publish call_answered event
+    Exotel->>Bridge: RTP audio
+    Agent->>Bridge: RTP audio
 ```

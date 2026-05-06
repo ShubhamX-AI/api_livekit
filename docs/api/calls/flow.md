@@ -127,7 +127,7 @@ sequenceDiagram
     API->>API: Validate trunk (passthrough_mode=true)
     API->>API: Create LiveKit room synchronously
     API->>Queue: Insert queue item (passthrough_room_name set)
-    API-->>WebClient: 202 + { room_token, room_name, queue_id }
+    API-->>WebClient: 202 + room_token, room_name, queue_id
     WebClient->>WebClient: Connect LiveKit with room_token, enable mic
 
     Dispatcher->>Queue: Poll pending items
@@ -145,7 +145,7 @@ sequenceDiagram
     end
     Phone->>Provider: Hang up
     Provider-->>Bridge: SIP BYE
-    Bridge->>Bridge: end_call() → stop recording, status=completed
+    Bridge->>Bridge: end_call(), stop recording, status=completed
     Bridge->>Bridge: POST passthrough_webhook_url
 ```
 
