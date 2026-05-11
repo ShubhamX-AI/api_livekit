@@ -33,7 +33,7 @@ from .sip_client import format_exotel_number
 from src.core.db.db_schemas import Assistant, InboundSIP
 from src.services.livekit.livekit_svc import LiveKitService
 from src.services.outbound_dispatcher.dispatcher import try_reserve_slot, release_slot
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger, setup_logging, set_room_context
 setup_logging()
 
 
@@ -79,6 +79,7 @@ async def _run_inbound_bridge(
     """
     pool = get_port_pool()
     room = rtc.Room()
+    set_room_context(room_name)
 
     try:
         @room.on("track_subscribed")
@@ -279,6 +280,8 @@ async def handle_inbound_call(
 
     try:
         room_name = await livekit_service.create_room(assistant.assistant_id)
+        set_room_context(room_name)
+        logger.info(f"[INBOUND] SIP call_id={call_id} mapped to room={room_name}")
     except Exception as e:
         logger.error(f"[INBOUND] Failed to create room: {e}")
         writer.write(

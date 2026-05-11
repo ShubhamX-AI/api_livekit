@@ -24,7 +24,7 @@ import json
 from datetime import datetime, timezone
 
 from src.core.config import settings
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
@@ -74,6 +74,7 @@ async def entrypoint(ctx: JobContext):
     # Retrieve agent ID from room name
     room_name = ctx.room.name
     assistant_id = room_name.split("_", 1)[0]
+    set_room_context(room_name)
     logger.info(f"Agent session starting | room: {room_name} | identifier: {assistant_id}")
 
     # Fetch assistant from DB

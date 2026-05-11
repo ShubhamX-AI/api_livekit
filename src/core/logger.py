@@ -2,8 +2,29 @@ import logging
 from logging.handlers import RotatingFileHandler
 import sys
 import json
+from contextvars import ContextVar
+from typing import Optional
 from datetime import datetime
 from src.core.config import settings
+
+_room_context: ContextVar[Optional[str]] = ContextVar("room_context", default=None)
+
+
+def set_room_context(room_name: str) -> None:
+    """Set room_name in current async/thread context so all subsequent logs carry it."""
+    _room_context.set(room_name)
+
+
+def clear_room_context() -> None:
+    _room_context.set(None)
+
+
+class RoomContextFilter(logging.Filter):
+    """Inject room_name from contextvar into every log record."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        room = _room_context.get()
+        record.room_name = room if room else None
+        return True
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter for colored log output in development"""
@@ -42,38 +63,46 @@ class JsonFormatter(logging.Formatter):
             "file": record.filename,
             "line": record.lineno
         }
-        
+
+        # Inject room_name for call lifecycle tracing (set via set_room_context)
+        room = getattr(record, "room_name", None)
+        if room:
+            log_entry["room_name"] = room
+
         # Add exception info if present
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
-            
+
         # Add extra fields from record if any
         if hasattr(record, "extra"):
             log_entry.update(record.extra)
-            
+
         return json.dumps(log_entry)
 
 def setup_logging():
     """Configure the root logger based on settings"""
     logger = logging.getLogger()
-    
+
     # Set log level from config
     level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
     logger.setLevel(level)
-    
+
     # Remove existing handlers to avoid duplicates
     if logger.handlers:
         logger.handlers.clear()
 
+    room_filter = RoomContextFilter()
+
     # Create console handler
     handler = logging.StreamHandler(sys.stdout)
-    
+    handler.addFilter(room_filter)
+
     # Set formatter based on environment
     if settings.LOG_JSON_FORMAT:
         formatter = JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S")
     else:
         formatter = ColoredFormatter()
-        
+
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
@@ -84,6 +113,7 @@ def setup_logging():
             maxBytes=settings.LOG_MAX_BYTES,
             backupCount=settings.LOG_BACKUP_COUNT
         )
+        file_handler.addFilter(room_filter)
         # Always use JSON formatter for file logs for easier parsing
         file_handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
         logger.addHandler(file_handler)
