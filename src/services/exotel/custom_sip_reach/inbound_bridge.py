@@ -33,8 +33,7 @@ from .sip_client import format_exotel_number
 from src.core.db.db_schemas import Assistant, InboundSIP
 from src.services.livekit.livekit_svc import LiveKitService
 from src.services.outbound_dispatcher.dispatcher import try_reserve_slot, release_slot
-from src.core.logger import logger, setup_logging, set_room_context
-setup_logging()
+from src.core.logger import logger, set_room_context, clear_room_context
 
 
 def _extract_sip_number(header_value: str) -> str:
@@ -145,6 +144,7 @@ async def _run_inbound_bridge(
         pool.release(port)
         logger.info(f"[INBOUND] Port {port} released")
         unregister_call_id(call_id)
+        clear_room_context()
 
 
 async def handle_inbound_call(

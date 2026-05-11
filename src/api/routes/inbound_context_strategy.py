@@ -14,10 +14,9 @@ from src.core.db.db_schemas import (
     InboundContextStrategy,
     InboundSIP,
 )
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 
 router = APIRouter()
-setup_logging()
 
 
 def mask_strategy_config(config: dict | None) -> dict | None:

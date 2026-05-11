@@ -7,8 +7,7 @@ config validator live here.
 
 import os
 from dotenv import load_dotenv
-from src.core.logger import logger, setup_logging
-setup_logging()
+from src.core.logger import logger
 
 load_dotenv(override=False)
 

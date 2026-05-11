@@ -14,11 +14,10 @@ from livekit.protocol.sip import (
     # ListSIPOutboundTrunkRequest,
 )
 from src.core.config import settings
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 from src.core.billing import calculate_billable_duration_minutes, NON_BILLABLE_FINAL_STATUSES
 from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog, UsageRecord
 
-setup_logging()
 
 PASSTHROUGH_ROOM_PREFIX = "passthrough"
 

@@ -3,12 +3,11 @@ from src.api.models.api_schemas import CreateTool, UpdateTool, AttachToolsReques
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Tool, Assistant, APIKey
 from src.api.dependencies import get_current_user
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 import uuid
 from datetime import datetime, timezone
 
 router = APIRouter()
-setup_logging()
 
 
 # ---- TOOL CRUD ----

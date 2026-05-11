@@ -35,9 +35,8 @@ from .inbound_listener import (
 from .port_pool import get_port_pool
 from .rtp_bridge import RTPMediaBridge
 from .sip_client import ExotelSipClient
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 
-setup_logging()
 
 
 async def run_bridge(

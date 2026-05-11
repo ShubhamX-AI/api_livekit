@@ -6,11 +6,10 @@ from src.api.models.api_schemas import TriggerOutboundCall, TriggerPassthroughCa
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import OutboundSIP, APIKey, Assistant, OutboundCallQueue, CallRecord
 from src.api.dependencies import get_current_user
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 from src.services.livekit.livekit_svc import LiveKitService
 
 router = APIRouter()
-setup_logging()
 _livekit_services = LiveKitService()
 
 

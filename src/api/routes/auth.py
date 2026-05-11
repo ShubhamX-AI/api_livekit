@@ -7,7 +7,6 @@ from src.core.logger import logger,setup_logging
 import secrets
 
 router = APIRouter()
-setup_logging()
 
 # Create api key
 @router.post("/create-key")

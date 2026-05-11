@@ -2,13 +2,12 @@ from fastapi import APIRouter, HTTPException, Depends
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Assistant, APIKey
 from src.api.dependencies import get_current_user
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 from src.services.livekit.livekit_svc import LiveKitService
 from src.api.models.api_schemas import TriggerWebCall
 from google.protobuf.json_format import MessageToDict
 
 router = APIRouter()
-setup_logging()
 livekit_services = LiveKitService()
 
 # Generate Web Call Token

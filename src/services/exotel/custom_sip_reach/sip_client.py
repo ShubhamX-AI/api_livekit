@@ -29,9 +29,8 @@ from .config import (
     PCMU_PAYLOAD_TYPE,
 )
 from .digest_auth import calculate_digest_auth
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 
-setup_logging()
 
 
 def format_exotel_number(number: str) -> str:

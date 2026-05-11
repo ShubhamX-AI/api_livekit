@@ -13,8 +13,7 @@ import threading
 
 from .config import EXOTEL_CUSTOMER_SIP_PORT, EXOTEL_SIP_ALLOWED_IPS, INBOUND_SIP_LISTEN
 from .sip_client import ExotelSipClient
-from src.core.logger import logger, setup_logging
-setup_logging()
+from src.core.logger import logger
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module-level state

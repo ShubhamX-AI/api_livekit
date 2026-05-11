@@ -7,11 +7,10 @@ from src.api.dependencies import get_current_user
 from src.api.models.api_schemas import AssignInboundNumber, UpdateInboundMapping
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import APIKey, Assistant, InboundContextStrategy, InboundSIP
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 from src.services.exotel.custom_sip_reach.sip_client import format_exotel_number
 
 router = APIRouter()
-setup_logging()
 
 
 def normalize_inbound_number(phone_number: str) -> str:

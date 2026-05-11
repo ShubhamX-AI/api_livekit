@@ -29,8 +29,7 @@ from .config import (
     SAMPLE_RATE_SIP,
     MAX_FRAME_BUFFER,
 )
-from src.core.logger import logger, setup_logging
-setup_logging()
+from src.core.logger import logger
 
 
 def _decode_rtp_payload(payload: bytes, pt: int, rs_in) -> tuple[bytes, object]:

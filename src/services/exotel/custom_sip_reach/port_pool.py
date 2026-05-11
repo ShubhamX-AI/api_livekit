@@ -10,8 +10,7 @@ import threading
 import time
 
 from .config import RTP_PORT_START, RTP_PORT_END
-from src.core.logger import logger, setup_logging
-setup_logging()
+from src.core.logger import logger
 
 
 class PortPool:

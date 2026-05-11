@@ -4,12 +4,11 @@ from src.api.models.api_schemas import CreateAssistant, UpdateAssistant
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Assistant, APIKey, CallRecord
 from src.api.dependencies import get_current_user
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 import uuid
 from datetime import datetime, timezone
 
 router = APIRouter()
-setup_logging()
 
 
 # Utility functions to merge interaction config and mask API keys in TTS config for security when listing assistants or fetching details

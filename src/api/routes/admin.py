@@ -4,10 +4,9 @@ from fastapi import APIRouter, Depends, Query
 from src.api.dependencies import get_super_admin
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import APIKey, CallRecord, UsageRecord
-from src.core.logger import logger, setup_logging
+from src.core.logger import logger
 
 router = APIRouter()
-setup_logging()
 
 
 def _date_format_for_granularity(granularity: str) -> str:

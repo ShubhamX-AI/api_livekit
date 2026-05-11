@@ -20,10 +20,10 @@ def clear_room_context() -> None:
 
 
 class RoomContextFilter(logging.Filter):
-    """Inject room_name from contextvar into every log record."""
+    """Inject call_room from contextvar into every log record (avoids livekit's room_name field)."""
     def filter(self, record: logging.LogRecord) -> bool:
         room = _room_context.get()
-        record.room_name = room if room else None
+        record.call_room = room if room else None
         return True
 
 class ColoredFormatter(logging.Formatter):
@@ -64,10 +64,9 @@ class JsonFormatter(logging.Formatter):
             "line": record.lineno
         }
 
-        # Inject room_name for call lifecycle tracing (set via set_room_context)
-        room = getattr(record, "room_name", None)
-        if room:
-            log_entry["room_name"] = room
+        # Inject call_room for call lifecycle tracing — separate field avoids livekit's room_name collision
+        if record.call_room:
+            log_entry["call_room"] = record.call_room
 
         # Add exception info if present
         if record.exc_info:
@@ -79,17 +78,21 @@ class JsonFormatter(logging.Formatter):
 
         return json.dumps(log_entry)
 
+_logging_configured = False
+
+
 def setup_logging():
     """Configure the root logger based on settings"""
+    global _logging_configured
+    if _logging_configured:
+        return
+    _logging_configured = True
+
     logger = logging.getLogger()
 
     # Set log level from config
     level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
     logger.setLevel(level)
-
-    # Remove existing handlers to avoid duplicates
-    if logger.handlers:
-        logger.handlers.clear()
 
     room_filter = RoomContextFilter()
 
