@@ -64,9 +64,8 @@ class JsonFormatter(logging.Formatter):
             "line": record.lineno
         }
 
-        # Inject call_room for call lifecycle tracing — separate field avoids livekit's room_name collision
-        if record.call_room:
-            log_entry["call_room"] = record.call_room
+        # Always include call_room (null when outside a call context)
+        log_entry["call_room"] = getattr(record, "call_room", None)
 
         # Add exception info if present
         if record.exc_info:
@@ -95,6 +94,11 @@ def setup_logging():
     logger.setLevel(level)
 
     room_filter = RoomContextFilter()
+
+    # Add at root logger level so call_room is stamped on the record before
+    # livekit's LogQueueHandler pickles and forwards it to the parent process.
+    # Without this, the parent process reads _room_context = None always.
+    logging.getLogger().addFilter(room_filter)
 
     # Create console handler
     handler = logging.StreamHandler(sys.stdout)
