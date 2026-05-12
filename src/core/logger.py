@@ -2,28 +2,30 @@ import logging
 from logging.handlers import RotatingFileHandler
 import sys
 import json
-from contextvars import ContextVar
 from typing import Optional
 from datetime import datetime
 from src.core.config import settings
 
-_room_context: ContextVar[Optional[str]] = ContextVar("room_context", default=None)
+# Module-level global — safe because each agent subprocess handles exactly one call.
+# ContextVar was unreliable here: livekit TTS plugin spawns its own asyncio tasks
+# that don't inherit the caller's context, so _room_context.get() returned None there.
+_current_room: Optional[str] = None
 
 
 def set_room_context(room_name: str) -> None:
-    """Set room_name in current async/thread context so all subsequent logs carry it."""
-    _room_context.set(room_name)
+    global _current_room
+    _current_room = room_name
 
 
 def clear_room_context() -> None:
-    _room_context.set(None)
+    global _current_room
+    _current_room = None
 
 
 class RoomContextFilter(logging.Filter):
-    """Inject call_room from contextvar into every log record (avoids livekit's room_name field)."""
+    """Inject call_room into every log record so all loggers (incl. third-party) carry it."""
     def filter(self, record: logging.LogRecord) -> bool:
-        room = _room_context.get()
-        record.call_room = room if room else None
+        record.call_room = _current_room
         return True
 
 class ColoredFormatter(logging.Formatter):
