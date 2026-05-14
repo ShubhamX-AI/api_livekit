@@ -118,7 +118,7 @@ class RTPMediaBridge:
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
         self._hp_zi = None   # sosfilt state for inbound 80 Hz high-pass filter
-        self._audio_processor = AudioProcessor(gain_controller=True, noise_suppression=True)
+        self._audio_processor = AudioProcessor(True, True)  # gain_controller, noise_suppression
         self._rs_out = None  # resample state outbound (audioop.ratecv)
 
         self._rx = 0
