@@ -3,7 +3,6 @@ from logging.handlers import RotatingFileHandler
 import sys
 import json
 from typing import Optional
-from datetime import datetime
 from src.core.config import settings
 
 # Module-level global — safe because each agent subprocess handles exactly one call.
@@ -23,9 +22,17 @@ def clear_room_context() -> None:
 
 
 class RoomContextFilter(logging.Filter):
-    """Inject call_room into every log record so all loggers (incl. third-party) carry it."""
+    """Inject call_room into every log record so all loggers (incl. third-party) carry it.
+
+    When the parent process receives forwarded log records from a subprocess via
+    LogQueueListener, _current_room is None in the parent. The record already has
+    call_room stamped by the subprocess filter. Preserve it instead of overwriting.
+    """
     def filter(self, record: logging.LogRecord) -> bool:
-        record.call_room = _current_room
+        if _current_room is not None:
+            record.call_room = _current_room
+        elif not hasattr(record, 'call_room'):
+            record.call_room = None
         return True
 
 class ColoredFormatter(logging.Formatter):
