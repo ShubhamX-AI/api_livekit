@@ -412,6 +412,36 @@ Consumers import from the package root:
 from src.services.outbound_dispatcher import outbound_dispatcher_loop # sip_dispatcher_run.py
 ```
 
+### Inbound RTP Audio Processing
+
+Phone audio from PSTN arrives as **G.711 at 8 kHz**, narrow-band (300–3400 Hz). Feeding it raw to the STT model caused hallucinations — random scripts (Urdu, Hebrew) appearing in transcripts instead of the actual speech. The root causes were:
+
+| Problem | Effect on STT |
+|---------|---------------|
+| `audioop.ratecv` linear interpolation (8 kHz → 48 kHz) | Creates aliasing harmonics every 8 kHz. STT sees a spectrally wrong signal and hallucinates. |
+| Fixed 3× gain applied before resampling | Clips loud phone speech → heavy distortion → hallucination |
+| No frequency filtering | DC offset + subsonic rumble (< 300 Hz) from phone acoustics reaches STT as if it were speech |
+
+The inbound decode pipeline in `rtp_bridge.py::_decode_rtp_payload` now processes each G.711 packet as follows:
+
+```
+G.711 packet (PCMA/PCMU, 8 kHz)
+    ↓  audioop.alaw2lin / ulaw2lin
+raw PCM int16 at 8 kHz
+    ↓  Butterworth bandpass (300–3400 Hz, order 4, stateful sosfilt zi)
+frequency-cleaned PCM — only PSTN speech band, DC and rumble stripped
+    ↓  scipy.signal.resample_poly(samples, up=6, down=1)
+PCM at 48 kHz — polyphase FIR with built-in anti-aliasing, no aliasing harmonics
+    ↓  gain × 2.0 + np.clip(−1, 1)
+final PCM int16 at 48 kHz → LiveKit AudioSource → STT
+```
+
+**Why stateful filter (`sosfilt zi`)?** The bandpass IIR filter carries its state (`zi`) across consecutive RTP packets. Without this, the filter restarts with zero initial conditions on each 20ms packet, producing a transient click at every packet boundary — audible as 50 Hz buzz on the STT side.
+
+**Why `resample_poly` over `audioop.ratecv`?** `ratecv` uses linear interpolation, which for a 6:1 upsample creates images of the 8 kHz signal at multiples of 8 kHz throughout the 48 kHz spectrum. `resample_poly` uses a polyphase Kaiser-windowed FIR to reconstruct the correct band-limited signal before upsampling — the output looks like true 48 kHz narrowband audio.
+
+**Dependencies added:** `scipy>=1.13.0`, `numpy>=1.26.0`.
+
 ### Hold & Resume Detection
 
 When a party puts the call on hold, the platform detects it and suppresses all agent activity to prevent the agent from responding to hold music.

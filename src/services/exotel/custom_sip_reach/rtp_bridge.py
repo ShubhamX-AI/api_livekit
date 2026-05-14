@@ -18,6 +18,8 @@ import time
 from collections.abc import AsyncIterator
 
 import audioop
+import numpy as np
+from scipy.signal import butter, resample_poly, sosfilt, sosfilt_zi
 
 from livekit import rtc
 
@@ -31,13 +33,39 @@ from .config import (
 )
 from src.core.logger import logger
 
+# PSTN carries 300–3400 Hz. Bandpass removes DC, subsonic rumble, and out-of-band noise
+# before sending to STT — reduces Whisper hallucination on narrow-band phone audio.
+_BP_SOS = butter(4, [300, 3400], btype="band", fs=SAMPLE_RATE_SIP, output="sos")
+_BP_ZI_TEMPLATE = sosfilt_zi(_BP_SOS)  # shape (n_sections, 2), scaled per-packet
 
-def _decode_rtp_payload(payload: bytes, pt: int, rs_in) -> tuple[bytes, object]:
-    """Decode G.711 and resample 8 kHz → 48 kHz. Module-level so it's safe to run in a thread pool."""
+
+def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
+    """Decode G.711, bandpass-filter PSTN range (300-3400 Hz), resample 8 kHz→48 kHz.
+
+    Uses polyphase resampling (scipy) instead of linear interpolation (audioop.ratecv)
+    to avoid aliasing artifacts that cause Whisper to hallucinate on phone audio.
+    zi: sosfilt filter state array, or None on first packet.
+    """
     pcm8 = audioop.alaw2lin(payload, 2) if pt == PCMA_PAYLOAD_TYPE else audioop.ulaw2lin(payload, 2)
-    pcm8 = audioop.mul(pcm8, 2, 3.0)
-    pcm48, new_rs = audioop.ratecv(pcm8, 2, 1, SAMPLE_RATE_SIP, SAMPLE_RATE_LK, rs_in)
-    return pcm48, new_rs
+
+    samples = np.frombuffer(pcm8, dtype=np.int16).astype(np.float32) * (1.0 / 32768.0)
+    if len(samples) == 0:
+        return b"", zi
+
+    # Scale template to first-sample DC level (scipy idiom) to suppress startup transient.
+    if zi is None:
+        zi = _BP_ZI_TEMPLATE * samples[0]
+    samples, zi = sosfilt(_BP_SOS, samples, zi=zi)
+
+    # Polyphase upsample 8 kHz→48 kHz with built-in anti-aliasing FIR
+    samples = resample_poly(samples, 6, 1)
+
+    # Moderate gain + soft-clip; fixed 3× was clipping loud phone speech → distortion
+    samples *= 2.0
+    np.clip(samples, -1.0, 1.0, out=samples)
+
+    pcm48 = (samples * 32767.0).astype(np.int16).tobytes()
+    return pcm48, zi
 
 
 class RTPMediaBridge:
@@ -79,8 +107,8 @@ class RTPMediaBridge:
         self._rtp_ts = random.randint(0, 0xFFFFFFFF)
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
-        self._rs_in = None  # resample state inbound
-        self._rs_out = None  # resample state outbound
+        self._bp_zi = None   # sosfilt state for inbound PSTN bandpass filter
+        self._rs_out = None  # resample state outbound (audioop.ratecv)
 
         self._rx = 0
         self._tx = 0
@@ -238,12 +266,14 @@ class RTPMediaBridge:
             payload = data[RTP_HEADER_SIZE:]
 
             try:
-                # Decode in thread pool so the event loop can schedule other coroutines
-                # (e.g. _frame_iter draining agent AudioStream) during the CPU work.
-                # rs_in is an immutable tuple — safe to pass across thread boundary.
-                pcm48, self._rs_in = await asyncio.to_thread(
-                    _decode_rtp_payload, payload, pt, self._rs_in
+                # Decode in thread pool so the event loop can schedule other coroutines.
+                # sosfilt returns a new zi array (no in-place mutation) so passing self._bp_zi
+                # to the thread is safe — no shared-state race with the next packet.
+                pcm48, self._bp_zi = await asyncio.to_thread(
+                    _decode_rtp_payload, payload, pt, self._bp_zi
                 )
+                if not pcm48:
+                    continue
                 frame = rtc.AudioFrame(
                     data=pcm48,
                     sample_rate=SAMPLE_RATE_LK,
