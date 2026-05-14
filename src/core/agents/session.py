@@ -331,8 +331,6 @@ async def entrypoint(ctx: JobContext):
         # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
         llm_config = assistant.assistant_llm_config or {}
         _langs = interaction_config.preferred_languages or []
-        # Only set when exactly one language is preferred; multi-language → let model auto-detect.
-        _stt_language: str | None = _langs[0].split("-")[0] if len(_langs) == 1 else None
         _stt_prompt = (
             f"{'Expected language(s): ' + ', '.join(_langs) + '. ' if _langs else ''}"
             "Transcribe speech using ONLY Latin/Roman alphabet characters. "
@@ -348,7 +346,6 @@ async def entrypoint(ctx: JobContext):
             model="gpt-realtime-1.5",
             input_audio_transcription=AudioTranscription(
                 model="gpt-4o-transcribe",
-                language=_stt_language,
                 prompt=_stt_prompt,
             ),
             input_audio_noise_reduction="near_field",
