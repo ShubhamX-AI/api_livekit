@@ -11,6 +11,7 @@ from src.core.config import settings
 
 REPROMPT_INTERVAL_SEC: Final[float] = 10.0
 MAX_REPROMPTS: Final[int] = 2
+POST_REPROMPT_GRACE_SEC: Final[float] = 5.0  # wait after reprompt before restarting the silence timer
 _recent_fillers: deque[str] = deque(maxlen=5)
 _client: AsyncOpenAI | None = None
 
@@ -101,11 +102,13 @@ class SilenceWatchdogController:
         self._silence_task: asyncio.Task | None = None
         self._reprompt_count = 0
         self._user_is_speaking = False
-        self._skip_next_assistant_message = False
-
+        self._agent_is_speaking = False
+        self._pending_start = False  # start watchdog once agent finishes speaking
+        # Guards on_assistant_message during in-flight reprompt. Safe: asyncio cooperative scheduling
+        # ensures the flag is only toggled between awaits, never concurrently.
+        self._reprompt_in_progress = False
 
     def stop(self, reset_count: bool = True) -> None:
-        """Stop silence tracking and optionally reset reprompt count."""
         if reset_count:
             self._reprompt_count = 0
         if self._silence_task and not self._silence_task.done():
@@ -113,46 +116,46 @@ class SilenceWatchdogController:
         self._silence_task = None
 
     def start(self) -> None:
-        """Start silence tracking if not already running and user is silent."""
-        if self._user_is_speaking:
+        if self._user_is_speaking or self._agent_is_speaking:
             return
         if self._silence_task and not self._silence_task.done():
             return
         self._silence_task = asyncio.create_task(self._watchdog_loop())
 
     def on_user_message(self) -> None:
-        """Reset silence tracking when the user replies."""
+        self._pending_start = False
         self.stop(reset_count=True)
 
     def on_assistant_message(self, message_text: str) -> None:
-        """Track assistant turns and start silence watchdog."""
-        if not message_text:
+        if not message_text or self._reprompt_in_progress:
             return
-
-        if self._skip_next_assistant_message:
-            self._skip_next_assistant_message = False
-            return
-
         self.stop(reset_count=True)
-        self.start()
+        # Defer start until agent finishes speaking — avoids timer running during TTS playback
+        self._pending_start = True
+
+    def on_agent_started_speaking(self) -> None:
+        self._agent_is_speaking = True
+        # Pause the running watchdog (user can't respond while agent speaks)
+        if self._silence_task and not self._silence_task.done():
+            self._silence_task.cancel()
+            self._silence_task = None
+
+    def on_agent_done_speaking(self) -> None:
+        self._agent_is_speaking = False
+        if self._pending_start:
+            self._pending_start = False
+            self.start()
 
     def on_user_state_changed(self, is_speaking: bool) -> None:
-        """Pause or resume silence tracking based on user speaking state."""
         self._user_is_speaking = is_speaking
         if is_speaking:
-            self.stop(reset_count=False) # Pause task, but keep count
+            self.stop(reset_count=False)
             return
         self.start()
 
     async def _watchdog_loop(self) -> None:
         try:
             while True:
-                if self._reprompt_count >= self._max_reprompts:
-                    self._logger.info("[silence] ending session after repeated silence")
-                    self.stop(reset_count=True)
-                    self._session.shutdown()
-                    return
-
                 await asyncio.sleep(self._reprompt_interval_sec)
 
                 if self._user_is_speaking:
@@ -164,18 +167,27 @@ class SilenceWatchdogController:
                     self._reprompt_count,
                     self._max_reprompts,
                 )
-                self._skip_next_assistant_message = True
-                if self._use_llm_for_speech:
-                    # Realtime mode: no external TTS, route through LLM
-                    await self._session.generate_reply(
-                        instructions="The user has been silent. Briefly ask if they are still there.",
-                    )
-                else:
-                    await self._session.say(
-                        "Sorry, I didn't catch that. Are you still there?",
-                        allow_interruptions=True,
-                    )
-                await asyncio.sleep(5.0)
+
+                if self._reprompt_count >= self._max_reprompts:
+                    self._logger.info("[silence] ending session after repeated silence")
+                    self.stop(reset_count=True)
+                    self._session.shutdown()
+                    return
+
+                self._reprompt_in_progress = True
+                try:
+                    if self._use_llm_for_speech:
+                        await self._session.generate_reply(
+                            instructions="The user has been silent. Briefly ask if they are still there.",
+                        )
+                    else:
+                        await self._session.say(
+                            "Sorry, I didn't catch that. Are you still there?",
+                            allow_interruptions=True,
+                        )
+                finally:
+                    self._reprompt_in_progress = False
+                await asyncio.sleep(POST_REPROMPT_GRACE_SEC)
         except asyncio.CancelledError:
             raise
         except Exception:
