@@ -420,7 +420,8 @@ Phone audio from PSTN arrives as **G.711 at 8 kHz**, narrow-band (300–3400 Hz)
 |---------|---------------|
 | `audioop.ratecv` linear interpolation (8 kHz → 48 kHz) | Creates aliasing harmonics every 8 kHz. STT sees a spectrally wrong signal and hallucinates. |
 | Fixed 3× gain applied before resampling | Clips loud phone speech → heavy distortion → hallucination |
-| No frequency filtering | DC offset + subsonic rumble (< 300 Hz) from phone acoustics reaches STT as if it were speech |
+| No frequency filtering | DC offset + sub-bass hum from phone acoustics reaches STT as if it were speech |
+| Bandpass upper cutoff at 3400 Hz (prior approach) | Redundant — `resample_poly` already low-passes at 4 kHz. The 4th-order IIR phase distortion near cutoffs made voices sound hollow/metallic. |
 
 The inbound decode pipeline in `rtp_bridge.py::_decode_rtp_payload` now processes each G.711 packet as follows:
 
@@ -428,15 +429,17 @@ The inbound decode pipeline in `rtp_bridge.py::_decode_rtp_payload` now processe
 G.711 packet (PCMA/PCMU, 8 kHz)
     ↓  audioop.alaw2lin / ulaw2lin
 raw PCM int16 at 8 kHz
-    ↓  Butterworth bandpass (300–3400 Hz, order 4, stateful sosfilt zi)
-frequency-cleaned PCM — only PSTN speech band, DC and rumble stripped
+    ↓  Butterworth high-pass (80 Hz, order 2, stateful sosfilt zi)
+DC offset and sub-bass hum removed; full speech band preserved
     ↓  scipy.signal.resample_poly(samples, up=6, down=1)
-PCM at 48 kHz — polyphase FIR with built-in anti-aliasing, no aliasing harmonics
+PCM at 48 kHz — polyphase FIR handles low-pass anti-aliasing at 4 kHz
     ↓  gain × 2.0 + np.clip(−1, 1)
 final PCM int16 at 48 kHz → LiveKit AudioSource → STT
 ```
 
-**Why stateful filter (`sosfilt zi`)?** The bandpass IIR filter carries its state (`zi`) across consecutive RTP packets. Without this, the filter restarts with zero initial conditions on each 20ms packet, producing a transient click at every packet boundary — audible as 50 Hz buzz on the STT side.
+**Why 80 Hz high-pass only (not bandpass)?** Male voice fundamental frequency is 80–150 Hz. The original 300 Hz lower cutoff was silently stripping the root pitch of male voices, leaving only harmonics — audible as a hollow "telephone" sound. The 3400 Hz upper cutoff is redundant because `resample_poly`'s internal Kaiser-windowed FIR already band-limits at 4 kHz (Nyquist of 8 kHz input). A 4th-order Butterworth bandpass also introduces non-linear group delay at both cutoff edges, smearing consonants in time. The 2nd-order high-pass at 80 Hz has minimal phase distortion and only removes content that is never speech.
+
+**Why stateful filter (`sosfilt zi`)?** The IIR filter carries its state (`zi`) across consecutive RTP packets. Without this, the filter restarts with zero initial conditions on each 20ms packet, producing a transient click at every packet boundary — audible as 50 Hz buzz on the STT side.
 
 **Why `resample_poly` over `audioop.ratecv`?** `ratecv` uses linear interpolation, which for a 6:1 upsample creates images of the 8 kHz signal at multiples of 8 kHz throughout the 48 kHz spectrum. `resample_poly` uses a polyphase Kaiser-windowed FIR to reconstruct the correct band-limited signal before upsampling — the output looks like true 48 kHz narrowband audio.
 
