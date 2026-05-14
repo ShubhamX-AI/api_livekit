@@ -1,5 +1,7 @@
 """Factory for creating TTS provider instances based on assistant configuration."""
 
+import asyncio
+
 from livekit.plugins import cartesia, sarvam
 
 from src.core.config import settings
@@ -71,3 +73,22 @@ def create_tts(assistant):
 
     logger.error(f"Unsupported TTS model for assistant {assistant_id}")
     return None
+
+
+async def prewarm_sarvam_connection(tts) -> None:
+    """Pre-connect Sarvam WS after each agent turn.
+
+    Sarvam closes WS after every final event. Pool holds a dead connection
+    that fails on next turn's send then reconnects (200-500ms overhead).
+    Evict it now and connect fresh during user's response time.
+    No-op for non-Sarvam TTS providers.
+    """
+    if tts is None or not isinstance(tts, sarvam.TTS):
+        return
+    try:
+        tts._pool.invalidate()
+        ws = await tts._pool.get(timeout=10.0)
+        tts._pool.put(ws)
+        logger.debug("TTS WS pre-warmed for next turn")
+    except Exception as e:
+        logger.debug(f"TTS prewarm: {e}")

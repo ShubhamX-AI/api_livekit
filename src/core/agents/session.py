@@ -28,7 +28,7 @@ from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
-from src.core.agents.tts_factory import create_tts
+from src.core.agents.tts_factory import create_tts, prewarm_sarvam_connection
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController
 from src.core.agents.tool_builder import build_tools_from_db
@@ -338,9 +338,9 @@ async def entrypoint(ctx: JobContext):
             )
 
         llm = realtime.RealtimeModel(
-            model="gpt-realtime",
+            model="gpt-realtime-1.5",
             input_audio_transcription=AudioTranscription(
-                model="gpt-4o-transcribe",
+                model="gpt-realtime-whisper",
                 prompt=_stt_prompt,
             ),
             input_audio_noise_reduction="near_field",
@@ -371,7 +371,7 @@ async def entrypoint(ctx: JobContext):
         session = AgentSession(
             llm=llm,
             tts=tts,
-            preemptive_generation=True,
+            # preemptive_generation=True,  # Deprecated in favor of turn_detection options below
             use_tts_aligned_transcript=True,
             aec_warmup_duration=1.0,  # seconds
             turn_handling=TurnHandlingOptions(
@@ -379,7 +379,7 @@ async def entrypoint(ctx: JobContext):
                 endpointing={
                     "mode": "dynamic",
                     "min_delay": 0.3,
-                    "max_delay": 1.5,
+                    "max_delay": 1.0,
                 },
                 interruption={
                     "mode": "adaptive",
@@ -503,6 +503,8 @@ async def entrypoint(ctx: JobContext):
     def on_agent_state_changed(event):
         if hold_controller.is_on_hold and event.new_state == "speaking":
             session.interrupt()
+        if event.new_state == "listening":
+            asyncio.create_task(prewarm_sarvam_connection(tts))
 
     # --- Exotel Bridge: Call-Answered Handling ---
     @ctx.room.on("data_received")
