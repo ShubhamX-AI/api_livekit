@@ -340,7 +340,7 @@ async def entrypoint(ctx: JobContext):
         llm = realtime.RealtimeModel(
             model="gpt-realtime-1.5",
             input_audio_transcription=AudioTranscription(
-                model="gpt-realtime-whisper",
+                model="gpt-4o-transcribe",
                 prompt=_stt_prompt,
             ),
             input_audio_noise_reduction="near_field",
