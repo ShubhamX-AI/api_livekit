@@ -43,7 +43,7 @@ COPY sip_dispatcher_run.py /app/sip_dispatcher_run.py
 RUN mkdocs build -d site
 
 # Download necessary files (models, etc.) during build
-RUN python -m src.core.agents.session download-files
+RUN python -m src.core.agents.session download-files && mkdir -p /app/logs
 
 # Expose the API port
 EXPOSE 8001

@@ -20,6 +20,6 @@ ENV PYTHONUNBUFFERED=1
 COPY src /app/src
 COPY assets /app/assets
 
-RUN python -m src.core.agents.session download-files
+RUN python -m src.core.agents.session download-files && mkdir -p /app/logs
 
 CMD ["python", "-m", "src.core.agents.session", "start"]
