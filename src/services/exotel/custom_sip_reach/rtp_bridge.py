@@ -39,7 +39,7 @@ from src.core.logger import logger
 # a 3400 Hz bandpass upper cutoff is redundant and its phase distortion made voices sound hollow.
 _HP_SOS = butter(2, 80, btype="high", fs=SAMPLE_RATE_SIP, output="sos")
 _HP_ZI_TEMPLATE = sosfilt_zi(_HP_SOS)  # shape (n_sections, 2), scaled per-packet
-_WEBRTC_CHUNK_BYTES = 960  # 10ms @ 48 kHz, 16-bit mono (480 samples × 2 bytes)
+_WEBRTC_CHUNK_BYTES = 320  # 10ms @ 16 kHz, 16-bit mono (160 samples × 2 bytes) — library hardcodes this
 
 
 def _decode_rtp_payload(payload: bytes, pt: int, zi, processor) -> tuple[bytes, object]:
@@ -60,22 +60,24 @@ def _decode_rtp_payload(payload: bytes, pt: int, zi, processor) -> tuple[bytes, 
         zi = _HP_ZI_TEMPLATE * samples[0]
     samples, zi = sosfilt(_HP_SOS, samples, zi=zi)
 
-    # Polyphase upsample 8 kHz→48 kHz with built-in anti-aliasing FIR
-    samples = resample_poly(samples, 6, 1)
+    # 8 kHz → 16 kHz: WebRTC NS/AGC is hardcoded to 16 kHz (320 bytes per 10ms chunk).
+    samples_16k = resample_poly(samples, 2, 1)
+    pcm16_raw = (samples_16k * 32767.0).astype(np.int16).tobytes()
 
-    pcm48_raw = (samples * 32767.0).astype(np.int16).tobytes()
-
-    # WebRTC NS + AGC in 10ms chunks. Normal 20ms G.711 packet → exactly 2 full chunks.
-    # Partial last chunk should not occur under standard ptime=20; passes through unprocessed.
-    processed = bytearray()
-    for i in range(0, len(pcm48_raw), _WEBRTC_CHUNK_BYTES):
-        chunk = pcm48_raw[i : i + _WEBRTC_CHUNK_BYTES]
+    # WebRTC NS + AGC in 10ms chunks at 16 kHz. 20ms G.711 packet → exactly 4 full chunks.
+    processed_16k = bytearray()
+    for i in range(0, len(pcm16_raw), _WEBRTC_CHUNK_BYTES):
+        chunk = pcm16_raw[i : i + _WEBRTC_CHUNK_BYTES]
         if len(chunk) == _WEBRTC_CHUNK_BYTES:
-            out, _ = processor.Process10ms(chunk, 48000)
-            processed.extend(out)
+            result = processor.Process10ms(chunk)
+            processed_16k.extend(result.audio)
         else:
-            processed.extend(chunk)
-    return bytes(processed), zi
+            processed_16k.extend(chunk)
+
+    # 16 kHz → 48 kHz for LiveKit
+    samples_proc = np.frombuffer(bytes(processed_16k), dtype=np.int16).astype(np.float32) * (1.0 / 32768.0)
+    samples_48k = resample_poly(samples_proc, 3, 1)
+    return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi
 
 
 class RTPMediaBridge:
