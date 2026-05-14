@@ -330,25 +330,25 @@ async def entrypoint(ctx: JobContext):
     else:
         # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
         llm_config = assistant.assistant_llm_config or {}
-        _langs = interaction_config.preferred_languages
-        if _langs:
-            _lang_str = ", ".join(_langs)
-            _stt_prompt = (
-                f"The speaker is multilingual and switches between these languages: {_lang_str}. "
-                "Transcribe exactly what is spoken in the original language. "
-                "Do not translate. Preserve code-switching — if speaker mixes languages mid-sentence, transcribe each part in its original language."
-            )
-        else:
-            _stt_prompt = (
-                "The speaker is multilingual and may speak or switch between any language at any time. "
-                "Transcribe in the original spoken language(s). "
-                "If Can't recognize the language , transcribe in English. "
-            )
+        _langs = interaction_config.preferred_languages or []
+        # Only set when exactly one language is preferred; multi-language → let model auto-detect.
+        _stt_language: str | None = _langs[0].split("-")[0] if len(_langs) == 1 else None
+        _stt_prompt = (
+            f"{'Expected language(s): ' + ', '.join(_langs) + '. ' if _langs else ''}"
+            "Transcribe speech using ONLY Latin/Roman alphabet characters. "
+            "For non-English speech, write the phonetic sounds in Latin script (romanization). "
+            "Examples: Bengali 'আপনি কেমন আছেন' → 'Apni kemon achen', "
+            "Hindi 'आप कैसे हैं' → 'Aap kaise hain', "
+            "Arabic 'كيف حالك' → 'Kayfa halak'. "
+            "Do NOT output any non-Latin scripts. "
+            "If the speaker mixes languages, romanize each part."
+        )
 
         llm = realtime.RealtimeModel(
             model="gpt-realtime-1.5",
             input_audio_transcription=AudioTranscription(
                 model="gpt-4o-transcribe",
+                language=_stt_language,
                 prompt=_stt_prompt,
             ),
             input_audio_noise_reduction="near_field",

@@ -61,6 +61,53 @@ There are two runtime paths for assistant speech generation:
 Both modes share the same room orchestration, call lifecycle, transcript flow, and tool execution framework.
 Both modes also support assistant-first openings when `speaks_first=true`, using `assistant_start_instruction` as the opening response text.
 
+## Latency & Cost Reduction
+
+Two techniques reduce latency and token cost in `pipeline` mode with OpenAI Realtime STT/LLM.
+
+### LLM Context Truncation
+
+**Problem.** The OpenAI Realtime API accumulates the full conversation history in a `RemoteChatContext` on its server-side session. By default there is no cap — a 2-minute call can accumulate 55,000+ tokens. This drives up both cost (billed per token) and TTFT (the model must attend to a longer context every turn).
+
+**Solution.** `RealtimeTruncationRetentionRatio` (OpenAI Realtime API parameter) is configured on every `RealtimeModel` session:
+
+```python
+truncation=RealtimeTruncationRetentionRatio(
+    type="retention_ratio",
+    retention_ratio=0.75,
+    token_limits=TokenLimits(post_instructions=8000),
+)
+```
+
+- `post_instructions=8000` — hard cap on context tokens *after* the system prompt.
+- `retention_ratio=0.75` — when the cap is hit, the model retains the most recent 75% of turns and discards the oldest 25%.
+
+**Observed impact.** Token count dropped from ~55,000 to ~7,300 on a 2-minute call — an 87% reduction.
+
+### Sarvam TTS WebSocket Keepalive
+
+**Problem.** Sarvam TTS uses a WebSocket connection pool (`ConnectionPool`, `max_session_duration=3600`). However, the Sarvam server closes idle TCP connections after ~5 seconds of inactivity. Without intervention, every turn that has a gap longer than 5 seconds triggers a full TCP reconnect and Sarvam session handshake before audio synthesis can start — adding 300–800 ms of latency before the first audio frame.
+
+**Solution.** `maintain_sarvam_connection` is spawned as a call-lifetime background task immediately after the participant joins (Sarvam assistants only):
+
+```python
+if isinstance(tts, sarvam_plugin.TTS):
+    asyncio.create_task(maintain_sarvam_connection(tts, _sarvam_stop))
+```
+
+The function (`src/core/agents/tts_factory.py`):
+
+1. Forces a fresh TCP connection at call start (`tts._pool.invalidate()` + `get()`).
+2. Enters a loop that wakes every 3 seconds:
+   - **Skips ping** if `current_ws not in tts._pool._available` — TTS is actively using the connection and must not be interrupted.
+   - **Sends a WebSocket ping** to reset the server-side idle timer.
+   - **Reconnects** if the server has already closed the connection (`current_ws.closed` or ping failure).
+3. Exits cleanly when `_sarvam_stop` event is set at call teardown.
+
+**Observed impact.** The reconnect log line now appears once at call start instead of between every turn.
+
+---
+
 ## Web Integration
 
 This flow shows how a web client authenticates, joins LiveKit, and exchanges audio with an AI agent session.
