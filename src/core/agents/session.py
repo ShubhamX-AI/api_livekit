@@ -333,13 +333,12 @@ async def entrypoint(ctx: JobContext):
         _langs = interaction_config.preferred_languages or []
         _stt_prompt = (
             f"{'Expected language(s): ' + ', '.join(_langs) + '. ' if _langs else ''}"
-            "Transcribe speech using ONLY Latin/Roman alphabet characters. "
-            "For non-English speech, write the phonetic sounds in Latin script (romanization). "
-            "Examples: Bengali 'আপনি কেমন আছেন' → 'Apni kemon achen', "
-            "Hindi 'आप कैसे हैं' → 'Aap kaise hain', "
-            "Arabic 'كيف حالك' → 'Kayfa halak'. "
-            "Do NOT output any non-Latin scripts. "
-            "If the speaker mixes languages, romanize each part."
+            "This is a live customer support voice call. The speaker may use any language or mix languages mid-sentence. "
+            "Transcribe ONLY what is actually spoken, in the speaker's natural script for that language. "
+            "If audio is unclear, silent, or unintelligible — output [inaudible]. NEVER guess or fabricate words. "
+            "For mixed speech, transcribe each word in its own correct native script. "
+            "Do NOT romanize. Do NOT translate. Do NOT switch to a different language than what was spoken. "
+            "Use natural punctuation. Skip filler sounds like um, uh, hmm."
         )
 
         llm = realtime.RealtimeModel(
