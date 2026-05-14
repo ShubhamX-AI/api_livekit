@@ -7,3 +7,5 @@ email-validator>=2.0.0
 livekit-agents[cartesia,google,openai,sarvam]~=1.5
 mistralai @ https://github.com/mistralai/client-python/archive/refs/tags/v2.4.5.tar.gz
 audioop-lts>=0.2.1; python_version >= "3.13"
+scipy>=1.13.0
+numpy>=1.26.0
