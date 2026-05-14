@@ -75,20 +75,55 @@ def create_tts(assistant):
     return None
 
 
-async def prewarm_sarvam_connection(tts) -> None:
-    """Pre-connect Sarvam WS after each agent turn.
+async def maintain_sarvam_connection(tts, stop_event: asyncio.Event) -> None:
+    """Keep Sarvam WS alive for the entire call duration.
 
-    Sarvam closes WS after every final event. Pool holds a dead connection
-    that fails on next turn's send then reconnects (200-500ms overhead).
-    Evict it now and connect fresh during user's response time.
-    No-op for non-Sarvam TTS providers.
+    Connects once at call start, pings every 3s while the WS is idle in the pool.
+    Skips ping when TTS has taken the WS for synthesis. Reconnects if server closes it.
+    Stops when stop_event is set (call end). No-op for non-Sarvam TTS providers.
     """
-    if tts is None or not isinstance(tts, sarvam.TTS):
+    if not isinstance(tts, sarvam.TTS):
         return
+
+    # Force fresh connection at call start.
     try:
         tts._pool.invalidate()
-        ws = await tts._pool.get(timeout=10.0)
-        tts._pool.put(ws)
-        logger.debug("TTS WS pre-warmed for next turn")
+        current_ws = await tts._pool.get(timeout=10.0)
+        tts._pool.put(current_ws)
+        logger.debug("Sarvam WS connected for call")
     except Exception as e:
-        logger.debug(f"TTS prewarm: {e}")
+        logger.debug(f"Sarvam WS initial connect failed: {e}")
+        return
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=3.0)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        if current_ws not in tts._pool._available:
+            # TTS is actively using the connection — skip ping, don't interfere.
+            continue
+
+        if current_ws.closed:
+            try:
+                tts._pool.invalidate()
+                current_ws = await tts._pool.get(timeout=5.0)
+                tts._pool.put(current_ws)
+                logger.debug("Sarvam WS reconnected")
+            except Exception:
+                pass
+            continue
+
+        try:
+            await current_ws.ping()
+            logger.debug("Sarvam WS keepalive ping sent")
+        except Exception:
+            try:
+                tts._pool.invalidate()
+                current_ws = await tts._pool.get(timeout=5.0)
+                tts._pool.put(current_ws)
+                logger.debug("Sarvam WS reconnected after ping failure")
+            except Exception:
+                pass

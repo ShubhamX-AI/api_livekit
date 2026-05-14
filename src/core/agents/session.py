@@ -15,9 +15,14 @@ from livekit.agents import (
     NOT_GIVEN,
 )
 from openai.types.beta.realtime.session import TurnDetection
+from livekit.plugins import sarvam as sarvam_plugin
 from livekit.plugins.openai import realtime
 from livekit.plugins.google import realtime as google_realtime
 from openai.types.realtime import AudioTranscription
+from openai.types.realtime.realtime_truncation_retention_ratio import (
+    RealtimeTruncationRetentionRatio,
+    TokenLimits,
+)
 import os
 import asyncio
 import json
@@ -28,7 +33,7 @@ from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
-from src.core.agents.tts_factory import create_tts, prewarm_sarvam_connection
+from src.core.agents.tts_factory import create_tts, maintain_sarvam_connection
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController
 from src.core.agents.tool_builder import build_tools_from_db
@@ -241,10 +246,13 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"Failed to persist usage record: {e}", exc_info=True)
 
+    _sarvam_stop = asyncio.Event()
+
     # Single teardown path used by both EndCallTool and participant disconnect
     async def _flush_and_end_call(delay: float = 0.0):
         nonlocal call_end_triggered
         call_end_triggered = True  # Block duplicate from disconnect handler
+        _sarvam_stop.set()
         # Mute all room audio inputs immediately — prevents STT from
         # processing any new speech during the TTS playout delay window
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
@@ -351,6 +359,11 @@ async def entrypoint(ctx: JobContext):
                 interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
             ),
             modalities=["text"],
+            truncation=RealtimeTruncationRetentionRatio(
+                type="retention_ratio",
+                retention_ratio=0.75,
+                token_limits=TokenLimits(post_instructions=8000),
+            ),
             api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
         )
         logger.info("Half-cascade mode | llm=openai | tts=%s", assistant.assistant_tts_model)
@@ -503,8 +516,6 @@ async def entrypoint(ctx: JobContext):
     def on_agent_state_changed(event):
         if hold_controller.is_on_hold and event.new_state == "speaking":
             session.interrupt()
-        if event.new_state == "listening":
-            asyncio.create_task(prewarm_sarvam_connection(tts))
 
     # --- Exotel Bridge: Call-Answered Handling ---
     @ctx.room.on("data_received")
@@ -563,6 +574,10 @@ async def entrypoint(ctx: JobContext):
             logger.info("Background audio task spawned")
         except Exception as e:
             logger.error(f"Failed to start background audio: {e}")
+
+    # Persistent Sarvam WS keepalive — holds connection open for entire call.
+    if isinstance(tts, sarvam_plugin.TTS):
+        asyncio.create_task(maintain_sarvam_connection(tts, _sarvam_stop))
 
     # --- Start Instruction ---
     should_speak_first = interaction_config.speaks_first
