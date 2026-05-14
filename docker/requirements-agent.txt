@@ -9,3 +9,4 @@ mistralai @ https://github.com/mistralai/client-python/archive/refs/tags/v2.4.5.
 audioop-lts>=0.2.1; python_version >= "3.13"
 scipy>=1.13.0
 numpy>=1.26.0
+webrtc-noise-gain>=1.2.0
