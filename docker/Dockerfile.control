@@ -24,7 +24,7 @@ COPY mkdocs.yml /app/mkdocs.yml
 COPY server_run.py /app/server_run.py
 COPY sip_dispatcher_run.py /app/sip_dispatcher_run.py
 
-RUN mkdocs build -d /app/site
+RUN mkdocs build -d /app/site && mkdir -p /app/logs
 
 EXPOSE 8001
 
