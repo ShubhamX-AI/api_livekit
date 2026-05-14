@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator
 
 import audioop
 import numpy as np
-from webrtc_noise_gain import AudioProcessor
 from scipy.signal import butter, resample_poly, sosfilt, sosfilt_zi
 
 from livekit import rtc
@@ -39,10 +38,9 @@ from src.core.logger import logger
 # a 3400 Hz bandpass upper cutoff is redundant and its phase distortion made voices sound hollow.
 _HP_SOS = butter(2, 80, btype="high", fs=SAMPLE_RATE_SIP, output="sos")
 _HP_ZI_TEMPLATE = sosfilt_zi(_HP_SOS)  # shape (n_sections, 2), scaled per-packet
-_WEBRTC_CHUNK_BYTES = 320  # 10ms @ 16 kHz, 16-bit mono (160 samples × 2 bytes) — library hardcodes this
 
 
-def _decode_rtp_payload(payload: bytes, pt: int, zi, processor) -> tuple[bytes, object]:
+def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
     """Decode G.711, high-pass filter (80 Hz), resample 8 kHz→48 kHz.
 
     Uses polyphase resampling (scipy) instead of linear interpolation (audioop.ratecv)
@@ -60,24 +58,14 @@ def _decode_rtp_payload(payload: bytes, pt: int, zi, processor) -> tuple[bytes, 
         zi = _HP_ZI_TEMPLATE * samples[0]
     samples, zi = sosfilt(_HP_SOS, samples, zi=zi)
 
-    # 8 kHz → 16 kHz: WebRTC NS/AGC is hardcoded to 16 kHz (320 bytes per 10ms chunk).
-    samples_16k = resample_poly(samples, 2, 1)
-    pcm16_raw = (samples_16k * 32767.0).astype(np.int16).tobytes()
+    # Polyphase upsample 8 kHz→48 kHz with built-in anti-aliasing FIR
+    samples = resample_poly(samples, 6, 1)
 
-    # WebRTC NS + AGC in 10ms chunks at 16 kHz. 20ms G.711 packet → exactly 4 full chunks.
-    processed_16k = bytearray()
-    for i in range(0, len(pcm16_raw), _WEBRTC_CHUNK_BYTES):
-        chunk = pcm16_raw[i : i + _WEBRTC_CHUNK_BYTES]
-        if len(chunk) == _WEBRTC_CHUNK_BYTES:
-            result = processor.Process10ms(chunk)
-            processed_16k.extend(result.audio)
-        else:
-            processed_16k.extend(chunk)
+    # Moderate gain + soft-clip; fixed 3× was clipping loud phone speech → distortion
+    samples *= 2.0
+    np.clip(samples, -1.0, 1.0, out=samples)
 
-    # 16 kHz → 48 kHz for LiveKit
-    samples_proc = np.frombuffer(bytes(processed_16k), dtype=np.int16).astype(np.float32) * (1.0 / 32768.0)
-    samples_48k = resample_poly(samples_proc, 3, 1)
-    return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi
+    return (samples * 32767.0).astype(np.int16).tobytes(), zi
 
 
 class RTPMediaBridge:
@@ -120,7 +108,6 @@ class RTPMediaBridge:
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
         self._hp_zi = None   # sosfilt state for inbound 80 Hz high-pass filter
-        self._audio_processor = AudioProcessor(True, True)  # gain_controller, noise_suppression
         self._rs_out = None  # resample state outbound (audioop.ratecv)
 
         self._rx = 0
@@ -283,7 +270,7 @@ class RTPMediaBridge:
                 # sosfilt returns a new zi array (no in-place mutation) so passing self._hp_zi
                 # to the thread is safe — no shared-state race with the next packet.
                 pcm48, self._hp_zi = await asyncio.to_thread(
-                    _decode_rtp_payload, payload, pt, self._hp_zi, self._audio_processor
+                    _decode_rtp_payload, payload, pt, self._hp_zi
                 )
                 if not pcm48:
                     continue
