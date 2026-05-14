@@ -513,6 +513,11 @@ async def entrypoint(ctx: JobContext):
     def on_agent_state_changed(event):
         if hold_controller.is_on_hold and event.new_state == "speaking":
             session.interrupt()
+        if silence_watchdog:
+            if event.new_state == "speaking":
+                silence_watchdog.on_agent_started_speaking()
+            elif event.new_state == "listening":
+                silence_watchdog.on_agent_done_speaking()
 
     # --- Exotel Bridge: Call-Answered Handling ---
     @ctx.room.on("data_received")
