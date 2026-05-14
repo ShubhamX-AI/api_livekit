@@ -20,7 +20,6 @@ from collections.abc import AsyncIterator
 import audioop
 import numpy as np
 from scipy.signal import butter, resample_poly, sosfilt, sosfilt_zi
-from webrtc_noise_gain import AudioProcessor
 
 from livekit import rtc
 
@@ -39,16 +38,17 @@ from src.core.logger import logger
 # a 3400 Hz bandpass upper cutoff is redundant and its phase distortion made voices sound hollow.
 _HP_SOS = butter(2, 80, btype="high", fs=SAMPLE_RATE_SIP, output="sos")
 _HP_ZI_TEMPLATE = sosfilt_zi(_HP_SOS)  # shape (n_sections, 2), scaled per-packet
-_WEBRTC_CHUNK_BYTES = 320  # 10ms @ 16 kHz, 16-bit mono (160 samples × 2 bytes)
 
 
-def _decode_rtp_payload(payload: bytes, pt: int, zi, processor: AudioProcessor) -> tuple[bytes, object]:
-    """Decode G.711, high-pass filter (80 Hz), WebRTC NS, resample 8 kHz→48 kHz.
+def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
+    """Decode G.711, high-pass filter (80 Hz), resample 8 kHz→48 kHz.
 
     Uses polyphase resampling (scipy) instead of linear interpolation (audioop.ratecv)
     to avoid aliasing artifacts that cause Whisper to hallucinate on phone audio.
-    processor: per-bridge AudioProcessor(AGC=False, NS=True) — AGC must stay OFF
-               to prevent it boosting phone echo, which would trigger false barge-in.
+    NS intentionally not applied here — OpenAI Realtime's `far_field` noise reduction
+    runs on raw G.711 phone audio. Pre-processing with WebRTC NS shifts the spectral
+    signature and degrades OpenAI's STT, so we leave the audio untouched besides
+    DC removal, gain, and resampling.
     zi: sosfilt filter state array, or None on first packet.
     """
     # Only G.711 audio decoded. PT=101 (RFC 2833 DTMF), comfort noise, and any other
@@ -67,23 +67,8 @@ def _decode_rtp_payload(payload: bytes, pt: int, zi, processor: AudioProcessor) 
         zi = _HP_ZI_TEMPLATE * samples[0]
     samples, zi = sosfilt(_HP_SOS, samples, zi=zi)
 
-    # 8 kHz → 16 kHz: WebRTC NS hardcoded to 16 kHz (320 bytes per 10ms chunk).
-    samples_16k = resample_poly(samples, 2, 1)
-    pcm16_raw = (samples_16k * 32767.0).astype(np.int16).tobytes()
-
-    # WebRTC NS in 10ms chunks at 16 kHz. 20ms G.711 packet → 2 full chunks (160 samples @ 8 kHz → 320 @ 16 kHz = 640 B = 2 × 320 B).
-    processed_16k = bytearray()
-    for i in range(0, len(pcm16_raw), _WEBRTC_CHUNK_BYTES):
-        chunk = pcm16_raw[i : i + _WEBRTC_CHUNK_BYTES]
-        if len(chunk) == _WEBRTC_CHUNK_BYTES:
-            result = processor.Process10ms(chunk)
-            processed_16k.extend(result.audio)
-        else:
-            processed_16k.extend(chunk)
-
-    # 16 kHz → 48 kHz for LiveKit
-    samples_proc = np.frombuffer(bytes(processed_16k), dtype=np.int16).astype(np.float32) * (1.0 / 32768.0)
-    samples_48k = resample_poly(samples_proc, 3, 1)
+    # Direct 8 kHz → 48 kHz polyphase upsample (built-in anti-aliasing FIR).
+    samples_48k = resample_poly(samples, 6, 1)
     samples_48k = np.tanh(samples_48k * 1.5)  # boost quiet phone audio, soft-clip peaks
 
     return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi
@@ -129,7 +114,6 @@ class RTPMediaBridge:
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
         self._hp_zi = None   # sosfilt state for inbound 80 Hz high-pass filter
-        self._audio_processor = AudioProcessor(False, True)  # AGC=off, NS=on
 
         self._rx = 0
         self._tx = 0
@@ -291,7 +275,7 @@ class RTPMediaBridge:
                 # sosfilt returns a new zi array (no in-place mutation) so passing self._hp_zi
                 # to the thread is safe — no shared-state race with the next packet.
                 pcm48, self._hp_zi = await asyncio.to_thread(
-                    _decode_rtp_payload, payload, pt, self._hp_zi, self._audio_processor
+                    _decode_rtp_payload, payload, pt, self._hp_zi
                 )
                 if not pcm48:
                     continue
