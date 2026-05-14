@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 
 import audioop
 import numpy as np
+from webrtc_noise_gain import AudioProcessor
 from scipy.signal import butter, resample_poly, sosfilt, sosfilt_zi
 
 from livekit import rtc
@@ -33,14 +34,16 @@ from .config import (
 )
 from src.core.logger import logger
 
-# PSTN carries 300–3400 Hz. Bandpass removes DC, subsonic rumble, and out-of-band noise
-# before sending to STT — reduces Whisper hallucination on narrow-band phone audio.
-_BP_SOS = butter(4, [300, 3400], btype="band", fs=SAMPLE_RATE_SIP, output="sos")
-_BP_ZI_TEMPLATE = sosfilt_zi(_BP_SOS)  # shape (n_sections, 2), scaled per-packet
+# High-pass at 80 Hz removes DC offset and sub-bass hum without touching speech.
+# The low-pass (anti-aliasing at 4 kHz) is already handled by resample_poly's internal FIR —
+# a 3400 Hz bandpass upper cutoff is redundant and its phase distortion made voices sound hollow.
+_HP_SOS = butter(2, 80, btype="high", fs=SAMPLE_RATE_SIP, output="sos")
+_HP_ZI_TEMPLATE = sosfilt_zi(_HP_SOS)  # shape (n_sections, 2), scaled per-packet
+_WEBRTC_CHUNK_BYTES = 960  # 10ms @ 48 kHz, 16-bit mono (480 samples × 2 bytes)
 
 
-def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
-    """Decode G.711, bandpass-filter PSTN range (300-3400 Hz), resample 8 kHz→48 kHz.
+def _decode_rtp_payload(payload: bytes, pt: int, zi, processor) -> tuple[bytes, object]:
+    """Decode G.711, high-pass filter (80 Hz), resample 8 kHz→48 kHz.
 
     Uses polyphase resampling (scipy) instead of linear interpolation (audioop.ratecv)
     to avoid aliasing artifacts that cause Whisper to hallucinate on phone audio.
@@ -54,18 +57,25 @@ def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
 
     # Scale template to first-sample DC level (scipy idiom) to suppress startup transient.
     if zi is None:
-        zi = _BP_ZI_TEMPLATE * samples[0]
-    samples, zi = sosfilt(_BP_SOS, samples, zi=zi)
+        zi = _HP_ZI_TEMPLATE * samples[0]
+    samples, zi = sosfilt(_HP_SOS, samples, zi=zi)
 
     # Polyphase upsample 8 kHz→48 kHz with built-in anti-aliasing FIR
     samples = resample_poly(samples, 6, 1)
 
-    # Moderate gain + soft-clip; fixed 3× was clipping loud phone speech → distortion
-    samples *= 2.0
-    np.clip(samples, -1.0, 1.0, out=samples)
+    pcm48_raw = (samples * 32767.0).astype(np.int16).tobytes()
 
-    pcm48 = (samples * 32767.0).astype(np.int16).tobytes()
-    return pcm48, zi
+    # WebRTC NS + AGC in 10ms chunks. Normal 20ms G.711 packet → exactly 2 full chunks.
+    # Partial last chunk should not occur under standard ptime=20; passes through unprocessed.
+    processed = bytearray()
+    for i in range(0, len(pcm48_raw), _WEBRTC_CHUNK_BYTES):
+        chunk = pcm48_raw[i : i + _WEBRTC_CHUNK_BYTES]
+        if len(chunk) == _WEBRTC_CHUNK_BYTES:
+            out, _ = processor.Process10ms(chunk, 48000)
+            processed.extend(out)
+        else:
+            processed.extend(chunk)
+    return bytes(processed), zi
 
 
 class RTPMediaBridge:
@@ -107,7 +117,8 @@ class RTPMediaBridge:
         self._rtp_ts = random.randint(0, 0xFFFFFFFF)
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
-        self._bp_zi = None   # sosfilt state for inbound PSTN bandpass filter
+        self._hp_zi = None   # sosfilt state for inbound 80 Hz high-pass filter
+        self._audio_processor = AudioProcessor(gain_controller=True, noise_suppression=True)
         self._rs_out = None  # resample state outbound (audioop.ratecv)
 
         self._rx = 0
@@ -267,10 +278,10 @@ class RTPMediaBridge:
 
             try:
                 # Decode in thread pool so the event loop can schedule other coroutines.
-                # sosfilt returns a new zi array (no in-place mutation) so passing self._bp_zi
+                # sosfilt returns a new zi array (no in-place mutation) so passing self._hp_zi
                 # to the thread is safe — no shared-state race with the next packet.
-                pcm48, self._bp_zi = await asyncio.to_thread(
-                    _decode_rtp_payload, payload, pt, self._bp_zi
+                pcm48, self._hp_zi = await asyncio.to_thread(
+                    _decode_rtp_payload, payload, pt, self._hp_zi, self._audio_processor
                 )
                 if not pcm48:
                     continue
