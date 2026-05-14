@@ -26,19 +26,17 @@ def clear_room_context() -> None:
     _current_room = None
 
 
-class RoomContextFilter(logging.Filter):
-    """Inject call_room into every log record so all loggers (incl. third-party) carry it.
+_orig_record_factory = None
 
-    When the parent process receives forwarded log records from a subprocess via
-    LogQueueListener, _current_room is None in the parent. The record already has
-    call_room stamped by the subprocess filter. Preserve it instead of overwriting.
-    """
-    def filter(self, record: logging.LogRecord) -> bool:
-        if _current_room is not None:
-            record.call_room = _current_room
-        elif not hasattr(record, 'call_room'):
-            record.call_room = None
-        return True
+
+def _make_log_record(*args, **kwargs) -> logging.LogRecord:
+    # Stamp call_room at record creation so it survives livekit's IPC pickle
+    # before any handler (including LogQueueHandler) serializes the record.
+    # A root-logger filter doesn't work here: Python's callHandlers walks up
+    # to parent handlers without running parent-logger filters.
+    record = _orig_record_factory(*args, **kwargs)
+    record.call_room = _current_room
+    return record
 
 
 class ColoredFormatter(logging.Formatter):
@@ -95,7 +93,7 @@ _logging_configured = False
 
 def setup_logging() -> None:
     """Configure the root logger based on settings."""
-    global _logging_configured
+    global _logging_configured, _orig_record_factory
     if _logging_configured:
         return
 
@@ -103,12 +101,8 @@ def setup_logging() -> None:
     level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
     root_logger.setLevel(level)
 
-    # Stamp call_room on every record at the root logger so it's present before
-    # LiveKit's LogQueueHandler pickles and forwards the record to the parent.
-    root_logger.addFilter(RoomContextFilter())
-
-    # Mark configured here — after the filter is installed — so a second call
-    # in the same process won't bypass the filter installation above.
+    _orig_record_factory = logging.getLogRecordFactory()
+    logging.setLogRecordFactory(_make_log_record)
     _logging_configured = True
 
     # LiveKit agent subprocesses are named "job_proc". Every log record they
