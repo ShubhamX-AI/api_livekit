@@ -1,5 +1,6 @@
 import logging
 from logging.handlers import RotatingFileHandler
+from multiprocessing import current_process
 import sys
 import json
 from typing import Optional
@@ -9,6 +10,10 @@ from src.core.config import settings
 # ContextVar was unreliable here: livekit TTS plugin spawns its own asyncio tasks
 # that don't inherit the caller's context, so _room_context.get() returned None there.
 _current_room: Optional[str] = None
+
+# LiveKit names agent worker subprocesses with this value.
+# See: livekit-agents ipc/job_proc_executor.py _create_process()
+_LIVEKIT_JOB_PROC_NAME = "job_proc"
 
 
 def set_room_context(room_name: str) -> None:
@@ -35,6 +40,7 @@ class RoomContextFilter(logging.Filter):
             record.call_room = None
         return True
 
+
 class ColoredFormatter(logging.Formatter):
     """Custom formatter for colored log output in development"""
     grey = "\x1b[38;20m"
@@ -43,7 +49,7 @@ class ColoredFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    
+
     # Format: Time - LoggerName - Level - Message (File:Line)
     format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
 
@@ -60,6 +66,7 @@ class ColoredFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt, datefmt="%Y-%m-%d %H:%M:%S")
         return formatter.format(record)
 
+
 class JsonFormatter(logging.Formatter):
     """JSON formatter for structured logging in production"""
     def format(self, record):
@@ -70,83 +77,70 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "module": record.module,
             "file": record.filename,
-            "line": record.lineno
+            "line": record.lineno,
+            "call_room": getattr(record, "call_room", None),
         }
 
-        # Always include call_room (null when outside a call context)
-        log_entry["call_room"] = getattr(record, "call_room", None)
-
-        # Add exception info if present
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
 
-        # Add extra fields from record if any
         if hasattr(record, "extra"):
             log_entry.update(record.extra)
 
         return json.dumps(log_entry)
 
+
 _logging_configured = False
 
 
-def setup_logging():
-    """Configure the root logger based on settings"""
+def setup_logging() -> None:
+    """Configure the root logger based on settings."""
     global _logging_configured
     if _logging_configured:
         return
+
+    root_logger = logging.getLogger()
+    level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
+    root_logger.setLevel(level)
+
+    # Stamp call_room on every record at the root logger so it's present before
+    # LiveKit's LogQueueHandler pickles and forwards the record to the parent.
+    root_logger.addFilter(RoomContextFilter())
+
+    # Mark configured here — after the filter is installed — so a second call
+    # in the same process won't bypass the filter installation above.
     _logging_configured = True
 
-    logger = logging.getLogger()
+    # LiveKit agent subprocesses are named "job_proc". Every log record they
+    # emit is forwarded to the parent via LogQueueHandler and re-emitted there.
+    # Adding our own StreamHandler/FileHandler here would cause every line to
+    # appear twice. Skip handlers in subprocesses; parent process owns output.
+    if current_process().name == _LIVEKIT_JOB_PROC_NAME:
+        return
 
-    # Set log level from config
-    level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
-    logger.setLevel(level)
-
-    room_filter = RoomContextFilter()
-
-    # Add at root logger level so call_room is stamped on the record before
-    # livekit's LogQueueHandler pickles and forwards it to the parent process.
-    # Without this, the parent process reads _room_context = None always.
-    logging.getLogger().addFilter(room_filter)
-
-    # Create console handler
     handler = logging.StreamHandler(sys.stdout)
-    handler.addFilter(room_filter)
-
-    # Set formatter based on environment
     if settings.LOG_JSON_FORMAT:
-        formatter = JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S")
+        handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
     else:
-        formatter = ColoredFormatter()
+        handler.setFormatter(ColoredFormatter())
+    root_logger.addHandler(handler)
 
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-    # Create file handler if configured
     if settings.LOG_FILE:
         file_handler = RotatingFileHandler(
             settings.LOG_FILE,
             maxBytes=settings.LOG_MAX_BYTES,
-            backupCount=settings.LOG_BACKUP_COUNT
+            backupCount=settings.LOG_BACKUP_COUNT,
         )
-        file_handler.addFilter(room_filter)
-        # Always use JSON formatter for file logs for easier parsing
         file_handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
-        logger.addHandler(file_handler)
-    
-    # Set levels for third-party libraries to reduce noise
+        root_logger.addHandler(file_handler)
+
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
     logging.getLogger("pymongo").setLevel(logging.WARNING)
-    
-    return logger
+
 
 def get_logger(name: str):
     """Get a logger instance with the given name"""
     return logging.getLogger(name)
 
-# Initialize logging configuration when module is imported
-# This ensures logging is set up correctly the first time it's used
-# However, usually setup_logging() is called in main/server startup
-# We expose a default logger for convenience
 logger = get_logger("app")
