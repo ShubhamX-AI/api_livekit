@@ -331,8 +331,20 @@ async def entrypoint(ctx: JobContext):
         # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
         llm_config = assistant.assistant_llm_config or {}
         _langs = interaction_config.preferred_languages or []
+        # Phone calls (Exotel SIP) feed lossy G.711 narrowband audio (300-3400 Hz).
+        # OpenAI's `far_field` noise-reduction model is trained on this signature;
+        # `near_field` assumes close-mic/headset and degrades phone transcription.
+        _is_phone_call = job_metadata.get("call_type") != "web"
+        _noise_reduction = "far_field" if _is_phone_call else "near_field"
+        _phone_audio_note = (
+            "Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). "
+            "Expect static, line hum, codec artifacts, and muffled consonants. "
+            "Do NOT treat noise as speech. "
+            if _is_phone_call else ""
+        )
         _stt_prompt = (
             f"{'Expected language(s): ' + ', '.join(_langs) + '. ' if _langs else ''}"
+            f"{_phone_audio_note}"
             "This is a live customer support voice call. The speaker may use any language or mix languages mid-sentence. "
             "Transcribe ONLY what is actually spoken, in the speaker's natural script for that language. "
             "If audio is unclear, silent, or unintelligible — output [inaudible]. NEVER guess or fabricate words. "
@@ -347,7 +359,7 @@ async def entrypoint(ctx: JobContext):
                 model="gpt-4o-transcribe",
                 prompt=_stt_prompt,
             ),
-            input_audio_noise_reduction="near_field",
+            input_audio_noise_reduction=_noise_reduction,
             turn_detection=TurnDetection(
                 type="semantic_vad",
                 eagerness="high",

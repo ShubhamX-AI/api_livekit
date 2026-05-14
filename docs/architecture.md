@@ -422,18 +422,23 @@ Phone audio from PSTN arrives as **G.711 at 8 kHz**, narrow-band (300–3400 Hz)
 | Fixed 3× gain applied before resampling | Clips loud phone speech → heavy distortion → hallucination |
 | No frequency filtering | DC offset + sub-bass hum from phone acoustics reaches STT as if it were speech |
 | Bandpass upper cutoff at 3400 Hz (prior approach) | Redundant — `resample_poly` already low-passes at 4 kHz. The 4th-order IIR phase distortion near cutoffs made voices sound hollow/metallic. |
+| `np.clip` hard-clipping after gain | Chops sample peaks → harmonic distortion → STT confused on loud speakers |
+| Non-G.711 RTP payloads (PT=101 DTMF / RFC 2833) decoded blindly | Garbage PCM fed into the LiveKit pipeline → STT pollution |
 
 The inbound decode pipeline in `rtp_bridge.py::_decode_rtp_payload` now processes each G.711 packet as follows:
 
 ```
-G.711 packet (PCMA/PCMU, 8 kHz)
+RTP packet
+    ↓  early-return if payload type is not PCMA (8) or PCMU (0)
     ↓  audioop.alaw2lin / ulaw2lin
 raw PCM int16 at 8 kHz
     ↓  Butterworth high-pass (80 Hz, order 2, stateful sosfilt zi)
 DC offset and sub-bass hum removed; full speech band preserved
     ↓  scipy.signal.resample_poly(samples, up=6, down=1)
 PCM at 48 kHz — polyphase FIR handles low-pass anti-aliasing at 4 kHz
-    ↓  gain × 2.0 + np.clip(−1, 1)
+    ↓  np.tanh(samples × 1.5)
+quiet phone speech boosted; peaks soft-clipped (no harmonic distortion)
+    ↓
 final PCM int16 at 48 kHz → LiveKit AudioSource → STT
 ```
 
@@ -443,7 +448,49 @@ final PCM int16 at 48 kHz → LiveKit AudioSource → STT
 
 **Why `resample_poly` over `audioop.ratecv`?** `ratecv` uses linear interpolation, which for a 6:1 upsample creates images of the 8 kHz signal at multiples of 8 kHz throughout the 48 kHz spectrum. `resample_poly` uses a polyphase Kaiser-windowed FIR to reconstruct the correct band-limited signal before upsampling — the output looks like true 48 kHz narrowband audio.
 
-**Dependencies added:** `scipy>=1.13.0`, `numpy>=1.26.0`.
+**Why `tanh` soft-clip instead of `np.clip`?** Hard clipping at ±1.0 chops peaks into square-wave-like edges, generating high-frequency harmonics that STT models interpret as fricative consonants. `tanh` rounds peaks smoothly, behaving as an analog-style soft limiter: quiet speech (under ~0.5) passes near-linearly, loud peaks compress without harmonic spray.
+
+**Why no noise suppression in `rtp_bridge.py`?** An earlier experiment ran `webrtc_noise_gain.AudioProcessor` (Google's WebRTC NS) on inbound audio. It was removed because:
+
+1. OpenAI Realtime's `gpt-realtime` model accepts an `input_audio_noise_reduction` setting that runs NS **inside the model**, trained on raw G.711 phone audio.
+2. Pre-processing with WebRTC NS shifted the spectral signature OpenAI's `far_field` mode expects → STT accuracy degraded.
+3. With AGC enabled, WebRTC AGC amplified the residual echo of the agent's own voice back into the room, triggering OpenAI's VAD as a false barge-in → the agent kept cutting itself off mid-sentence.
+
+The current design lets the inbound bridge do only minimal, spectrum-preserving cleanup (DC removal, gain, soft-clip, resampling) and delegates all noise-reduction policy to OpenAI Realtime (see *STT Noise-Reduction Branching* below).
+
+### Outbound RTP Audio Processing
+
+Agent / TTS audio leaves LiveKit at 48 kHz and must be encoded to G.711 (8 kHz) for the PSTN. The outbound pipeline in `rtp_bridge.py::_send_frame`:
+
+```
+LiveKit AudioFrame (int16 PCM @ 48 kHz)
+    ↓  np.tanh(samples × 0.7)
+TTS soft-limited so loud peaks don't clip on the narrow-band SIP path
+    ↓  scipy.signal.resample_poly(samples, up=1, down=6)
+48 kHz → 8 kHz with built-in anti-aliasing FIR (no metallic artifacts)
+    ↓  accumulate to 20 ms (320 bytes) per ptime=20 SDP
+    ↓  audioop.lin2alaw / lin2ulaw
+G.711 PCMA/PCMU payload (160 bytes)
+    ↓  prepend RTP header, sendto(remote_addr)
+RTP packet → Exotel → mobile phone
+```
+
+**Why `tanh × 0.7` on outbound?** TTS engines (OpenAI, ElevenLabs, Sarvam) normalise output close to 0 dBFS. Pumping that into G.711 causes companding-curve distortion at the loud edges and excessive perceived loudness vs. a normal phone call. The 0.7 scale leaves ~3 dB of headroom; `tanh` softly rounds anything that still approaches the rails.
+
+**Why `resample_poly` instead of `audioop.ratecv` (downsample)?** Same reason as inbound: linear interpolation has no anti-aliasing — any TTS energy above 4 kHz folds back into the audible band as a metallic hiss on the caller's phone. Polyphase FIR low-passes at 4 kHz before decimation, so the caller hears a clean band-limited voice instead of an aliased one.
+
+### STT Noise-Reduction Branching
+
+In `session.py`, the OpenAI Realtime LLM is configured with `input_audio_noise_reduction` chosen based on the call origin:
+
+| Call type | `input_audio_noise_reduction` | Rationale |
+|-----------|-------------------------------|-----------|
+| Web (`call_type == "web"`) | `near_field` | Browser mic is close to the speaker; default WebRTC-style NS profile applies. |
+| Phone (Exotel SIP, all non-web `call_type`) | `far_field` | OpenAI's far-field model is trained on lossy PSTN / G.711 audio. Using `near_field` on phone calls degraded transcription. |
+
+The same branching also prepends a short note to the STT prompt on phone calls ("Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). Expect static, line hum, codec artifacts...") so the transcription model is aware of the channel and refuses to fabricate words on unintelligible audio.
+
+**Dependencies:** `scipy>=1.13.0`, `numpy>=1.26.0`. (`webrtc_noise_gain` is no longer used by the inbound pipeline; remove if not referenced elsewhere.)
 
 ### Hold & Resume Detection
 
