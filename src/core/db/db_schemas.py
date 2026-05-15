@@ -35,6 +35,9 @@ class AssistantInteractionConfig(BaseModel):
     thinking_sound_enabled: bool = True
     allow_interruptions: bool = False
     preferred_languages: Optional[List[str]] = None
+    # User STT source for realtime (OpenAI half-cascade) mode.
+    # "sarvam" runs Sarvam Saras v3 in parallel and disables OpenAI's transcription side-channel.
+    user_stt_provider: Literal["sarvam", "openai"] = "sarvam"
 
 
 # Assistant storage

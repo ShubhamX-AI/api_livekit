@@ -334,8 +334,19 @@ api_livekit/
 │   │   └── server.py
 │   ├── core/
 │   │   ├── agents/
-│   │   │   ├── session.py
-│   │   │   └── voice_features.py
+│   │   │   ├── session.py              # entrypoint / orchestrator
+│   │   │   ├── dynamic_assistant.py    # Agent class
+│   │   │   ├── session_lifecycle.py    # CallReadinessGate, RecordingManager
+│   │   │   ├── inbound_context.py      # caller context resolution
+│   │   │   ├── voice_features.py       # SilenceWatchdog / Filler / Hold controllers
+│   │   │   ├── tool_builder.py         # DB-backed function tool loader
+│   │   │   ├── utils.py                # render_prompt
+│   │   │   ├── stt/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── sarvam_parallel.py  # Sarvam Saras v3 parallel STT tap
+│   │   │   └── tts/
+│   │   │       ├── __init__.py
+│   │   │       └── factory.py          # TTS factory + Sarvam WS keepalive
 │   │   ├── db/
 │   │   ├── config.py
 │   │   └── logger.py

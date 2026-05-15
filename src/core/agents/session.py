@@ -33,7 +33,8 @@ from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
-from src.core.agents.tts_factory import create_tts, maintain_sarvam_connection
+from src.core.agents.tts import create_tts, maintain_sarvam_connection
+from src.core.agents.stt import run_sarvam_parallel_stt
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController
 from src.core.agents.tool_builder import build_tools_from_db
@@ -308,6 +309,8 @@ async def entrypoint(ctx: JobContext):
 
     # Provider selection for realtime mode
     realtime_provider: str | None = None
+    # Set inside the half-cascade branch when Sarvam parallel STT is active.
+    _use_sarvam_stt = False
 
     if is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS
@@ -353,12 +356,17 @@ async def entrypoint(ctx: JobContext):
             "Use natural punctuation. Skip filler sounds like um, uh, hmm."
         )
 
+        # Sarvam Saras v3 handles user STT in parallel (default). Skip OpenAI's side-channel
+        # transcription to avoid dual writes and save cost.
+        _use_sarvam_stt = (interaction_config.user_stt_provider or "sarvam") == "sarvam"
+        _openai_transcription = None if _use_sarvam_stt else AudioTranscription(
+            model="gpt-4o-transcribe",
+            prompt=_stt_prompt,
+        )
+
         llm = realtime.RealtimeModel(
             model="gpt-realtime-1.5",
-            input_audio_transcription=AudioTranscription(
-                model="gpt-4o-transcribe",
-                prompt=_stt_prompt,
-            ),
+            input_audio_transcription=_openai_transcription,
             input_audio_noise_reduction=_noise_reduction,
             turn_detection=TurnDetection(
                 type="semantic_vad",
@@ -454,6 +462,28 @@ async def entrypoint(ctx: JobContext):
         delete_room_on_close=False,
     )
 
+    def _enqueue_transcript(speaker: str, text: str) -> None:
+        if call_end_triggered:
+            return
+        try:
+            _transcript_queue.put_nowait(
+                lambda: livekit_services.add_transcript(
+                    room_name=ctx.room.name,
+                    speaker=speaker,
+                    text=text,
+                    assistant_id=assistant_id,
+                    assistant_name=assistant.assistant_name,
+                    to_number=to_number,
+                    recording_path=recorder.s3_url,
+                    created_by_email=assistant.assistant_created_by_email,
+                    call_type=job_metadata.get("call_type"),
+                    call_service=job_metadata.get("call_service") or job_metadata.get("service"),
+                    platform_number=job_metadata.get("inbound_number"),
+                )
+            )
+        except asyncio.QueueFull:
+            logger.warning(f"Transcript queue full, dropping | room={room_name}")
+
     # --- Transcription Event Handler ---
     @session.on("conversation_item_added")
     def on_conversation_item(event):
@@ -467,6 +497,9 @@ async def entrypoint(ctx: JobContext):
         # Block all activity until the call is ready
         if not gate.is_active:
             return
+        # Sarvam parallel STT owns user transcripts when active
+        if event.item.role == "user" and _use_sarvam_stt:
+            return
 
         if filler_words_enabled and event.item.role in ("user", "assistant"):
             context_turns.append({"role": event.item.role, "text": event.item.text_content})
@@ -477,26 +510,7 @@ async def entrypoint(ctx: JobContext):
         if silence_watchdog and event.item.role == "assistant" and not user_is_speaking:
             silence_watchdog.on_assistant_message(event.item.text_content)
 
-        if call_end_triggered:
-            return
-        try:
-            _transcript_queue.put_nowait(
-                lambda: livekit_services.add_transcript(
-                    room_name=ctx.room.name,
-                    speaker=event.item.role,
-                    text=event.item.text_content,
-                    assistant_id=assistant_id,
-                    assistant_name=assistant.assistant_name,
-                    to_number=to_number,
-                    recording_path=recorder.s3_url,
-                    created_by_email=assistant.assistant_created_by_email,
-                    call_type=job_metadata.get("call_type"),
-                    call_service=job_metadata.get("call_service") or job_metadata.get("service"),
-                    platform_number=job_metadata.get("inbound_number"),
-                )
-            )
-        except asyncio.QueueFull:
-            logger.warning(f"Transcript queue full, dropping | room={room_name}")
+        _enqueue_transcript(event.item.role, event.item.text_content)
 
     # --- Start Session ---
     logger.info("Starting AgentSession...")
@@ -591,6 +605,20 @@ async def entrypoint(ctx: JobContext):
     # Persistent Sarvam WS keepalive — holds connection open for entire call.
     if isinstance(tts, sarvam_plugin.TTS):
         asyncio.create_task(maintain_sarvam_connection(tts, _sarvam_stop))
+
+    # Sarvam Saras v3 parallel STT — overrides user transcript when half-cascade + sarvam selected.
+    if _use_sarvam_stt:
+        def _on_sarvam_final(text: str) -> None:
+            _enqueue_transcript("user", text)
+            if silence_watchdog:
+                silence_watchdog.on_user_message()
+
+        asyncio.create_task(run_sarvam_parallel_stt(
+            room=ctx.room,
+            target_identity=primary_participant_identity,
+            on_final=_on_sarvam_final,
+            stop_event=_sarvam_stop,
+        ))
 
     # --- Start Instruction ---
     should_speak_first = interaction_config.speaks_first

@@ -87,6 +87,7 @@ class AssistantInteractionConfigSchema(BaseModel):
     thinking_sound_enabled: bool = Field(True, description="Enable the typing-style thinking sound while the assistant is processing")
     allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. If unset, model auto-detects all languages.")
+    user_stt_provider: Literal["sarvam", "openai"] = Field("sarvam", description="User-transcription source for OpenAI half-cascade realtime mode. 'sarvam' (default) runs Sarvam Saras v3 in parallel and disables OpenAI's gpt-4o-transcribe side channel — produces native-script Indic transcripts. 'openai' keeps the legacy gpt-4o-transcribe path. Ignored for pipeline mode and for realtime+gemini.")
 
 
 class UpdateAssistantInteractionConfigSchema(BaseModel):
@@ -99,6 +100,7 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     thinking_sound_enabled: Optional[bool] = Field(None, description="Enable or disable the typing-style thinking sound")
     allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. Pass empty list to clear.")
+    user_stt_provider: Optional[Literal["sarvam", "openai"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'openai'). Only affects OpenAI half-cascade realtime mode.")
 
 
 # For Assistant creation
