@@ -412,10 +412,10 @@ async def entrypoint(ctx: JobContext):
                 },
                 interruption={
                     "mode": "adaptive",
-                    "min_duration": 0.5,
+                    "min_duration": 0.9,
                     "min_words": 0,
                     "discard_audio_if_uninterruptible": True,
-                    "false_interruption_timeout": 0.8,
+                    "false_interruption_timeout": 0.2,
                     "resume_false_interruption": True,
                 },
         )
