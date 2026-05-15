@@ -616,6 +616,59 @@ Three event handlers check `hold_controller.is_on_hold` and suppress activity:
 !!! note "Provider coverage"
     Hold detection via SIP re-INVITE works for **Exotel** calls only. Twilio and other providers do not currently have hold detection — the agent may respond to hold music if the call is placed on hold for extended periods.
 
+### Per-Utterance Input Guard
+
+Phone callers frequently repeat themselves while the agent is producing its reply ("Hello… Hello?"). Each repeat is a legitimate ≥0.9 s word, so the standard `interruption.min_duration` gate cannot filter it — the framework correctly classifies it as a barge-in, the agent fragments its current sentence, the LLM generates an apology, and the cycle repeats. Observed in production as the "Sorry, I'm here / Yes, I'm…" loop.
+
+`InputGuardController` (`src/core/agents/voice_features.py`) closes this loop by blanket-muting user audio at the source for the first N seconds of every agent utterance. Implementation uses the official LiveKit Agents API `session.input.set_audio_enabled(False/True)` — detaches the audio source from the VAD + STT pipeline without muting the caller's actual microphone.
+
+**Lifecycle (per agent reply):**
+
+| Event | Action |
+|---|---|
+| Agent state → `"speaking"` | `set_audio_enabled(False)` + schedule re-enable task (window = `input_guard_window_sec`, default 3.0 s) |
+| Agent state leaves `"speaking"` before window expires | Cancel task, re-enable immediately (don't make user wait when agent finished early) |
+| Window expires while still speaking | Re-enable anyway — user can interrupt long answers after the dead-time |
+| Call teardown (`_flush_and_end_call`) | `aclose()` cancels task + force-enables audio |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant LK as LiveKit Session
+    participant Guard as InputGuardController
+    participant User as Caller (impatient)
+
+    LK->>Guard: agent_state_changed → speaking
+    Guard->>LK: session.input.set_audio_enabled(False)
+    Guard->>Guard: spawn _auto_reenable task (window_sec)
+    User-->>LK: "Hello?" (repeat 1)
+    Note over LK: audio source detached — VAD never sees it
+    User-->>LK: "Hello?" (repeat 2)
+    alt agent finishes reply before window
+        LK->>Guard: agent_state_changed → listening
+        Guard->>LK: set_audio_enabled(True), cancel task
+    else window expires first
+        Guard->>LK: set_audio_enabled(True)
+        Note over LK,User: user can now interrupt long answer
+    end
+```
+
+**Skipped in realtime mode.** Constructor guard at `session.py`:
+
+```python
+input_guard = None if is_realtime else InputGuardController(
+    session=session,
+    logger=logger,
+    window_sec=getattr(interaction_config, "input_guard_window_sec", 3.0),
+)
+```
+
+Gemini full-realtime (`assistant_llm_mode="realtime"`, `provider="gemini"`) owns its own audio pipeline + internal VAD; detaching the input source would cut the audio feed the model relies on. Pipeline mode (OpenAI half-cascade + external TTS) is the only path where the fragment loop reproduces, so the guard is scoped accordingly. The field `input_guard_window_sec` is read with `getattr(..., 3.0)` so per-assistant tuning becomes possible the moment the field is added to `assistant_interaction_config` — no code change required.
+
+**Interaction with the first-utterance VAD disable.** The existing greeting path (`session.py` lines 636–688) sets `llm._opts.turn_detection = None` for the full duration of `session.generate_reply()` when `allow_interruptions=False`. That VAD-level block fully covers the greeting end-to-end. `InputGuardController` *also* fires on the greeting (3 s source mute on top), but its window is redundant during the greeting because the VAD is already off. Subsequent replies, where the greeting code does not run, are the ones the guard actually protects.
+
+**Trade-off.** Users cannot interrupt the agent in the first 3 s of any reply. Acceptable for phone UX: human callers rarely interrupt within sub-second of the agent starting to speak, and short replies (e.g., "Sure, one moment.") typically end before the window expires, at which point `on_speaking_end` re-enables audio immediately.
+
 ## Passthrough Mode Architecture
 
 Passthrough mode reuses the same outbound infrastructure but skips the AI agent entirely. A human web user's mic is bridged directly to the phone caller via SIP.

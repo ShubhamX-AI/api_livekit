@@ -36,7 +36,7 @@ from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManage
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
 from src.core.agents.stt import run_sarvam_parallel_stt
 from src.core.agents.utils import render_prompt
-from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController
+from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
 from src.core.db.db_schemas import Assistant, InboundContextStrategy, UsageRecord, CallRecord
@@ -254,6 +254,8 @@ async def entrypoint(ctx: JobContext):
         nonlocal call_end_triggered
         call_end_triggered = True  # Block duplicate from disconnect handler
         _sarvam_stop.set()
+        if input_guard is not None:
+            await input_guard.aclose()
         # Mute all room audio inputs immediately — prevents STT from
         # processing any new speech during the TTS playout delay window
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
@@ -412,7 +414,7 @@ async def entrypoint(ctx: JobContext):
                 },
                 interruption={
                     "mode": "adaptive",
-                    "min_duration": 0.9,
+                    "min_duration": 1.5,
                     "min_words": 0,
                     "discard_audio_if_uninterruptible": True,
                     "false_interruption_timeout": 0.2,
@@ -445,6 +447,11 @@ async def entrypoint(ctx: JobContext):
         session=session,
         silence_watchdog=silence_watchdog,
         filler_controller=filler_controller,
+    )
+    input_guard = None if is_realtime else InputGuardController(
+        session=session,
+        logger=logger,
+        window_sec=getattr(interaction_config, "input_guard_window_sec", 3.0),
     )
 
     # Background audio
@@ -543,6 +550,11 @@ async def entrypoint(ctx: JobContext):
                 silence_watchdog.on_agent_started_speaking()
             elif event.new_state == "listening":
                 silence_watchdog.on_agent_done_speaking()
+        if input_guard:
+            if event.new_state == "speaking":
+                input_guard.on_speaking_start()
+            elif event.old_state == "speaking":
+                input_guard.on_speaking_end()
 
     # --- Exotel Bridge: Call-Answered Handling ---
     @ctx.room.on("data_received")

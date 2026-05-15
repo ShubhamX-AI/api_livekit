@@ -233,6 +233,68 @@ class HoldController:
                 self._silence_watchdog.start()
 
 
+class InputGuardController:
+    """Block user audio input for the first N seconds of each agent utterance.
+
+    Prevents the impatient-user feedback loop on phone calls: users repeat
+    themselves before the agent has finished producing its reply, those
+    repeats trip the interruption path, and the agent fragments/restarts.
+    Re-enables early if the agent stops speaking before the window expires.
+    """
+
+    def __init__(
+        self,
+        session: AgentSession,
+        logger: logging.Logger,
+        window_sec: float = 1.8,
+    ) -> None:
+        self._session = session
+        self._logger = logger
+        self._window = window_sec
+        self._task: asyncio.Task | None = None
+        self._active = False
+
+    def on_speaking_start(self) -> None:
+        if self._active:
+            return
+        try:
+            self._session.input.set_audio_enabled(False)
+        except Exception as e:
+            self._logger.warning("[input-guard] disable failed: %s", e)
+            return
+        self._active = True
+        self._task = asyncio.create_task(self._auto_reenable())
+
+    def on_speaking_end(self) -> None:
+        if not self._active:
+            return
+        if self._task and not self._task.done():
+            self._task.cancel()
+        self._reenable("speaking-ended")
+
+    async def _auto_reenable(self) -> None:
+        try:
+            await asyncio.sleep(self._window)
+            self._reenable("window-expired")
+        except asyncio.CancelledError:
+            raise
+
+    def _reenable(self, reason: str) -> None:
+        try:
+            self._session.input.set_audio_enabled(True)
+        except Exception as e:
+            # User stays muted on failure — escalate, don't whisper
+            self._logger.error("[input-guard] re-enable FAILED — user audio remains blocked: %s", e)
+        self._active = False
+        self._logger.debug("[input-guard] restored (%s)", reason)
+
+    async def aclose(self) -> None:
+        if self._task and not self._task.done():
+            self._task.cancel()
+        if self._active:
+            self._reenable("close")
+
+
 class FillerController:
     """Manage the filler word task lifecycle."""
 
