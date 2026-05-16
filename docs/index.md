@@ -4,7 +4,7 @@
 
 A production-ready backend for building and operating real-time voice AI agents with LiveKit, OpenAI, and SIP telephony integration.
 
-[Get Started](getting-started.md){ .md-button .md-button--primary }
+[Get Started](getting-started/index.md){ .md-button .md-button--primary }
 [API Reference](api/authentication.md){ .md-button }
 
 ## What You Can Build
@@ -49,7 +49,7 @@ graph TD
     Worker -->|Webhook| External[External Services]
 ```
 
-See [Architecture](architecture.md) for full call-flow diagrams and integration modes.
+See [Architecture](architecture/index.md) for full call-flow diagrams and integration modes.
 
 See [Trigger Outbound Call](api/calls/trigger.md) and [Queue Status](api/calls/queue-status.md) for the queued outbound contract.
 

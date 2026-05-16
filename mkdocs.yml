@@ -76,8 +76,18 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
-  - Architecture: architecture.md
+  - Getting Started:
+    - Overview: getting-started/index.md
+    - Outbound SIP Call: getting-started/outbound-sip.md
+    - Web Call: getting-started/web-call.md
+    - Inbound Call: getting-started/inbound.md
+    - End-to-End Example: getting-started/end-to-end-example.md
+  - Architecture:
+    - Overview: architecture/index.md
+    - Runtime Modes & Startup: architecture/runtime-modes.md
+    - Call Flows & Queueing: architecture/call-flows.md
+    - Audio Pipeline: architecture/audio-pipeline.md
+    - Inbound Routing: architecture/inbound.md
 
   - API Reference:
     - API Response and Errors: api/errors.md
