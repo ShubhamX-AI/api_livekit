@@ -102,7 +102,8 @@ Create a new assistant configuration.
           "silence_max_reprompts": 2,
           "background_sound_enabled": true,
           "thinking_sound_enabled": true,
-          "preferred_languages": ["en-US", "hi-IN"]
+          "preferred_languages": ["en-US", "hi-IN"],
+          "max_call_duration_minutes": 30
         }
       }'
     ```
@@ -178,6 +179,7 @@ Create a new assistant configuration.
 | `allow_interruptions` | boolean | No | If `true`, users can interrupt the assistant's initial greeting. Default: `false` (greeting is uninterruptible). |
 | `preferred_languages` | array of strings | No | BCP-47 language codes the agent supports (e.g. `["hi-IN", "en-US", "ta-IN"]`). Used to hint the STT model when the speaker is multilingual or switches between languages. If omitted, the STT model auto-detects all languages. |
 | `user_stt_provider` | string | No | User-transcription source for OpenAI half-cascade realtime mode. `sarvam` (default) runs Sarvam Saras v3 as a parallel audio tap and disables OpenAI's `gpt-4o-transcribe` side channel — produces native-script Indic transcripts and avoids OpenAI's script-switching hallucinations. `openai` keeps the legacy `gpt-4o-transcribe` path. Ignored for `pipeline` mode and for `realtime` + `gemini`. |
+| `max_call_duration_minutes` | number | No | Hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached, the assistant speaks a brief farewell and the call is torn down gracefully (recording, transcripts, usage and webhook all finalize cleanly). When unset or `null`, the platform default of **30 minutes** applies. Does not apply to passthrough calls (no AI agent). The call termination reason is reported as `max_duration_exceeded` in the end-of-call webhook payload and in the `CallRecord.call_end_reason` field. |
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.
 

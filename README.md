@@ -300,6 +300,14 @@ Use these pages as the canonical payload contracts:
 
 Note: `assistant_start_instruction` is honored in realtime mode whenever `assistant_interaction_config.speaks_first` is enabled.
 
+## Max Call Duration
+
+Each assistant can cap its own call length via `assistant_interaction_config.max_call_duration_minutes` (minutes, must be `> 0`). When unset or `null`, the platform default of **30 minutes** is applied.
+
+- When the limit is reached, the assistant speaks a brief farewell and the call is torn down gracefully — recording, transcripts, usage, MongoDB CallRecord and the end-of-call webhook all finalize cleanly.
+- The terminating reason is reported as `call_end_reason = "max_duration_exceeded"` in the webhook payload and in the `CallRecord` document. Normal hang-ups report `"natural"`.
+- Passthrough calls (no AI agent) are not affected — the limit only applies to assistant-driven sessions.
+
 ## Project Structure
 
 ```text

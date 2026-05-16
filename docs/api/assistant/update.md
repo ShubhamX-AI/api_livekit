@@ -126,6 +126,7 @@ Update an existing assistant. Only send fields you want to change.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.
 - `assistant_interaction_config.allow_interruptions` controls whether users can interrupt the assistant's initial greeting. Default: `false`.
 - `assistant_interaction_config.preferred_languages` accepts a list of BCP-47 codes (e.g. `["hi-IN", "en-US"]`). Pass an empty list `[]` to clear the hint and revert to auto-detection.
+- `assistant_interaction_config.max_call_duration_minutes` sets a hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached the assistant speaks a brief farewell and the call is torn down gracefully. Unset or `null` falls back to the platform default of **30 minutes**. Does not apply to passthrough calls. The end-of-call webhook payload and `CallRecord.call_end_reason` are set to `max_duration_exceeded` for cuts triggered by this limit.
 - Partial `assistant_interaction_config` updates are merged with the stored config; omitted fields are preserved.
 - Call-trigger APIs do not provide per-call overrides for these sound settings.
 
