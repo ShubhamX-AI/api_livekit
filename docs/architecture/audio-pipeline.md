@@ -15,22 +15,34 @@ Phone audio from PSTN arrives as **G.711 at 8 kHz**, narrow-band (300–3400 Hz)
 | `np.clip` hard-clipping after gain | Chops sample peaks → harmonic distortion → STT confused on loud speakers |
 | Non-G.711 RTP payloads (PT=101 DTMF / RFC 2833) decoded blindly | Garbage PCM fed into the LiveKit pipeline → STT pollution |
 
-The inbound decode pipeline in `rtp_bridge.py::_decode_rtp_payload` now processes each G.711 packet as follows:
+The inbound decode pipeline in `rtp_bridge.py::_recv_loop` + `_decode_rtp_payload` now processes each G.711 packet as follows:
 
 ```
 RTP packet
+    ↓  parse seq number (data[2..3])
+    ↓  gap == 0 → drop duplicate
+    ↓  gap negative (high bit set after wrap) → drop reordered packet
+    ↓  1 < gap ≤ SIP_PLC_MAX_GAP → replay _last_pcm48 × 0.7^i for each missing
+       packet (Packet Loss Concealment)
+    ↓  PT == 13 (RFC 3389 Comfort Noise) → _synth_cn_48k → push, continue
     ↓  early-return if payload type is not PCMA (8) or PCMU (0)
     ↓  audioop.alaw2lin / ulaw2lin
 raw PCM int16 at 8 kHz
     ↓  Butterworth high-pass (80 Hz, order 2, stateful sosfilt zi)
 DC offset and sub-bass hum removed; full speech band preserved
+    ↓  one-pole RMS AGC (target SIP_AGC_TARGET_RMS, cap SIP_AGC_MAX_GAIN,
+       attack α=0.5 / release α=0.04, envelope persisted as _agc_env)
+quiet callers boosted toward target; loud callers attenuated below 1.0
     ↓  scipy.signal.resample_poly(samples, up=6, down=1)
 PCM at 48 kHz — polyphase FIR handles low-pass anti-aliasing at 4 kHz
-    ↓  np.tanh(samples × 1.5)
-quiet phone speech boosted; peaks soft-clipped (no harmonic distortion)
+    ↓  per-sample np.tanh ONLY where |x| > 0.9 (peak-only soft limiter)
+peaks rounded; body of speech stays linear, no constant harmonic distortion
     ↓
-final PCM int16 at 48 kHz → LiveKit AudioSource → STT
+final PCM int16 at 48 kHz → _push_pcm48 → cache as _last_pcm48 →
+LiveKit AudioSource → STT
 ```
+
+Legacy gain mode (`SIP_LEGACY_GAIN=1`) skips AGC + peak-only limiter and restores the prior `np.tanh(samples × 1.5)` blanket clip, kept for one release as an instant rollback knob.
 
 **Why 80 Hz high-pass only (not bandpass)?** Male voice fundamental frequency is 80–150 Hz. The original 300 Hz lower cutoff was silently stripping the root pitch of male voices, leaving only harmonics — audible as a hollow "telephone" sound. The 3400 Hz upper cutoff is redundant because `resample_poly`'s internal Kaiser-windowed FIR already band-limits at 4 kHz (Nyquist of 8 kHz input). A 4th-order Butterworth bandpass also introduces non-linear group delay at both cutoff edges, smearing consonants in time. The 2nd-order high-pass at 80 Hz has minimal phase distortion and only removes content that is never speech.
 
@@ -39,6 +51,14 @@ final PCM int16 at 48 kHz → LiveKit AudioSource → STT
 **Why `resample_poly` over `audioop.ratecv`?** `ratecv` uses linear interpolation, which for a 6:1 upsample creates images of the 8 kHz signal at multiples of 8 kHz throughout the 48 kHz spectrum. `resample_poly` uses a polyphase Kaiser-windowed FIR to reconstruct the correct band-limited signal before upsampling — the output looks like true 48 kHz narrowband audio.
 
 **Why `tanh` soft-clip instead of `np.clip`?** Hard clipping at ±1.0 chops peaks into square-wave-like edges, generating high-frequency harmonics that STT models interpret as fricative consonants. `tanh` rounds peaks smoothly, behaving as an analog-style soft limiter: quiet speech (under ~0.5) passes near-linearly, loud peaks compress without harmonic spray.
+
+**Why peak-only `tanh` instead of blanket `tanh × 1.5`?** The earlier blanket form applied `tanh` to every sample, which means even body-of-speech samples (where `|x| < 0.5`) picked up small but constant 2nd/3rd-harmonic distortion proportional to the curve's non-linearity. Sarvam Saras v3 and OpenAI `far_field` both transcribed loud callers fine but mis-segmented quiet callers — the static curve was the variable. Splitting the job into a level-tracking AGC (linear scaling only, spectrum preserved) plus a peak-only `tanh` keeps the body of speech mathematically linear and confines non-linearity to the rare samples that would otherwise clip.
+
+**Why one-pole RMS AGC?** Phone caller loudness varies ~20 dB caller-to-caller (handset distance, mic gain, signal level on the trunk). A fixed 1.5× gain over-amplified loud callers (peaks clipped by `tanh`, body distorted by the curve) and still left quiet callers below Sarvam's effective threshold. The one-pole envelope follower with α=0.5 attack / α=0.04 release tracks each caller's RMS over ~30 ms / ~500 ms windows and scales toward `SIP_AGC_TARGET_RMS` (default 0.15), capped at `SIP_AGC_MAX_GAIN` (default 6×). Quiet callers ramp up smoothly without pumping; loud callers get attenuated below 1.0 (no floor on gain) so the peak limiter rarely needs to fire. AGC is pure linear scaling — the spectral signature `far_field` expects is preserved.
+
+**Why Packet Loss Concealment?** Exotel's network occasionally drops a single 20 ms RTP packet. The prior code silently consumed the next packet, leaving a hard 20 ms hole that STT often hallucinated through. PLC replays the last successfully decoded 48 kHz frame with `0.7^i` energy decay across each missing slot — up to `SIP_PLC_MAX_GAP` (default 16, ≈ 320 ms). On a clean line PLC never fires (zero overhead). On a lossy line it converts clicks/dropouts into a brief, fading echo of the previous syllable, which both human listeners and STT models tolerate better than dead air. RFC 3551 §4.2 describes this as the reference behavior for PCM payloads. Reordered packets (rare on the Exotel path) are dropped rather than buffered, because a real jitter buffer would add 40–60 ms of mouth-to-ear latency for a problem that does not measurably occur.
+
+**Why handle Comfort Noise (PT=13)?** Per RFC 3389, peers may stop sending audio during silence and instead send a single CN packet whose payload byte 0 is the noise level in `-dBov`. The earlier code dropped non-G.711 payload types blindly, so CN packets produced a hard cliff-edge silence in the middle of natural pauses. The new path generates 20 ms of matched-level white noise at 48 kHz instead, keeping `far_field`'s ambience anchor intact and preventing the STT model from interpreting the cliff edge as end-of-turn. Whether Exotel actually sends CN frames varies by trunk configuration; the `CN=` counter in the bridge's `stop()` log answers that empirically per call.
 
 **Why no noise suppression in `rtp_bridge.py`?** An earlier experiment ran `webrtc_noise_gain.AudioProcessor` (Google's WebRTC NS) on inbound audio. It was removed because:
 
@@ -81,6 +101,19 @@ In `session.py`, the OpenAI Realtime LLM is configured with `input_audio_noise_r
 The same branching also prepends a short note to the STT prompt on phone calls ("Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). Expect static, line hum, codec artifacts...") so the transcription model is aware of the channel and refuses to fabricate words on unintelligible audio.
 
 **Dependencies:** `scipy>=1.13.0`, `numpy>=1.26.0`. (`webrtc_noise_gain` is no longer used by the inbound pipeline; remove if not referenced elsewhere.)
+
+**Inbound shaping env knobs** (all defined in `src/services/exotel/custom_sip_reach/config.py`):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SIP_AGC_TARGET_RMS` | `0.15` | RMS the AGC aims the envelope at. Higher → louder STT-side audio. |
+| `SIP_AGC_MAX_GAIN` | `6.0` | Upper bound on the gain multiplier so silence isn't amplified into noise. |
+| `SIP_PLC_MAX_GAP` | `16` | Maximum sequential RTP packets the PLC will conceal (~320 ms). |
+| `SIP_LEGACY_GAIN` | `0` | Set to `1` to bypass AGC + peak limiter and restore the prior `tanh × 1.5` path. One-release rollback escape hatch. |
+
+**Latency cost.** Net per-packet overhead vs. the prior pipeline is ≈ zero — AGC adds ~15 µs (sqrt over 160 samples), peak-only `tanh` saves ~30 µs vs. blanket `tanh` over 960 samples, and PLC only runs on actual loss. Total added work is <0.1 % of the 20 ms packet interval. No new buffering, no new awaits, no jitter buffer — mouth-to-ear latency is unchanged.
+
+**Bridge stop-log additions.** `RTPMediaBridge.stop()` now appends `PLC=N CN=N agc_env=…` to the existing `RX=N TX=N` line. `PLC=0 CN=0` on a clean call confirms both new branches were inert; non-zero values quantify network loss and CN frequency seen by the bridge.
 
 ## Hold & Resume Detection
 
