@@ -30,15 +30,7 @@ from .config import (
     SAMPLE_RATE_LK,
     SAMPLE_RATE_SIP,
     MAX_FRAME_BUFFER,
-    SIP_AGC_TARGET_RMS,
-    SIP_AGC_MAX_GAIN,
-    SIP_PLC_MAX_GAP,
-    SIP_LEGACY_GAIN,
 )
-
-# RFC 3389 Comfort Noise payload type. Exotel may send these during silence;
-# dropping them leaves a hard hole that far_field STT keys off of.
-CN_PAYLOAD_TYPE = 13
 from src.core.logger import logger
 
 # High-pass at 80 Hz removes DC offset and sub-bass hum without touching speech.
@@ -48,87 +40,38 @@ _HP_SOS = butter(2, 80, btype="high", fs=SAMPLE_RATE_SIP, output="sos")
 _HP_ZI_TEMPLATE = sosfilt_zi(_HP_SOS)  # shape (n_sections, 2), scaled per-packet
 
 
-def _synth_cn_48k(payload: bytes) -> bytes:
-    """Generate 20 ms of matched-level white noise from an RFC 3389 CN packet.
-
-    Payload byte 0 is the noise level in -dBov (0..127). Listener hears the same
-    background hiss across silence instead of a cliff-edge mute, and far_field STT
-    keeps its ambience anchor.
-    """
-    level_dbov = payload[0] & 0x7F if payload else 60
-    amp = 10.0 ** (-level_dbov / 20.0)
-    # 20 ms @ 48 kHz = 960 samples. Bypass the 8 kHz stage; noise is band-agnostic.
-    noise = (np.random.randn(960) * amp).astype(np.float32)
-    return (np.clip(noise, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
-
-
-def _decode_rtp_payload(
-    payload: bytes,
-    pt: int,
-    zi,
-    agc_env: float,
-) -> tuple[bytes, object, float]:
-    """Decode G.711, HP filter (80 Hz), AGC, resample 8 kHz→48 kHz.
+def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
+    """Decode G.711, high-pass filter (80 Hz), resample 8 kHz→48 kHz.
 
     Uses polyphase resampling (scipy) instead of linear interpolation (audioop.ratecv)
     to avoid aliasing artifacts that cause Whisper to hallucinate on phone audio.
     NS intentionally not applied here — OpenAI Realtime's `far_field` noise reduction
     runs on raw G.711 phone audio. Pre-processing with WebRTC NS shifts the spectral
     signature and degrades OpenAI's STT, so we leave the audio untouched besides
-    DC removal, level normalization, and resampling.
-
-    AGC is a one-pole RMS envelope follower with fast attack (30 ms) and slow
-    release (500 ms). Quiet callers come up smoothly; loud peaks are limited
-    sample-wise by tanh instead of distorting the body of the signal as a static
-    `tanh(x * 1.5)` did before.
-
+    DC removal, gain, and resampling.
     zi: sosfilt filter state array, or None on first packet.
-    agc_env: running RMS envelope; caller persists it across packets.
-    Returns: (pcm48_bytes, new_zi, new_agc_env).
     """
-    # Only G.711 audio decoded here. CN (PT=13) is handled by the caller before
-    # this point; PT=101 (RFC 2833 DTMF) and any other dynamic PTs would otherwise
-    # be alaw-decoded into garbage PCM → STT noise.
-    if pt not in (PCMA_PAYLOAD_TYPE, PCMU_PAYLOAD_TYPE):
-        return b"", zi, agc_env
+    # Only G.711 audio decoded. PT=101 (RFC 2833 DTMF), comfort noise, and any other
+    # dynamic PTs would otherwise be alaw-decoded into garbage PCM → STT noise.
+    if pt != PCMA_PAYLOAD_TYPE and pt != PCMU_PAYLOAD_TYPE:
+        return b"", zi
 
     pcm8 = audioop.alaw2lin(payload, 2) if pt == PCMA_PAYLOAD_TYPE else audioop.ulaw2lin(payload, 2)
 
     samples = np.frombuffer(pcm8, dtype=np.int16).astype(np.float32) * (1.0 / 32768.0)
     if len(samples) == 0:
-        return b"", zi, agc_env
+        return b"", zi
 
     # Scale template to first-sample DC level (scipy idiom) to suppress startup transient.
     if zi is None:
         zi = _HP_ZI_TEMPLATE * samples[0]
     samples, zi = sosfilt(_HP_SOS, samples, zi=zi)
 
-    if SIP_LEGACY_GAIN:
-        # Old behavior kept behind a flag for one release as an instant rollback.
-        samples_48k = resample_poly(samples, 6, 1)
-        samples_48k = np.tanh(samples_48k * 1.5)
-        return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi, agc_env
-
-    # One-pole RMS AGC on the 8 kHz signal — half the multiplies vs. post-upsample,
-    # and the envelope tracks faster because each packet is 160 samples instead of 960.
-    env_now = max(float(np.sqrt(np.mean(samples * samples))), 1e-4)
-    alpha = 0.5 if env_now > agc_env else 0.04  # fast attack, slow release
-    agc_env = (1.0 - alpha) * agc_env + alpha * env_now
-    # No floor on gain — quiet callers get boosted up to SIP_AGC_MAX_GAIN, loud
-    # callers get attenuated below 1.0. Sample-wise tanh below catches transients.
-    gain = min(SIP_AGC_TARGET_RMS / agc_env, SIP_AGC_MAX_GAIN)
-    samples = samples * gain
-
     # Direct 8 kHz → 48 kHz polyphase upsample (built-in anti-aliasing FIR).
     samples_48k = resample_poly(samples, 6, 1)
+    samples_48k = np.tanh(samples_48k * 1.5)  # boost quiet phone audio, soft-clip peaks
 
-    # Per-sample soft limiter on peaks only — preserves linearity in the body of
-    # speech so harmonic distortion isn't a constant fixture of the signal.
-    peaks = np.abs(samples_48k) > 0.9
-    if peaks.any():
-        samples_48k[peaks] = np.tanh(samples_48k[peaks])
-
-    return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi, agc_env
+    return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi
 
 
 class RTPMediaBridge:
@@ -171,15 +114,6 @@ class RTPMediaBridge:
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
         self._hp_zi = None   # sosfilt state for inbound 80 Hz high-pass filter
-        self._agc_env: float = 0.05  # AGC RMS envelope; persists across packets
-
-        # RTP sequence tracking + PLC. _last_seq lets us detect dropped packets;
-        # _last_pcm48 is the most recent decoded 48 kHz frame, replayed with
-        # exponential decay across small gaps so dropouts don't become clicks.
-        self._last_seq: int | None = None
-        self._last_pcm48: np.ndarray | None = None
-        self._plc_count = 0
-        self._cn_count = 0
 
         self._rx = 0
         self._tx = 0
@@ -334,62 +268,26 @@ class RTPMediaBridge:
                 continue  # gates closed: agent calls wait for 200 OK, passthrough opens on 183
 
             pt = data[1] & 0x7F
-            seq = (data[2] << 8) | data[3]
             payload = data[RTP_HEADER_SIZE:]
 
             try:
-                # PLC: replay the last decoded frame with energy decay across small
-                # forward gaps. Reordered packets (gap with high bit set after wrap)
-                # are dropped — at 20 ms ptime over Exotel's path reorder is rare and
-                # a real jitter buffer would cost more latency than the audio earns.
-                if self._last_seq is not None:
-                    gap = (seq - self._last_seq) & 0xFFFF
-                    if gap == 0:
-                        # exact duplicate — drop, don't double-push
-                        continue
-                    if gap & 0x8000:
-                        # negative diff → late/reordered, skip without resyncing
-                        continue
-                    if 1 < gap <= SIP_PLC_MAX_GAP and self._last_pcm48 is not None:
-                        for i in range(1, gap):
-                            decayed = (
-                                self._last_pcm48.astype(np.float32) * (0.7 ** i)
-                            ).astype(np.int16)
-                            await self._push_pcm48(decayed.tobytes())
-                            self._plc_count += 1
-                self._last_seq = seq
-
-                if pt == CN_PAYLOAD_TYPE:
-                    pcm48 = _synth_cn_48k(payload)
-                    self._cn_count += 1
-                    await self._push_pcm48(pcm48)
-                    continue
-
                 # Decode in thread pool so the event loop can schedule other coroutines.
                 # sosfilt returns a new zi array (no in-place mutation) so passing self._hp_zi
                 # to the thread is safe — no shared-state race with the next packet.
-                pcm48, self._hp_zi, self._agc_env = await asyncio.to_thread(
-                    _decode_rtp_payload, payload, pt, self._hp_zi, self._agc_env
+                pcm48, self._hp_zi = await asyncio.to_thread(
+                    _decode_rtp_payload, payload, pt, self._hp_zi
                 )
                 if not pcm48:
                     continue
-                await self._push_pcm48(pcm48)
+                frame = rtc.AudioFrame(
+                    data=pcm48,
+                    sample_rate=SAMPLE_RATE_LK,
+                    num_channels=1,
+                    samples_per_channel=len(pcm48) // 2,
+                )
+                await self._audio_source.capture_frame(frame)
             except Exception as e:
                 logger.error(f"[RTP] Decode error: {e}", exc_info=True)
-
-    async def _push_pcm48(self, pcm48: bytes):
-        """Capture a 48 kHz int16 mono frame into the LiveKit AudioSource.
-
-        Also caches the frame as `_last_pcm48` so PLC can replay it on gaps.
-        """
-        self._last_pcm48 = np.frombuffer(pcm48, dtype=np.int16)
-        frame = rtc.AudioFrame(
-            data=pcm48,
-            sample_rate=SAMPLE_RATE_LK,
-            num_channels=1,
-            samples_per_channel=len(pcm48) // 2,
-        )
-        await self._audio_source.capture_frame(frame)
 
     def add_outbound_track(self, track: rtc.Track):
         """Subscribe to an audio track and feed it into the mixer."""
@@ -518,10 +416,7 @@ class RTPMediaBridge:
             self._sock.close()
         except Exception:
             pass
-        logger.info(
-            f"[RTP] Stopped | RX={self._rx} TX={self._tx} "
-            f"PLC={self._plc_count} CN={self._cn_count} agc_env={self._agc_env:.4f}"
-        )
+        logger.info(f"[RTP] Stopped | RX={self._rx} TX={self._tx}")
         if self._rx == 0:
             logger.warning(
                 "[RTP] ⚠️  ZERO inbound packets! Likely causes:\n"

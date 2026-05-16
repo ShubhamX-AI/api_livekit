@@ -61,16 +61,6 @@ SAMPLE_RATE_SIP = 8000
 SAMPLE_RATE_LK = 48000
 MAX_FRAME_BUFFER = 2000  # ~20 seconds of 10ms LiveKit frames (10ms × 2000 = 20s)
 
-# Inbound audio shaping — see rtp_bridge.py docstring for design notes.
-# AGC keeps a one-pole RMS envelope and scales toward SIP_AGC_TARGET_RMS,
-# capped at SIP_AGC_MAX_GAIN. PLC replays the last decoded 48 kHz frame with
-# exponential decay across small RTP sequence gaps. Spectral preprocessing
-# (NS/RNNoise/de-essing) is intentionally absent — it breaks far_field STT.
-SIP_AGC_TARGET_RMS = float(os.getenv("SIP_AGC_TARGET_RMS", "0.15"))
-SIP_AGC_MAX_GAIN = float(os.getenv("SIP_AGC_MAX_GAIN", "6.0"))
-SIP_PLC_MAX_GAP = int(os.getenv("SIP_PLC_MAX_GAP", "16"))
-SIP_LEGACY_GAIN = os.getenv("SIP_LEGACY_GAIN", "0") == "1"
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Timeout Configuration
 # ─────────────────────────────────────────────────────────────────────────────
