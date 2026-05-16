@@ -25,6 +25,7 @@ Content-Type: application/json
     "sip_status_code": null,
     "sip_status_text": null,
     "answered_at": "2024-01-15T10:00:02.000Z",
+    "call_end_reason": "natural",
     "recording_path": "https://your-bucket.s3.us-east-1.amazonaws.com/recordings/call_abc123.ogg",
     "transcripts": [
       {
@@ -82,6 +83,7 @@ Content-Type: application/json
 | `data.sip_status_code`         | number  | SIP response code when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
 | `data.sip_status_text`         | string  | SIP reason text when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
 | `data.answered_at`             | string  | Timestamp when the user answered (if answered). |
+| `data.call_end_reason`         | string  | Reason the call ended. `natural` for normal user/agent hang-up, `max_duration_exceeded` when the assistant's `max_call_duration_minutes` ceiling was hit. May be `null` for legacy records created before this field existed. |
 | `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
 | `data.transcripts`             | array   | List of conversation messages. Always `[]` for passthrough calls (no STT). |
 | `data.transcripts[].speaker`   | string  | Who spoke (`agent` or `user`).             |
@@ -136,6 +138,7 @@ The webhook payload is generated from the stored call record and currently inclu
 - `sip_status_code`
 - `sip_status_text`
 - `answered_at`
+- `call_end_reason`
 - `recording_path`
 - `transcripts`
 - `started_at`

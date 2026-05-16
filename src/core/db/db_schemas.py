@@ -38,6 +38,8 @@ class AssistantInteractionConfig(BaseModel):
     # User STT source for realtime (OpenAI half-cascade) mode.
     # "sarvam" runs Sarvam Saras v3 in parallel and disables OpenAI's transcription side-channel.
     user_stt_provider: Literal["sarvam", "openai"] = "sarvam"
+    # Hard ceiling for active-call duration. None → falls back to platform default (30 min) at runtime.
+    max_call_duration_minutes: Optional[float] = None
 
 
 # Assistant storage
@@ -165,6 +167,7 @@ class CallRecord(Document):
     sip_status_code: Optional[int] = None
     sip_status_text: Optional[str] = None
     answered_at: Optional[datetime] = None
+    call_end_reason: Optional[str] = None  # natural | max_duration_exceeded | sip_bye | rtp_silence | no_rtp | livekit_disconnected | error
     recording_path: Optional[str] = None
     recording_egress_id: Optional[str] = None
     transcripts: List[Dict] = []  # [{speaker, text, timestamp}]

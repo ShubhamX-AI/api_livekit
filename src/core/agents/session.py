@@ -47,6 +47,9 @@ from livekit.agents.metrics import UsageCollector
 setup_logging()
 load_dotenv(override=True)
 
+# Platform default applied when assistant_interaction_config.max_call_duration_minutes is unset.
+DEFAULT_MAX_CALL_DURATION_MINUTES = 30.0
+
 
 # Helper to build background audio player based on interaction config
 def build_background_audio(interaction_config) -> BackgroundAudioPlayer | None:
@@ -249,11 +252,17 @@ async def entrypoint(ctx: JobContext):
 
     _sarvam_stop = asyncio.Event()
 
+    # Watchdog/tools stamp a reason before teardown persists it.
+    _end_reason: str = "natural"
+    _max_duration_task: asyncio.Task | None = None
+
     # Single teardown path used by both EndCallTool and participant disconnect
     async def _flush_and_end_call(delay: float = 0.0):
         nonlocal call_end_triggered
         call_end_triggered = True  # Block duplicate from disconnect handler
         _sarvam_stop.set()
+        if _max_duration_task is not None and not _max_duration_task.done():
+            _max_duration_task.cancel()
         if input_guard is not None:
             await input_guard.aclose()
         # Mute all room audio inputs immediately — prevents STT from
@@ -270,6 +279,13 @@ async def entrypoint(ctx: JobContext):
         transcript_worker.cancel()
         await asyncio.gather(transcript_worker, return_exceptions=True)
         await _persist_usage()
+        try:
+            rec = await CallRecord.find_one(CallRecord.room_name == ctx.room.name)
+            if rec and rec.call_end_reason is None:
+                rec.call_end_reason = _end_reason
+                await rec.save()
+        except Exception as e:
+            logger.error(f"Failed to persist call_end_reason: {e}")
         try:
             await livekit_services.end_call(room_name=ctx.room.name, assistant_id=assistant_id)
         except Exception as e:
@@ -587,6 +603,41 @@ async def entrypoint(ctx: JobContext):
     participant = await ctx.wait_for_participant()
     primary_participant_identity = participant.identity
     call_end_triggered = False
+
+    # --- Max call-duration watchdog ---
+    # Hard cap on active-call length. Counts from gate-ready (post-answer for Exotel outbound,
+    # immediately otherwise). On expiry, agent says a brief farewell then teardown runs.
+    _max_minutes = (
+        getattr(interaction_config, "max_call_duration_minutes", None)
+        or DEFAULT_MAX_CALL_DURATION_MINUTES
+    )
+
+    async def _max_duration_watchdog(limit_minutes: float):
+        nonlocal _end_reason
+        try:
+            if not await gate.wait_until_ready(timeout=3600.0):
+                return  # call never answered — nothing to police
+            await asyncio.sleep(limit_minutes * 60.0)
+            if call_end_triggered:
+                return
+            logger.warning(
+                f"Max call duration reached ({limit_minutes:.2f}min) — ending gracefully | room={room_name}"
+            )
+            _end_reason = "max_duration_exceeded"
+            try:
+                farewell = "I'm sorry, our call has reached its time limit. Thank you for calling. Goodbye!"
+                await session.generate_reply(
+                    instructions=f"Say this exactly and nothing else: '{farewell}'",
+                    allow_interruptions=False,
+                )
+            except Exception as e:
+                logger.error(f"Failed to deliver max-duration farewell: {e}")
+            await _flush_and_end_call(delay=3.0)
+        except asyncio.CancelledError:
+            pass
+
+    _max_duration_task = asyncio.create_task(_max_duration_watchdog(_max_minutes))
+    logger.info(f"Max-duration watchdog armed | limit={_max_minutes:.2f}min | room={room_name}")
 
     is_sip = participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
     is_exotel_bridge = False
