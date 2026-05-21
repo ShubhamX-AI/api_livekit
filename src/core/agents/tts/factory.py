@@ -24,7 +24,7 @@ def create_tts(assistant):
         api_key = tts_config.get("api_key") or settings.CARTESIA_API_KEY
         return cartesia.TTS(
             model="sonic-3",
-            speed=1.1,
+            speed=1.0,
             voice=voice_id,
             api_key=api_key,
         )
@@ -37,7 +37,7 @@ def create_tts(assistant):
         api_key = tts_config.get("api_key") or settings.SARVAM_API_KEY
         return sarvam.TTS(
             model="bulbul:v3",
-            pace=1.1,
+            pace=1.0,
             speech_sample_rate=24000,
             target_language_code=tts_config.get("target_language_code", "en-IN"),
             speaker=speaker,
