@@ -56,12 +56,12 @@ def build_background_audio(interaction_config) -> BackgroundAudioPlayer | None:
     ambient_sound = None
     if getattr(interaction_config, "background_sound_enabled", True):
         ambient_path = os.path.join(settings.AUDIO_DIR, "office-ambience_48k.wav")
-        ambient_sound = AudioConfig(ambient_path, volume=0.4)
+        ambient_sound = AudioConfig(ambient_path, volume=0.6)
 
     thinking_sound = None
     if getattr(interaction_config, "thinking_sound_enabled", True):
         typing_path = os.path.join(settings.AUDIO_DIR, "typing-sound_48k.wav")
-        thinking_sound = AudioConfig(typing_path, volume=0.5)
+        thinking_sound = AudioConfig(typing_path, volume=0.7)
 
     if ambient_sound is None and thinking_sound is None:
         return None
