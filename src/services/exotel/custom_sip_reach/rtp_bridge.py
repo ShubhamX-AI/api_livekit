@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 
 import audioop
 import numpy as np
-from scipy.signal import butter, resample_poly, sosfilt, sosfilt_zi
+from scipy.signal import butter, resample_poly, sosfilt, sosfilt_zi, firwin
 
 from livekit import rtc
 
@@ -39,39 +39,60 @@ from src.core.logger import logger
 _HP_SOS = butter(2, 80, btype="high", fs=SAMPLE_RATE_SIP, output="sos")
 _HP_ZI_TEMPLATE = sosfilt_zi(_HP_SOS)  # shape (n_sections, 2), scaled per-packet
 
+# Pin our own custom FIR filter to protect against SciPy updates.
+# A filter with half_len=10 has 2 * 10 * 6 + 1 = 121 taps, group delay is exactly 10 samples (at low rate)
+_RESAMPLE_FILTER = firwin(121, 1.0 / 6.0, window=("kaiser", 5.0))
 
-def _decode_rtp_payload(payload: bytes, pt: int, zi) -> tuple[bytes, object]:
+
+def _decode_rtp_payload(payload: bytes, pt: int, state: object) -> tuple[bytes, object]:
     """Decode G.711, high-pass filter (80 Hz), resample 8 kHz→48 kHz.
 
-    Uses polyphase resampling (scipy) instead of linear interpolation (audioop.ratecv)
-    to avoid aliasing artifacts that cause Whisper to hallucinate on phone audio.
-    NS intentionally not applied here — OpenAI Realtime's `far_field` noise reduction
-    runs on raw G.711 phone audio. Pre-processing with WebRTC NS shifts the spectral
-    signature and degrades OpenAI's STT, so we leave the audio untouched besides
-    DC removal, gain, and resampling.
-    zi: sosfilt filter state array, or None on first packet.
+    Uses stateful polyphase resampling (scipy) with overlap-save to avoid packet
+    boundary transients and aliasing artifacts that degrade voice quality and STT.
+    state: tuple of (hp_zi, resample_history) or None, or just hp_zi (for backward compatibility).
     """
     # Only G.711 audio decoded. PT=101 (RFC 2833 DTMF), comfort noise, and any other
     # dynamic PTs would otherwise be alaw-decoded into garbage PCM → STT noise.
     if pt != PCMA_PAYLOAD_TYPE and pt != PCMU_PAYLOAD_TYPE:
-        return b"", zi
+        return b"", state
+
+    # Parse state dynamically for robust backward compatibility
+    if isinstance(state, tuple) and len(state) == 2:
+        hp_zi, history = state
+    else:
+        # If old format (or None), initialize
+        hp_zi = state if state is not None else None
+        history = None
+
+    if history is None:
+        history = np.zeros(20, dtype=np.float32)
 
     pcm8 = audioop.alaw2lin(payload, 2) if pt == PCMA_PAYLOAD_TYPE else audioop.ulaw2lin(payload, 2)
 
     samples = np.frombuffer(pcm8, dtype=np.int16).astype(np.float32) * (1.0 / 32768.0)
     if len(samples) == 0:
-        return b"", zi
+        return b"", (hp_zi, history)
 
     # Scale template to first-sample DC level (scipy idiom) to suppress startup transient.
-    if zi is None:
-        zi = _HP_ZI_TEMPLATE * samples[0]
-    samples, zi = sosfilt(_HP_SOS, samples, zi=zi)
+    if hp_zi is None:
+        hp_zi = _HP_ZI_TEMPLATE * samples[0]
+    samples, hp_zi = sosfilt(_HP_SOS, samples, zi=hp_zi)
 
-    # Direct 8 kHz → 48 kHz polyphase upsample (built-in anti-aliasing FIR).
-    samples_48k = resample_poly(samples, 6, 1)
+    # Stateful polyphase upsampling (8 kHz -> 48 kHz, up=6, down=1)
+    # Prepend the history of 20 samples to avoid left-edge filter boundary transients.
+    full_input = np.concatenate([history, samples])
+    new_history = full_input[-len(history):]
+
+    resampled_full = resample_poly(full_input, 6, 1, window=_RESAMPLE_FILTER)
+
+    # Group delay is 10 samples (at low rate). Align output:
+    start_idx = (len(history) - 10) * 6
+    end_idx = start_idx + len(samples) * 6
+    samples_48k = resampled_full[start_idx:end_idx]
+
     samples_48k = np.tanh(samples_48k * 1.5)  # boost quiet phone audio, soft-clip peaks
 
-    return (samples_48k * 32767.0).astype(np.int16).tobytes(), zi
+    return (samples_48k * 32767.0).astype(np.int16).tobytes(), (hp_zi, new_history)
 
 
 class RTPMediaBridge:
@@ -113,7 +134,8 @@ class RTPMediaBridge:
         self._rtp_ts = random.randint(0, 0xFFFFFFFF)
         self._rtp_ssrc = random.randint(0, 0xFFFFFFFF)
 
-        self._hp_zi = None   # sosfilt state for inbound 80 Hz high-pass filter
+        self._hp_zi = (None, np.zeros(20, dtype=np.float32))  # state tuple for inbound high-pass + stateful upsampler
+        self._outbound_resample_history = np.zeros(120, dtype=np.float32)  # stateful downsampler overlap history
 
         self._rx = 0
         self._tx = 0
@@ -344,7 +366,19 @@ class RTPMediaBridge:
             raw = bytes(frame.data.cast("b"))
             samples_48k = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
             samples_48k = np.tanh(samples_48k * 0.7)      # soft limit — prevents SIP distortion
-            samples_8k = resample_poly(samples_48k, 1, 6) # anti-aliased 48→8kHz
+
+            # Stateful polyphase downsampling (48 kHz -> 8 kHz, up=1, down=6)
+            # Prepend history of 120 samples to avoid left-edge filter boundary transients.
+            full_input = np.concatenate([self._outbound_resample_history, samples_48k])
+            self._outbound_resample_history = full_input[-len(self._outbound_resample_history):]
+
+            resampled_full = resample_poly(full_input, 1, 6, window=_RESAMPLE_FILTER)
+
+            # Group delay is 60 samples at high-rate. Align output:
+            start_idx = (len(self._outbound_resample_history) - 60) // 6
+            end_idx = start_idx + len(samples_48k) // 6
+            samples_8k = resampled_full[start_idx:end_idx]
+
             pcm8 = (samples_8k * 32767.0).astype(np.int16).tobytes()
             self._pcm_accumulator.extend(pcm8)
 
