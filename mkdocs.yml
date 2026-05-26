@@ -76,6 +76,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Feature List: features.md
   - Getting Started:
     - Overview: getting-started/index.md
     - Outbound SIP Call: getting-started/outbound-sip.md
