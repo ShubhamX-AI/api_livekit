@@ -6,11 +6,11 @@ There are four distinct call flows depending on the integration type.
 
 Web calls use WebRTC directly. No SIP trunk is involved.
 
-1. **Token Request**: Client calls `POST /web_call/get_token` with an `assistant_id`.
+1. **Token Request**: Client calls `POST /web_call/get_token` with an `assistant_id`. Optional `"text_only": true` switches the session to a pure text chatbot (no mic, no TTS, no recording).
 2. **Room Creation**: API creates a LiveKit room and returns a participant token.
 3. **Client Connects**: The browser or mobile app connects to LiveKit using the token.
 4. **Agent Joins**: The AI assistant joins the room automatically.
-5. **Real-time Session**: Audio and optional text input are exchanged in the room until disconnection.
+5. **Real-time Session**: Audio and optional text input are exchanged in the room until disconnection. In text-only mode, the LLM emits replies on the `lk.chat` topic instead of synthesized audio.
 
 ```mermaid
 sequenceDiagram

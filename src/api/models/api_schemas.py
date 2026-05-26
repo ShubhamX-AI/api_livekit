@@ -370,6 +370,10 @@ class TriggerPassthroughCall(BaseModel):
 class TriggerWebCall(BaseModel):
     assistant_id: str = Field(..., min_length=1, max_length=100, description="Assistant ID")
     metadata: Optional[dict] = Field(None, description="Optional metadata passed to the agent")
+    text_only: bool = Field(
+        False,
+        description="Run as a text-only chat: no STT, no TTS, no recording. Pipeline-mode assistants only.",
+    )
 
     class Config:
         # Strip whitespace from string fields

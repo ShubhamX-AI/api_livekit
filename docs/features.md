@@ -89,8 +89,9 @@ Four synthesis providers supported in pipeline mode:
 ## 8. Web Calls (No SIP)
 
 - Browser or mobile app joins a LiveKit room and speaks directly to the AI assistant
-- `GET /web_call/get_token` issues a scoped LiveKit room token
+- `POST /web_call/get_token` issues a scoped LiveKit room token
 - Supports both voice input and text chat (`lk.chat`)
+- **Text-only mode**: opt-in `"text_only": true` skips mic, TTS, STT, and recording — pure LLM chatbot over `lk.chat` (pipeline-mode assistants only)
 - No SIP trunk required
 
 ---
@@ -130,6 +131,7 @@ Four synthesis providers supported in pipeline mode:
 - Prevents "Hello? Hello?" repeat barge-ins from fragmenting the agent's response
 - Re-enables immediately when the agent finishes speaking (if before the window)
 - Pipeline mode only (Gemini realtime owns its own audio pipeline)
+- Auto-disabled in text-only web calls (no audio to guard)
 
 ---
 
@@ -139,6 +141,7 @@ Four synthesis providers supported in pipeline mode:
 - Sends up to a configurable max number of reprompt messages before ending the call
 - Configurable per-assistant: `silence_reprompt_interval`, `silence_max_reprompts`
 - Paused automatically during hold
+- Auto-disabled in text-only web calls (typed chat has no audio-silence signal)
 
 ---
 
@@ -147,6 +150,7 @@ Four synthesis providers supported in pipeline mode:
 - Assistant emits natural filler sounds while thinking (e.g. "Hmm, let me check that…")
 - Toggle per-assistant via `assistant_interaction_config.filler_words`
 - Paused automatically during hold
+- Auto-disabled in realtime mode and in text-only web calls (no external TTS available)
 
 ---
 
@@ -155,6 +159,7 @@ Four synthesis providers supported in pipeline mode:
 - **Ambient office sound** — low-level background noise makes silences feel natural on phone calls
 - **Thinking sound** — subtle typing sound while the LLM generates a reply
 - Both independently toggleable per-assistant (`background_sound_enabled`, `thinking_sound_enabled`)
+- Auto-disabled in text-only web calls (no audio output channel)
 
 ---
 

@@ -24,12 +24,24 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
         if not assistant:
             raise HTTPException(status_code=404, detail="Assistant not found")
 
+        # Text-only mode is incompatible with realtime assistants (Gemini/OpenAI realtime
+        # bundle STT+LLM+TTS in one model and do not expose a pure-text path).
+        if request.text_only and assistant.assistant_llm_mode == "realtime":
+            raise HTTPException(
+                status_code=400,
+                detail="text_only is not supported for realtime assistants. Use a pipeline-mode assistant.",
+            )
+
         # Create a unique room
         logger.info(f"Creating room for assistant: {request.assistant_id}")
         room_name = await livekit_services.create_room(request.assistant_id)
 
         # Force web sessions to be tagged as call_type=web while preserving custom metadata.
-        job_metadata = {**(request.metadata or {}), "call_type": "web"}
+        job_metadata = {
+            **(request.metadata or {}),
+            "call_type": "web",
+            "text_only": request.text_only,
+        }
 
         # Initialize call record for web call
         await livekit_services.initialize_call_record(

@@ -107,6 +107,10 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")
 
+    # Text-only web chat: skip STT, TTS, recording. Validated upstream against realtime mode.
+    is_web_call = job_metadata.get("call_type") == "web"
+    is_text_only = is_web_call and job_metadata.get("text_only") is True
+
     if job_metadata:
         render_data = {**job_metadata, "call": job_metadata}
 
@@ -147,11 +151,13 @@ async def entrypoint(ctx: JobContext):
 
 
     interaction_config = assistant.assistant_interaction_config
-    # Filler words require external TTS (session.say), disabled in realtime mode
-    filler_words_enabled = bool(interaction_config.filler_words) and not is_realtime
-    silence_reprompts_enabled = bool(interaction_config.silence_reprompts)
-    background_sound_enabled = bool(getattr(interaction_config, "background_sound_enabled", True))
-    thinking_sound_enabled = bool(getattr(interaction_config, "thinking_sound_enabled", True))
+    # Filler words require external TTS (session.say), disabled in realtime mode.
+    # Voice-only features (filler, silence reprompts, background/thinking sounds) all
+    # off for text-only chats — no audio in or out.
+    filler_words_enabled = bool(interaction_config.filler_words) and not is_realtime and not is_text_only
+    silence_reprompts_enabled = bool(interaction_config.silence_reprompts) and not is_text_only
+    background_sound_enabled = bool(getattr(interaction_config, "background_sound_enabled", True)) and not is_text_only
+    thinking_sound_enabled = bool(getattr(interaction_config, "thinking_sound_enabled", True)) and not is_text_only
     logger.info(
         "Assistant voice features | "
         f"filler_words={filler_words_enabled} | "
@@ -183,8 +189,8 @@ async def entrypoint(ctx: JobContext):
 
     transcript_worker = asyncio.create_task(_transcript_worker())
 
-    # Start recording immediately for non-Exotel calls
-    if not is_exotel_outbound:
+    # Start recording immediately for non-Exotel calls. Text-only web chats have no audio.
+    if not is_exotel_outbound and not is_text_only:
         asyncio.create_task(recorder.start_once())
 
     # --- Load Tools ---
@@ -375,8 +381,12 @@ async def entrypoint(ctx: JobContext):
         )
 
         # Sarvam Saras v3 handles user STT in parallel (default). Skip OpenAI's side-channel
-        # transcription to avoid dual writes and save cost.
-        _use_sarvam_stt = (interaction_config.user_stt_provider or "sarvam") == "sarvam"
+        # transcription to avoid dual writes and save cost. Text-only chats have no audio, so
+        # treat as "no parallel STT" — the SDK's own conversation events carry the user text.
+        _use_sarvam_stt = (
+            not is_text_only
+            and (interaction_config.user_stt_provider or "sarvam") == "sarvam"
+        )
         _openai_transcription = None if _use_sarvam_stt else AudioTranscription(
             model="gpt-4o-transcribe",
             prompt=_stt_prompt,
@@ -402,9 +412,9 @@ async def entrypoint(ctx: JobContext):
         )
         logger.info("Half-cascade mode | llm=openai | tts=%s", assistant.assistant_tts_model)
 
-    # --- Build TTS (only for pipeline mode) ---
+    # --- Build TTS (pipeline mode only) ---
     tts = None
-    if not is_realtime:
+    if not is_realtime and not is_text_only:
         tts = create_tts(assistant)
         if tts is None:
             return
@@ -412,7 +422,8 @@ async def entrypoint(ctx: JobContext):
             tts.prewarm()
 
     # --- Session Setup ---
-    if is_realtime:
+    # Text-only chats reuse the realtime branch shape (no TTS, no audio knobs).
+    if is_realtime or is_text_only:
         session = AgentSession(llm=llm)
     else:
         session = AgentSession(
@@ -464,7 +475,7 @@ async def entrypoint(ctx: JobContext):
         silence_watchdog=silence_watchdog,
         filler_controller=filler_controller,
     )
-    input_guard = None if is_realtime else InputGuardController(
+    input_guard = None if (is_realtime or is_text_only) else InputGuardController(
         session=session,
         logger=logger,
         window_sec=getattr(interaction_config, "input_guard_window_sec", 3.0),
@@ -473,14 +484,18 @@ async def entrypoint(ctx: JobContext):
     # Background audio
     background_audio = build_background_audio(interaction_config)
 
-    # Text input only for web calls
-    is_web_call = job_metadata.get("call_type") == "web"
-    logger.info(f"Session input mode | call_type={job_metadata.get('call_type')} | text_input={is_web_call}")
+    # Text-only web chats turn off audio I/O on both sides and publish agent replies as
+    # transcription text on the lk.chat topic. Regular web calls keep audio plus text input.
+    logger.info(
+        f"Session input mode | call_type={job_metadata.get('call_type')} | "
+        f"text_input={is_web_call} | text_only={is_text_only}"
+    )
 
     room_options = room_io.RoomOptions(
         text_input=is_web_call,
-        audio_input=True,
-        audio_output=True,
+        audio_input=not is_text_only,
+        audio_output=not is_text_only,
+        text_output=is_text_only,
         close_on_disconnect=False,
         delete_room_on_close=False,
     )

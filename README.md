@@ -6,7 +6,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 
 - Manages assistants, tools, SIP trunks, API keys, and call workflows.
 - Runs voice agents in LiveKit rooms.
-- Supports web calls with both text (`lk.chat`) and voice input.
+- Supports web calls with both text (`lk.chat`) and voice input, plus an opt-in **text-only mode** (`text_only: true`) that disables mic/TTS/STT/recording for pure-chatbot use.
 - Supports outbound calling and Exotel inbound routing.
 - Queues outbound call requests and dispatches them in the background at a controlled rate.
 - Supports assistant runtime modes:
@@ -280,7 +280,7 @@ Use these pages as the canonical payload contracts:
 - `/inbound`
 - `/inbound_context_strategy`
 - `/logs`
-- `/web_call/get_token`
+- `/web_call/get_token` — supports `text_only: true` for chatbot mode (no audio, no recording; pipeline-mode assistants only)
 - `/analytics` — per-user call analytics (dashboard, by-assistant, by-phone-number, by-time, by-service)
 - `/admin` — super-admin cross-tenant analytics and token usage (requires `is_super_admin` flag)
 

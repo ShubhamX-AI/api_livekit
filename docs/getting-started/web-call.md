@@ -27,3 +27,19 @@ await room.connect("wss://your-livekit-server", token);
 ```
 
 The assistant joins automatically once the room is created. Both audio and typed text input (`lk.chat` topic) are supported.
+
+## B3 — Text-Only Chat (Optional)
+
+To run the session as a pure text chatbot (no mic, no speaker, no recording, no TTS/STT bill), set `"text_only": true` on the token request:
+
+```bash
+curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/get_token" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "assistant_id": "ASSISTANT_ID",
+    "text_only": true
+  }'
+```
+
+The LLM still runs and emits text on the `lk.chat` topic for both client → agent and agent → client. Only pipeline-mode assistants are supported; realtime-mode assistants return HTTP 400. See [API reference → Text-Only Mode](../api/calls/web-call.md#text-only-mode-text_only-true) for details.

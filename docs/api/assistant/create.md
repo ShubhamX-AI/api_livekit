@@ -183,6 +183,9 @@ Create a new assistant configuration.
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.
 
+!!! note "Text-only web calls override these flags"
+    When `POST /web_call/get_token` is called with `"text_only": true`, the session has no audio I/O. Filler words, silence reprompts, background sound, thinking sound, and the per-utterance input guard are all force-disabled for that session regardless of the assistant's saved values — they require an audio channel that does not exist in text mode. The stored assistant config is not modified; voice web calls and phone calls for the same assistant still honor it.
+
 ## Response Schema
 
 | Field | Type | Description |
