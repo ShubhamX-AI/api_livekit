@@ -441,7 +441,7 @@ async def entrypoint(ctx: JobContext):
                 },
                 interruption={
                     "mode": "adaptive",
-                    "min_duration": 1.5,
+                    "min_duration": 2.5,
                     "min_words": 0,
                     "discard_audio_if_uninterruptible": True,
                     "false_interruption_timeout": 0.2,
@@ -495,7 +495,7 @@ async def entrypoint(ctx: JobContext):
         text_input=is_web_call,
         audio_input=not is_text_only,
         audio_output=not is_text_only,
-        text_output=is_text_only,
+        text_output=True,
         close_on_disconnect=False,
         delete_room_on_close=False,
     )
