@@ -105,6 +105,17 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. Pass null/omit to use platform default (30 min).")
 
 
+# ── Greeting audio sub-models ──────────────────
+class GreetingAudioSchema(BaseModel):
+    enabled: bool = Field(False, description="If True, play the referenced audio asset as the greeting instead of generating it with the model.")
+    audio_id: Optional[str] = Field(None, description="ID of an uploaded audio asset (see /audio) to play as the greeting.")
+
+
+class UpdateGreetingAudioSchema(BaseModel):
+    enabled: Optional[bool] = Field(None, description="Toggle the recorded greeting on or off.")
+    audio_id: Optional[str] = Field(None, description="Attach a different audio asset, or null to detach.")
+
+
 # For Assistant creation
 class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
@@ -116,6 +127,7 @@ class CreateAssistant(BaseModel):
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline mode)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction")
     assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
+    assistant_greeting_audio: GreetingAudioSchema = Field(default_factory=GreetingAudioSchema, description="Optional prerecorded greeting (references an audio asset from /audio)")
     assistant_end_call_enabled: bool = Field(False, description="Enable built-in end_call tool")
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
@@ -215,6 +227,7 @@ class UpdateAssistant(BaseModel):
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
     assistant_start_instruction: Optional[str] = Field(None, max_length=200, description="Assistant's start instruction (optional)")
     assistant_interaction_config: Optional[UpdateAssistantInteractionConfigSchema] = Field(None, description="Update interaction settings")
+    assistant_greeting_audio: Optional[UpdateGreetingAudioSchema] = Field(None, description="Attach/detach a greeting audio asset or toggle it on/off")
     assistant_end_call_enabled: Optional[bool] = Field(None, description="Enable/disable built-in end_call tool")
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")

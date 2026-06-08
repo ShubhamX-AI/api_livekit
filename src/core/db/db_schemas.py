@@ -42,6 +42,36 @@ class AssistantInteractionConfig(BaseModel):
     max_call_duration_minutes: Optional[float] = None
 
 
+class GreetingAudioConfig(BaseModel):
+    """Per-assistant reference to a greeting audio from the reusable library.
+
+    When enabled, the worker resolves audio_id to an AudioAsset and plays its WAV
+    via session.say(audio=...), skipping LLM + TTS for the greeting. Any failure
+    (missing/inactive asset, download error) falls back to the model greeting.
+    """
+
+    enabled: bool = False
+    audio_id: Optional[str] = None  # references AudioAsset.audio_id
+
+
+# Reusable audio library — one upload, attachable to many assistants
+class AudioAsset(Document):
+    """A user-uploaded audio file stored in S3, attachable to assistants as a greeting."""
+
+    audio_id: Indexed(str, unique=True)
+    audio_name: str
+    transcript: str  # literal spoken words, added to chat context so the model knows it greeted
+    s3_key: str
+    duration_seconds: float
+    filename: Optional[str] = None  # original upload filename, for display
+    created_by_email: EmailStr
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_active: bool = True
+
+    class Settings:
+        name = "audio_assets"  # Collection name in MongoDB
+
+
 # Assistant storage
 class Assistant(Document):
     """Assistant model for Beanie ODM"""
@@ -56,6 +86,7 @@ class Assistant(Document):
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
     assistant_interaction_config: AssistantInteractionConfig = Field(default_factory=AssistantInteractionConfig)
+    assistant_greeting_audio: GreetingAudioConfig = Field(default_factory=GreetingAudioConfig)
     assistant_end_call_enabled: bool = False
     assistant_end_call_trigger_phrase: Optional[str] = None
     assistant_end_call_agent_message: Optional[str] = None

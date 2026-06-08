@@ -39,8 +39,10 @@ from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
-from src.core.db.db_schemas import Assistant, InboundContextStrategy, UsageRecord, CallRecord
+from src.core.db.db_schemas import Assistant, AudioAsset, InboundContextStrategy, UsageRecord, CallRecord
 from src.services.livekit.livekit_svc import LiveKitService
+from src.services.storage import s3_audio
+from livekit.agents.utils.audio import audio_frames_from_file
 from livekit.agents.metrics import UsageCollector
 
 
@@ -70,6 +72,40 @@ def build_background_audio(interaction_config) -> BackgroundAudioPlayer | None:
         ambient_sound=ambient_sound,
         thinking_sound=thinking_sound,
     )
+
+
+# Play a referenced audio asset as the greeting instead of generating it with the model.
+# Returns the spoken transcript on success, or None so the caller falls back to the model greeting.
+async def play_prerecorded_greeting(session, audio_id, allow_interruptions) -> str | None:
+    asset = await AudioAsset.find_one(
+        AudioAsset.audio_id == audio_id,
+        AudioAsset.is_active == True,
+    )
+    if not asset:
+        logger.warning("Greeting audio_id %s not found or inactive; using model greeting", audio_id)
+        return None
+
+    # transcript goes to the chat context so the model knows it already greeted
+    transcript = asset.transcript or ""
+    tmp_path = None
+    try:
+        tmp_path = await asyncio.to_thread(s3_audio.download_to_tempfile, asset.s3_key)
+        handle = session.say(
+            transcript,
+            audio=audio_frames_from_file(tmp_path, sample_rate=48000, num_channels=1),
+            allow_interruptions=allow_interruptions,
+            add_to_chat_ctx=True,
+        )
+        # wait for playout: the file is streamed lazily, so keep it until reading finishes
+        await handle.wait_for_playout()
+        logger.info("Start instruction strategy | mode=prerecorded_greeting_audio | audio=%s", audio_id)
+        return transcript
+    except Exception as e:
+        logger.error(f"Prerecorded greeting failed, falling back to model greeting: {e}", exc_info=True)
+        return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 async def entrypoint(ctx: JobContext):
@@ -731,33 +767,49 @@ async def entrypoint(ctx: JobContext):
                         should_send_instruction = False
 
                 if should_send_instruction:
-                    if is_realtime:
-                        logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input | provider = %s", realtime_provider)
+                    # The text recorded for the silence watchdog (transcript when prerecorded).
+                    spoken_text = start_instruction
 
-                        if realtime_provider == "gemini":
-                            from google.genai import types as genai_types
+                    # For non-Exotel, non-interruptible realtime models: disable VAD before speaking
+                    # (Exotel already did it above). Applies to every greeting path below.
+                    if not allow_int and not is_exotel_bridge and isinstance(llm, realtime.RealtimeModel):
+                        if _saved_td is None:
+                            _saved_td = llm._opts.turn_detection
+                        llm.update_options(turn_detection=None)
 
-                            rt_session = agent_instance.realtime_llm_session
-                            rt_session._send_client_event(
-                                genai_types.LiveClientRealtimeInput(text=start_instruction)
-                            )
+                    # Prefer a prerecorded greeting when configured — skips LLM + TTS for both modes.
+                    greeting_cfg = assistant.assistant_greeting_audio
+                    played_prerecorded = False
+                    if greeting_cfg.enabled and greeting_cfg.audio_id:
+                        transcript = await play_prerecorded_greeting(session, greeting_cfg.audio_id, allow_int)
+                        if transcript is not None:
+                            played_prerecorded = True
+                            spoken_text = transcript
+
+                    if not played_prerecorded:
+                        if is_realtime:
+                            logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input | provider = %s", realtime_provider)
+
+                            if realtime_provider == "gemini":
+                                from google.genai import types as genai_types
+
+                                rt_session = agent_instance.realtime_llm_session
+                                rt_session._send_client_event(
+                                    genai_types.LiveClientRealtimeInput(text=start_instruction)
+                                )
+                            else:
+                                logger.error("Realtime provider not supported")
                         else:
-                            logger.error("Realtime provider not supported")
-                    else:
-                        logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
-                        try:
-                            if not allow_int:
-                                agent_instance._allow_interruptions = False
-                            # For non-Exotel pipeline calls: disable VAD here (Exotel already did it above).
-                            if not allow_int and not is_exotel_bridge and isinstance(llm, realtime.RealtimeModel):
-                                if _saved_td is None:
-                                    _saved_td = llm._opts.turn_detection
-                                llm.update_options(turn_detection=None)
-                            await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
-                        finally:
-                            agent_instance._allow_interruptions = NOT_GIVEN
-                    if silence_watchdog:
-                        silence_watchdog.on_assistant_message(start_instruction)
+                            logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
+                            try:
+                                if not allow_int:
+                                    agent_instance._allow_interruptions = False
+                                await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
+                            finally:
+                                agent_instance._allow_interruptions = NOT_GIVEN
+
+                    if silence_watchdog and spoken_text:
+                        silence_watchdog.on_assistant_message(spoken_text)
                     logger.info("Start instruction sent successfully")
             except Exception as e:
                 logger.error(f"Failed to send start instruction: {e}", exc_info=True)

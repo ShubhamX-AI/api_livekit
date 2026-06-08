@@ -67,6 +67,7 @@ class Settings:
         self.AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
         self.S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
         self.S3_RECORDINGS_PREFIX = os.getenv("S3_RECORDINGS_PREFIX", "recordings/")
+        self.S3_GREETING_PREFIX = os.getenv("S3_GREETING_PREFIX", "greeting_audio/")
 
         # Backend URL
         self.BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")

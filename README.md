@@ -158,6 +158,7 @@ AWS_SECRET_ACCESS_KEY=<optional-for-recording-upload>
 AWS_REGION=us-east-1
 S3_BUCKET_NAME=<optional-for-recording-upload>
 S3_RECORDINGS_PREFIX=recordings/
+S3_GREETING_PREFIX=greeting_audio/
 
 LOG_LEVEL=INFO
 LOG_JSON_FORMAT=False
@@ -299,6 +300,27 @@ Use these pages as the canonical payload contracts:
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
 
 Note: `assistant_start_instruction` is honored in realtime mode whenever `assistant_interaction_config.speaks_first` is enabled.
+
+## Audio Library & Prerecorded Greeting
+
+Instead of generating the opening line with the model, an assistant can play a prerecorded greeting. This skips the LLM + TTS (pipeline) or the realtime audio generation (realtime) for the greeting, cutting token cost and latency. It works in both modes.
+
+The design is modular: audio files live in a reusable **library** (the `audio_assets` collection) and assistants reference one by id. Auth: `Authorization: Bearer <api_key>`.
+
+**Audio library — `/audio`**
+- `POST /audio/upload` — multipart upload. Fields: `file` (**any common audio format** — mp3, m4a, ogg, wav, …, **≤ 30 s**), `audio_name`, and `transcript` (the literal spoken words, added to the model's chat context so it knows it greeted). The server transcodes the upload to WAV 48 kHz mono in-process (PyAV / bundled ffmpeg — no system binary) and stores that in S3, returning an `audio_id`. Non-audio files or clips over 30 s are rejected with `400`.
+- `GET /audio/list` — list the caller's audio assets (paginated).
+- `GET /audio/{audio_id}` — metadata + a temporary presigned download URL.
+- `DELETE /audio/{audio_id}` — soft-delete (`is_active=false`). Assistants still referencing it fall back to the model greeting.
+
+**Attach + toggle (on the assistant)**
+Set `assistant_greeting_audio` via `POST /assistant/create` or `PATCH /assistant/update/{id}`:
+```json
+{ "assistant_greeting_audio": { "enabled": true, "audio_id": "<id>" } }
+```
+`enabled` is the on/off switch (recorded audio vs model `generate_reply`); `audio_id` attaches a library asset. The update validates the asset exists, is active, and is owned by the caller.
+
+**Runtime behavior:** when `enabled` and `speaks_first=true`, the worker resolves `audio_id` → `AudioAsset`, downloads the WAV, and plays it via `session.say(audio=...)`. If the asset is missing/inactive or download/decode fails, it falls back to the normal model-generated greeting, so a bad reference never breaks the call. In realtime mode the greeting stays interruptible (server-side turn detection ignores non-interruptible). The S3 key prefix is `S3_GREETING_PREFIX` (default `greeting_audio/`).
 
 ## Max Call Duration
 

@@ -112,6 +112,13 @@ nav:
         - Cartesia Prompt (Exact): api/assistant/humanization/tts_humanification_cartesia.md
         - ElevenLabs Prompt (Exact): api/assistant/humanization/tts_humanification_elevenlabs.md
 
+    - Audio Library:
+      - Overview: api/audio/index.md
+      - Upload Audio: api/audio/upload.md
+      - List Audio: api/audio/list.md
+      - Get Audio Details: api/audio/get.md
+      - Delete Audio: api/audio/delete.md
+
     - Tools:
       - Overview: api/tools/index.md
       - Create Tool: api/tools/create.md

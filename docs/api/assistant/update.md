@@ -23,6 +23,7 @@ Update an existing assistant. Only send fields you want to change.
 | `assistant_llm_mode` | string | Target mode: `pipeline` or `realtime`. |
 | `assistant_start_instruction` | string | New opening response text used when `assistant_interaction_config.speaks_first=true`. |
 | `assistant_interaction_config` | object | Partial interaction-config update. |
+| `assistant_greeting_audio` | object | Partial greeting-audio update: `{ "enabled": bool, "audio_id": string }`. Toggle the recorded greeting on/off with `enabled`; attach a different [audio asset](../../api/audio/index.md) with `audio_id` (or `null` to detach). Merged with existing values. A non-null `audio_id` must reference one of your active assets. |
 | `assistant_end_call_enabled` | boolean | Enable or disable end-call tool. |
 | `assistant_end_call_trigger_phrase` | string | End-call trigger phrase. |
 | `assistant_end_call_agent_message` | string | End-call agent message. |
@@ -121,7 +122,7 @@ Update an existing assistant. Only send fields you want to change.
 ## Runtime Behavior Notes
 
 - `assistant_interaction_config.speaks_first` is supported in both `pipeline` and `realtime` modes.
-- When `speaks_first=true`, `assistant_start_instruction` is used as the opening response.
+- When `speaks_first=true`, `assistant_start_instruction` is used as the opening response — unless `assistant_greeting_audio.enabled=true`, in which case the referenced audio asset is played instead (no LLM/TTS for the greeting). On any failure (missing/inactive asset, download error) it falls back to the model greeting.
 - `assistant_interaction_config.background_sound_enabled` controls background ambience for all sessions using the assistant.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.
 - `assistant_interaction_config.allow_interruptions` controls whether users can interrupt the assistant's initial greeting. Default: `false`.

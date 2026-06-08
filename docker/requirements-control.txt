@@ -12,3 +12,5 @@ mkdocs-material>=9.7.1,<10.0.0
 scipy>=1.13.0
 numpy>=1.26.0
 webrtc-noise-gain>=1.2.0
+boto3>=1.34.0
+av>=12.0.0

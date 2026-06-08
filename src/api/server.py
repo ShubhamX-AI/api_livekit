@@ -11,6 +11,7 @@ from src.api.routes import (
     auth,
     health,
     assistant,
+    audio,
     sip,
     call,
     tool,
@@ -129,6 +130,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(health.router, tags=["Health"])
 app.include_router(assistant.router, prefix="/assistant", tags=["Assistant"])
+app.include_router(audio.router, prefix="/audio", tags=["Audio"])
 app.include_router(sip.router, prefix="/sip", tags=["Outbound SIP"])
 app.include_router(call.router, prefix="/call", tags=["Call"])
 app.include_router(tool.router, prefix="/tool", tags=["Tool"])

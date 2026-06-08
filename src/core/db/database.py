@@ -4,6 +4,7 @@ from src.core.config import settings
 from src.core.db.db_schemas import (
     APIKey,
     Assistant,
+    AudioAsset,
     OutboundSIP,
     InboundSIP,
     InboundContextStrategy,
@@ -39,6 +40,7 @@ class Database:
                 document_models=[
                     APIKey,
                     Assistant,
+                    AudioAsset,
                     OutboundSIP,
                     InboundSIP,
                     InboundContextStrategy,

@@ -12,6 +12,7 @@ Complete inventory of what this platform provides.
 - **Dynamic prompt placeholders** — embed call metadata (`{{caller_number}}`, `{{assistant_name}}`, etc.) and caller-fetched CRM data (`{{context.*}}`) directly in prompts via Mustache templates
 - **Speaks-first / wait-for-caller** — toggle whether the assistant greets first or waits for the caller to speak
 - **Configurable start instruction** — separate greeting/opening line, independent of the main system prompt
+- **Prerecorded greeting audio** — play an uploaded clip as the opening line instead of a model-generated greeting (saves tokens in both modes); see the Audio Library section
 - **Max call duration cap** — per-assistant hard ceiling (minutes); assistant speaks a farewell and tears down cleanly when reached; defaults to 30 minutes platform-wide
 - **End-call tool** — assistant can trigger call termination on a configurable phrase and deliver a final message
 - **Assistant CRUD** — create, read, update, delete, and list assistants via REST API
@@ -282,3 +283,16 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 - Full MkDocs Material docs site bundled with the API
 - Served at `/documentation` directly from the running API server
 - Includes getting-started guides, API reference, architecture diagrams, webhook payload contracts, and TTS humanization prompts
+
+---
+
+## 28. Prerecorded Greeting Audio & Audio Library
+
+- **Reusable audio library** — upload a clip once (stored in the `audio_assets` collection + S3), attach it to one or many assistants by `audio_id`
+- **Any input format** — accepts mp3, m4a, ogg, wav, etc.; the server transcodes to WAV 48 kHz mono in-process via PyAV (bundled ffmpeg — no system binary, no subprocess)
+- **30-second cap** — clips longer than 30 s are rejected; non-audio uploads rejected with `400`
+- **Per-assistant attach + toggle** — `assistant_greeting_audio = { enabled, audio_id }` set via assistant create/update; `enabled` switches between recorded audio and model `generate_reply`
+- **Token/latency savings** — plays via `session.say(audio=...)`, skipping LLM + TTS (pipeline) or realtime audio generation (realtime) for the greeting; works in both modes
+- **Safe fallback** — missing/inactive asset or any download/decode failure falls back to the model greeting, so a bad reference never breaks the call
+- **Audio CRUD** — upload, list, get (with presigned URL), soft-delete via the `/audio` endpoints
+- `transcript` stored with each clip is injected into the model's chat context so it knows it already greeted

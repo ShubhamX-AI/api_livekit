@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from src.api.models.api_schemas import CreateAssistant, UpdateAssistant
 from src.api.models.response_models import apiResponse
-from src.core.db.db_schemas import Assistant, APIKey, CallRecord
+from src.core.db.db_schemas import Assistant, APIKey, CallRecord, AudioAsset
 from src.api.dependencies import get_current_user
 from src.core.logger import logger
 import uuid
@@ -15,6 +15,17 @@ router = APIRouter()
 def merge_interaction_config(base, overrides: dict) -> dict:
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
     return {**base_dict, **overrides}
+
+
+async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
+    """Ensure the audio asset exists, is active, and belongs to the caller."""
+    asset = await AudioAsset.find_one(
+        AudioAsset.audio_id == audio_id,
+        AudioAsset.created_by_email == current_user.user_email,
+        AudioAsset.is_active == True,
+    )
+    if not asset:
+        raise HTTPException(status_code=404, detail="Audio asset not found")
 
 
 def mask_api_key(tts_config: dict) -> dict:
@@ -44,6 +55,11 @@ async def create_assistant(
 
     # Convert Pydantic model to dict
     assistant_data = request.model_dump()
+
+    # A referenced greeting audio must be one of the caller's active assets.
+    greeting_audio = assistant_data.get("assistant_greeting_audio") or {}
+    if greeting_audio.get("audio_id"):
+        await validate_owned_audio(greeting_audio["audio_id"], current_user)
 
     try:
         logger.info(f"Inserting assistant into database")
@@ -97,6 +113,16 @@ async def update_assistant(
             assistant.assistant_interaction_config,
             update_data["assistant_interaction_config"],
         )
+
+    # Greeting audio: merge with existing, then validate the referenced asset.
+    if "assistant_greeting_audio" in update_data:
+        merged_greeting = merge_interaction_config(
+            assistant.assistant_greeting_audio,
+            update_data["assistant_greeting_audio"],
+        )
+        if merged_greeting.get("audio_id"):
+            await validate_owned_audio(merged_greeting["audio_id"], current_user)
+        update_data["assistant_greeting_audio"] = merged_greeting
 
     # Mode-switch guards (need DB state for full validation)
     new_mode = update_data.get("assistant_llm_mode")
