@@ -61,7 +61,8 @@ class AudioAsset(Document):
     audio_id: Indexed(str, unique=True)
     audio_name: str
     transcript: str  # literal spoken words, added to chat context so the model knows it greeted
-    s3_key: str
+    s3_key: str  # internal S3 object key (used for download/delete, not exposed in API)
+    s3_url: str  # plain public URL, stored like CallRecord.recording_path
     duration_seconds: float
     filename: Optional[str] = None  # original upload filename, for display
     created_by_email: EmailStr

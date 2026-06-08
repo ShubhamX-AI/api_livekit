@@ -17,6 +17,11 @@ from src.services.storage.audio_transcode import (
 router = APIRouter()
 
 
+def serialize_asset(asset: AudioAsset) -> dict:
+    """Public representation: includes the stored s3_url, never the raw S3 key."""
+    return asset.model_dump(exclude={"id", "s3_key"})
+
+
 async def find_owned_audio(audio_id: str, current_user: APIKey) -> AudioAsset:
     """Return the caller's active audio asset or raise 404."""
     asset = await AudioAsset.find_one(
@@ -56,18 +61,18 @@ async def upload_audio(
         audio_name=audio_name,
         transcript=transcript,
         s3_key=key,
+        s3_url=s3_audio.public_url(key),
         duration_seconds=duration,
         filename=file.filename,
         created_by_email=current_user.user_email,
     )
     await asset.insert()
 
-    url = await asyncio.to_thread(s3_audio.presigned_get_url, key)
     logger.info(f"Audio asset created: {audio_id}")
     return apiResponse(
         success=True,
         message="Audio uploaded successfully",
-        data={"audio_id": audio_id, "duration_seconds": duration, "url": url},
+        data={"audio_id": audio_id, "duration_seconds": duration, "url": asset.s3_url},
     )
 
 
@@ -89,7 +94,7 @@ async def list_audio(
         success=True,
         message="Audio assets retrieved successfully",
         data={
-            "audios": [a.model_dump(exclude={"id"}) for a in assets],
+            "audios": [serialize_asset(a) for a in assets],
             "pagination": {
                 "total": total,
                 "page": page,
@@ -100,15 +105,14 @@ async def list_audio(
     )
 
 
-# Get one audio asset + temporary download URL
+# Get one audio asset
 @router.get("/{audio_id}")
 async def get_audio(audio_id: str, current_user: APIKey = Depends(get_current_user)):
     asset = await find_owned_audio(audio_id, current_user)
-    url = await asyncio.to_thread(s3_audio.presigned_get_url, asset.s3_key)
     return apiResponse(
         success=True,
         message="Audio asset retrieved successfully",
-        data={**asset.model_dump(exclude={"id"}), "url": url},
+        data=serialize_asset(asset),
     )
 
 

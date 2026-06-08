@@ -20,7 +20,7 @@ Return the caller's active audio assets, paginated.
 | `data.audios` | array | List of audio assets (newest first). |
 | `data.pagination` | object | `total`, `page`, `limit`, `total_pages`. |
 
-Each audio object includes `audio_id`, `audio_name`, `transcript`, `s3_key`, `duration_seconds`, `filename`, `created_by_email`, `created_at`, `is_active`.
+Each audio object includes `audio_id`, `audio_name`, `transcript`, `s3_url`, `duration_seconds`, `filename`, `created_by_email`, `created_at`, `is_active`. The internal S3 object key is never exposed.
 
 ### Example
 
@@ -43,6 +43,7 @@ curl "https://api-livekit-vyom.indusnettechnologies.com/audio/list?page=1&limit=
         "transcript": "Hi, thanks for calling Acme. How can I help you today?",
         "duration_seconds": 4.2,
         "filename": "greeting.mp3",
+        "s3_url": "https://<bucket>.s3.<region>.amazonaws.com/greeting_audio/f47ac10b-58cc-4372-a567-0e02b2c3d479.wav",
         "is_active": true
       }
     ],

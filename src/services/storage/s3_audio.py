@@ -62,10 +62,6 @@ def delete(key: str) -> None:
     logger.info("Audio asset deleted | key=%s", key)
 
 
-def presigned_get_url(key: str, expires: int = 3600) -> str:
-    """Return a temporary download URL for the object."""
-    return _client().generate_presigned_url(
-        "get_object",
-        Params={"Bucket": settings.S3_BUCKET_NAME, "Key": key},
-        ExpiresIn=expires,
-    )
+def public_url(key: str) -> str:
+    """Return the plain S3 object URL (same format as call recordings)."""
+    return f"https://{settings.S3_BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"

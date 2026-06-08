@@ -23,7 +23,7 @@ Upload an audio clip into the library. Any common audio format is accepted; the 
 | `message` | string | Human-readable message. |
 | `data.audio_id` | string | Unique identifier for the stored asset (UUID). |
 | `data.duration_seconds` | number | Measured duration of the clip. |
-| `data.url` | string | Temporary presigned URL to download/preview the stored WAV. |
+| `data.url` | string | S3 object URL of the stored WAV (same format as call recordings). |
 
 ### HTTP Status Codes
 
@@ -53,7 +53,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/audio/upload" \
   "data": {
     "audio_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
     "duration_seconds": 4.2,
-    "url": "https://<bucket>.s3.<region>.amazonaws.com/greeting_audio/f47ac10b-...wav?..."
+    "url": "https://<bucket>.s3.<region>.amazonaws.com/greeting_audio/f47ac10b-58cc-4372-a567-0e02b2c3d479.wav"
   }
 }
 ```

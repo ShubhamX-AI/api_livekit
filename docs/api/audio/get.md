@@ -1,6 +1,6 @@
 # Get Audio Details
 
-Return a single audio asset's metadata plus a temporary presigned download URL.
+Return a single audio asset's metadata plus its S3 download URL.
 
 - **URL**: `/audio/{audio_id}`
 - **Method**: `GET`
@@ -16,7 +16,7 @@ Return a single audio asset's metadata plus a temporary presigned download URL.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `data` | object | The audio asset fields plus `url` (a temporary presigned download URL). |
+| `data` | object | The audio asset fields including `s3_url` (the stored S3 object URL, same format as call recordings). The internal S3 key is not exposed. |
 
 ### HTTP Status Codes
 
@@ -44,7 +44,7 @@ curl "https://api-livekit-vyom.indusnettechnologies.com/audio/f47ac10b-58cc-4372
     "audio_name": "Friendly welcome",
     "transcript": "Hi, thanks for calling Acme. How can I help you today?",
     "duration_seconds": 4.2,
-    "url": "https://<bucket>.s3.<region>.amazonaws.com/greeting_audio/f47ac10b-...wav?..."
+    "s3_url": "https://<bucket>.s3.<region>.amazonaws.com/greeting_audio/f47ac10b-58cc-4372-a567-0e02b2c3d479.wav"
   }
 }
 ```

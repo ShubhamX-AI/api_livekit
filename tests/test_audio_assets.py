@@ -88,6 +88,40 @@ class TestS3AudioHelper(unittest.TestCase):
 
         self.assertEqual(client.delete_object.call_args.kwargs["Key"], "some/key.wav")
 
+    def test_public_url_is_plain_and_unsigned(self):
+        url = s3_audio.public_url("greeting_audio/aud-123.wav")
+        self.assertTrue(url.startswith("https://"))
+        self.assertIn(".amazonaws.com/greeting_audio/aud-123.wav", url)
+        self.assertNotIn("?", url)  # no presign query string / no expiry
+
+
+class FakeAsset:
+    """Duck-types the bits serialize_asset reads (Beanie docs need a live DB to instantiate)."""
+
+    def __init__(self, s3_url):
+        self.s3_key = "greeting_audio/aud-1.wav"
+        self.s3_url = s3_url
+
+    def model_dump(self, exclude=None):
+        data = {
+            "audio_id": "aud-1",
+            "audio_name": "Welcome",
+            "s3_key": self.s3_key,
+            "s3_url": self.s3_url,
+        }
+        for field in exclude or set():
+            data.pop(field, None)
+        return data
+
+
+class TestSerializeAsset(unittest.TestCase):
+    def test_hides_s3_key_and_returns_stored_url(self):
+        from src.api.routes.audio import serialize_asset
+
+        data = serialize_asset(FakeAsset("https://bucket.s3.region.amazonaws.com/greeting_audio/aud-1.wav"))
+        self.assertNotIn("s3_key", data)
+        self.assertEqual(data["s3_url"], "https://bucket.s3.region.amazonaws.com/greeting_audio/aud-1.wav")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -310,7 +310,7 @@ The design is modular: audio files live in a reusable **library** (the `audio_as
 **Audio library — `/audio`**
 - `POST /audio/upload` — multipart upload. Fields: `file` (**any common audio format** — mp3, m4a, ogg, wav, …, **≤ 30 s**), `audio_name`, and `transcript` (the literal spoken words, added to the model's chat context so it knows it greeted). The server transcodes the upload to WAV 48 kHz mono in-process (PyAV / bundled ffmpeg — no system binary) and stores that in S3, returning an `audio_id`. Non-audio files or clips over 30 s are rejected with `400`.
 - `GET /audio/list` — list the caller's audio assets (paginated).
-- `GET /audio/{audio_id}` — metadata + a temporary presigned download URL.
+- `GET /audio/{audio_id}` — metadata + the S3 object URL (same format as call recordings).
 - `DELETE /audio/{audio_id}` — soft-delete (`is_active=false`). Assistants still referencing it fall back to the model greeting.
 
 **Attach + toggle (on the assistant)**
