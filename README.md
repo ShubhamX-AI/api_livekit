@@ -9,9 +9,9 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Supports web calls with both text (`lk.chat`) and voice input, plus an opt-in **text-only mode** (`text_only: true`) that disables mic/TTS/STT/recording for pure-chatbot use.
 - Supports outbound calling and Exotel inbound routing.
 - Queues outbound call requests and dispatches them in the background at a controlled rate.
-- Supports assistant runtime modes:
-  - `pipeline`: OpenAI realtime (STT+LLM) + separate TTS provider
-  - `realtime`: Gemini realtime (STT+LLM+TTS in one model)
+- Supports assistant runtime modes (mode = output shape, `assistant_llm_config.provider` = vendor, both independent):
+  - `pipeline`: LLM emits text + separate TTS provider. Vendor `openai` (default) or `gemini`.
+  - `realtime`: LLM speaks its own audio. Vendor `gemini` (default) or `openai`.
 - Supports start greetings in both modes when `assistant_interaction_config.speaks_first=true`.
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
@@ -287,15 +287,17 @@ Use these pages as the canonical payload contracts:
 
 ## Assistant Modes
 
-- `pipeline` mode (default):
+Two independent axes: **mode** (`assistant_llm_mode`) = output shape, **provider** (`assistant_llm_config.provider`) = LLM vendor (`openai` | `gemini`), honored in both modes.
+
+- `pipeline` mode (default) — LLM emits text, separate TTS speaks it:
   - Requires `assistant_tts_model` and `assistant_tts_config`
-  - Uses OpenAI realtime for STT+LLM and separate configured TTS for speech output
-  - `assistant_llm_config` is optional; if provided, only `assistant_llm_config.api_key` is used to override `OPENAI_API_KEY`
+  - `assistant_llm_config.provider` defaults to `openai`; set `gemini` to use the Gemini realtime model in text mode
+  - `assistant_llm_config` optional; `provider`/`model`/`api_key` override defaults (`api_key` → the selected vendor's system key)
   - When `assistant_interaction_config.speaks_first=true`, the assistant sends the configured start instruction as the first response
-- `realtime` mode:
+- `realtime` mode — LLM speaks its own audio, no external TTS:
   - Requires `assistant_llm_config`
-  - Uses Gemini realtime for STT+LLM+TTS in one model
-  - `assistant_llm_config.provider` defaults to `gemini`; `api_key` overrides `GOOGLE_API_KEY`
+  - `assistant_llm_config.provider` defaults to `gemini`; set `openai` for OpenAI realtime audio
+  - `voice`/`model`/`api_key` override defaults (Gemini `Puck`/`gemini-3.1-flash-live-preview`, OpenAI `marin`/`gpt-realtime-1.5`)
   - Ignores `assistant_tts_model` and `assistant_tts_config` at runtime
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
 

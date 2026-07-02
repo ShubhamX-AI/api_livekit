@@ -259,10 +259,8 @@ async def entrypoint(ctx: JobContext):
                 duration_start = call_record.answered_at or call_record.started_at
                 call_duration = (ended_at - duration_start).total_seconds() / 60
 
-            # Determine realtime provider from config
-            llm_realtime_provider = None
-            if is_realtime:
-                llm_realtime_provider = (assistant.assistant_llm_config or {}).get("provider")
+            # LLM vendor, recorded for both modes. Resolved once at model build (see below).
+            llm_realtime_provider = realtime_provider
 
             usage = UsageRecord(
                 room_name=room_name,
@@ -367,16 +365,16 @@ async def entrypoint(ctx: JobContext):
         tools=tools,
     )
 
-    # Provider selection for realtime mode
-    realtime_provider: str | None = None
-    # Set inside the half-cascade branch when Sarvam parallel STT is active.
+    # LLM vendor is orthogonal to mode. `is_realtime` = model speaks its own audio
+    # (no external TTS); provider = which vendor. Default per mode keeps old assistants working.
+    llm_config = assistant.assistant_llm_config or {}
+    _default_provider = "gemini" if is_realtime else "openai"
+    realtime_provider = (llm_config.get("provider") or _default_provider).lower()
+    # Set inside the half-cascade branches when Sarvam parallel STT is active.
     _use_sarvam_stt = False
 
     if is_realtime:
-        # Full realtime mode: single model handles STT + LLM + TTS
-        llm_config = assistant.assistant_llm_config or {}
-        realtime_provider = llm_config.get("provider", "gemini")
-
+        # Full realtime mode: single model handles STT + LLM + TTS (audio out).
         if realtime_provider == "gemini":
             llm = google_realtime.RealtimeModel(
                 model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
@@ -385,14 +383,31 @@ async def entrypoint(ctx: JobContext):
                 instructions=assistant.assistant_prompt,
                 api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
             )
+        elif realtime_provider == "openai":
+            llm = realtime.RealtimeModel(
+                model=llm_config.get("model", "gpt-realtime-1.5"),
+                voice=llm_config.get("voice", "marin"),
+                modalities=["audio"],
+                turn_detection=TurnDetection(
+                    type="semantic_vad",
+                    eagerness="high",
+                    create_response=True,
+                    interrupt_response=False,
+                ),
+                truncation=RealtimeTruncationRetentionRatio(
+                    type="retention_ratio",
+                    retention_ratio=0.75,
+                    token_limits=TokenLimits(post_instructions=8000),
+                ),
+                api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
+            )
         else:
             logger.error(f"Unsupported realtime provider: {realtime_provider}")
             return
 
         logger.info(f"Realtime mode | provider={realtime_provider} | model={llm_config.get('model')}")
     else:
-        # Half-cascade mode: OpenAI Realtime for STT+LLM, separate TTS for audio
-        llm_config = assistant.assistant_llm_config or {}
+        # Half-cascade mode: realtime model emits TEXT, separate TTS speaks the audio.
         _langs = interaction_config.preferred_languages or []
         # Phone calls (Exotel SIP) feed lossy G.711 narrowband audio (300-3400 Hz).
         # OpenAI's `far_field` noise-reduction model is trained on this signature;
@@ -416,9 +431,11 @@ async def entrypoint(ctx: JobContext):
             "Use natural punctuation. Skip filler sounds like um, uh, hmm."
         )
 
-        # Sarvam Saras v3 handles user STT in parallel (default). Skip OpenAI's side-channel
-        # transcription to avoid dual writes and save cost. Text-only chats have no audio, so
-        # treat as "no parallel STT" — the SDK's own conversation events carry the user text.
+        # Sarvam Saras v3 handles user STT in parallel (default, "sarvam"). The alternative
+        # ("native") lets the conversational LLM transcribe itself — provider-agnostic. When
+        # Sarvam is active we skip the LLM's own transcription to avoid dual writes and save cost.
+        # Text-only chats have no audio, so treat as "no parallel STT" — the SDK's own
+        # conversation events carry the user text.
         _use_sarvam_stt = (
             not is_text_only
             and (interaction_config.user_stt_provider or "sarvam") == "sarvam"
@@ -428,25 +445,45 @@ async def entrypoint(ctx: JobContext):
             prompt=_stt_prompt,
         )
 
-        llm = realtime.RealtimeModel(
-            model="gpt-realtime-1.5",
-            input_audio_transcription=_openai_transcription,
-            input_audio_noise_reduction=_noise_reduction,
-            turn_detection=TurnDetection(
-                type="semantic_vad",
-                eagerness="high",
-                create_response=True,
-                interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
-            ),
-            modalities=["text"],
-            truncation=RealtimeTruncationRetentionRatio(
-                type="retention_ratio",
-                retention_ratio=0.75,
-                token_limits=TokenLimits(post_instructions=8000),
-            ),
-            api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
-        )
-        logger.info("Half-cascade mode | llm=openai | tts=%s", assistant.assistant_tts_model)
+        if realtime_provider == "openai":
+            llm = realtime.RealtimeModel(
+                model=llm_config.get("model", "gpt-realtime-1.5"),
+                input_audio_transcription=_openai_transcription,
+                input_audio_noise_reduction=_noise_reduction,
+                turn_detection=TurnDetection(
+                    type="semantic_vad",
+                    eagerness="high",
+                    create_response=True,
+                    interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
+                ),
+                modalities=["text"],
+                truncation=RealtimeTruncationRetentionRatio(
+                    type="retention_ratio",
+                    retention_ratio=0.75,
+                    token_limits=TokenLimits(post_instructions=8000),
+                ),
+                api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
+            )
+        elif realtime_provider == "gemini":
+            # Gemini realtime emitting TEXT only; external TTS speaks it. Sarvam parallel STT
+            # (default) taps the track independently, so ask Gemini for its own user transcript
+            # only when Sarvam is not doing it.
+            from google.genai import types as genai_types
+
+            _gemini_user_transcription = (
+                None if _use_sarvam_stt else genai_types.AudioTranscriptionConfig()
+            )
+            llm = google_realtime.RealtimeModel(
+                model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
+                modalities=["TEXT"],
+                instructions=assistant.assistant_prompt,
+                input_audio_transcription=_gemini_user_transcription,
+                api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
+            )
+        else:
+            logger.error(f"Unsupported pipeline provider: {realtime_provider}")
+            return
+        logger.info("Half-cascade mode | llm=%s | tts=%s", realtime_provider, assistant.assistant_tts_model)
 
     # --- Build TTS (pipeline mode only) ---
     tts = None
@@ -798,7 +835,13 @@ async def entrypoint(ctx: JobContext):
                                     genai_types.LiveClientRealtimeInput(text=start_instruction)
                                 )
                             else:
-                                logger.error("Realtime provider not supported")
+                                # OpenAI realtime (audio out): standard greeting via generate_reply.
+                                if not allow_int:
+                                    agent_instance._allow_interruptions = False
+                                try:
+                                    await session.generate_reply(instructions=start_instruction, allow_interruptions=allow_int)
+                                finally:
+                                    agent_instance._allow_interruptions = NOT_GIVEN
                         else:
                             logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
                             try:

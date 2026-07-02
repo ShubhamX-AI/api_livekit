@@ -49,15 +49,21 @@ Critical singleton rule: only one `sip_dispatcher` instance should run across al
 
 ## Assistant Runtime Modes
 
-There are three runtime paths for assistant speech generation:
+Speech generation has **two orthogonal axes**:
 
-- `pipeline` mode (`assistant_llm_mode="pipeline"`):
-  - Input audio -> Sarvam/OpenAI STT plugin -> text LLM -> external TTS plugin -> output audio
-- `realtime` mode with provider `openai` (half-cascade):
-  - Input audio -> OpenAI `gpt-realtime-1.5` (audio-in LLM) -> text -> external TTS plugin -> output audio
-  - User transcription runs **in parallel** via Sarvam Saras v3 (default) — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below.
-- `realtime` mode with provider `gemini` (full realtime):
-  - Input audio -> Gemini realtime model (STT + LLM + TTS) -> output audio
+1. **Mode** (`assistant_llm_mode`) = output shape:
+   - `pipeline` (half-cascade): the LLM emits **text**, an external TTS plugin speaks it.
+   - `realtime`: the LLM speaks its own **audio** (no external TTS).
+2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Honored in **both** modes. Defaults to `gemini` in `realtime` mode and `openai` in `pipeline` mode when unset.
+
+The 2×2 matrix:
+
+| Mode | provider `openai` | provider `gemini` |
+|---|---|---|
+| `pipeline` (text + external TTS) | OpenAI `gpt-realtime-1.5` (text out) -> external TTS | Gemini realtime (TEXT out) -> external TTS |
+| `realtime` (model speaks audio) | OpenAI realtime (audio out) | Gemini realtime (STT+LLM+TTS) |
+
+In both `pipeline` combinations, user transcription runs **in parallel** via Sarvam Saras v3 by default — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below; if Sarvam is disabled the LLM's own transcription tap is used instead.
 
 All modes share the same room orchestration, call lifecycle, transcript flow, and tool execution framework.
 All modes also support assistant-first openings when `speaks_first=true`, using `assistant_start_instruction` as the opening response text.
@@ -109,7 +115,7 @@ The function (`src/core/agents/tts/factory.py`):
 
 ## Sarvam Parallel User Transcription
 
-**Problem.** In OpenAI half-cascade realtime mode (`assistant_llm_mode="realtime"`, `provider="openai"`), the `input_audio_transcription` side channel uses `gpt-4o-transcribe`. On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
+**Problem.** In OpenAI pipeline mode (`assistant_llm_mode="pipeline"`, `provider="openai"`) with `user_stt_provider="native"`, the `input_audio_transcription` side channel uses `gpt-4o-transcribe`. On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
 
 - Switches scripts mid-utterance (Devanagari → Tamil → Arabic → Spanish)
 - Romanises words instead of using the speaker's native script
@@ -123,8 +129,8 @@ Configured per assistant via `assistant_interaction_config.user_stt_provider`:
 
 | Value | Effect |
 |-------|--------|
-| `sarvam` (default) | Sarvam parallel tap writes user transcripts. OpenAI `input_audio_transcription` disabled (`None`). |
-| `openai` | Legacy behaviour: OpenAI's `gpt-4o-transcribe` writes user transcripts. No Sarvam tap. |
+| `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). |
+| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap. |
 
 **Data flow per utterance:**
 

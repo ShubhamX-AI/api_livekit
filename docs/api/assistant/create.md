@@ -29,9 +29,10 @@ Create a new assistant configuration.
 
 === ":material-pipe: Pipeline"
 
-    **Pipeline mode** uses OpenAI Realtime for STT + LLM, with a separate TTS provider for audio output.
+    **Pipeline mode** (half-cascade): the LLM emits text and a separate TTS provider speaks it.
+    The LLM vendor is set by `assistant_llm_config.provider` — `openai` (default) or `gemini`; both emit text into the external TTS.
     If `assistant_interaction_config.speaks_first=true`, the opening response is spoken at session start.
-    `assistant_llm_config` is optional in this mode. If you send it, only `assistant_llm_config.api_key` is used; `provider`, `model`, and `voice` are ignored.
+    `assistant_llm_config` is optional in this mode (defaults to `openai`). Send it to pick `gemini`, override the model, or set an `api_key`; `voice` is ignored (TTS handles audio).
 
     **Required fields**
 
@@ -128,13 +129,13 @@ Create a new assistant configuration.
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `provider` | string | No | Realtime provider. `gemini` (full realtime, default) or `openai` (half-cascade: OpenAI audio LLM + external TTS). |
-    | `model` | string | No | Provider model. Gemini default: `gemini-3.1-flash-live-preview`. OpenAI half-cascade is fixed to `gpt-realtime-1.5`. |
-    | `voice` | string | No | Gemini voice. Default: `Puck`. Ignored when `provider="openai"` (TTS handled separately via `assistant_tts_model`). |
+    | `provider` | string | No | LLM vendor for audio-out realtime. `gemini` (default) or `openai`. |
+    | `model` | string | No | Provider model. Gemini default: `gemini-3.1-flash-live-preview`; OpenAI default: `gpt-realtime-1.5`. |
+    | `voice` | string | No | Voice for the audio-out model. Gemini default: `Puck`; OpenAI default: `marin`. |
     | `api_key` | string | No | Optional per-assistant provider key. Falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY`. |
 
-    !!! tip "OpenAI half-cascade + Sarvam parallel STT"
-        When `provider="openai"`, user transcripts default to Sarvam Saras v3 (see `assistant_interaction_config.user_stt_provider` below). This produces native-script Indic transcripts for code-switched calls. The OpenAI Realtime LLM still consumes the audio directly for understanding.
+    !!! tip "Sarvam parallel STT (pipeline mode)"
+        In `pipeline` mode (either provider), user transcripts default to Sarvam Saras v3 (see `assistant_interaction_config.user_stt_provider` below) — native-script Indic transcripts for code-switched calls. The LLM still consumes the audio directly for understanding. Realtime (audio-out) mode transcribes via the model itself.
 
     **Minimal realtime example**
 
@@ -179,7 +180,7 @@ Create a new assistant configuration.
 | `thinking_sound_enabled` | boolean | No | Enables the typing-style thinking sound. Default: `true`. |
 | `allow_interruptions` | boolean | No | If `true`, users can interrupt the assistant's initial greeting. Default: `false` (greeting is uninterruptible). |
 | `preferred_languages` | array of strings | No | BCP-47 language codes the agent supports (e.g. `["hi-IN", "en-US", "ta-IN"]`). Used to hint the STT model when the speaker is multilingual or switches between languages. If omitted, the STT model auto-detects all languages. |
-| `user_stt_provider` | string | No | User-transcription source for OpenAI half-cascade realtime mode. `sarvam` (default) runs Sarvam Saras v3 as a parallel audio tap and disables OpenAI's `gpt-4o-transcribe` side channel — produces native-script Indic transcripts and avoids OpenAI's script-switching hallucinations. `openai` keeps the legacy `gpt-4o-transcribe` path. Ignored for `pipeline` mode and for `realtime` + `gemini`. |
+| `user_stt_provider` | string | No | User-transcription source in `pipeline` mode (either provider). `sarvam` (default) runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts, avoids script-switching hallucinations. `native` lets the conversational LLM transcribe itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). Ignored in `realtime` (audio-out) mode, where the model transcribes. |
 | `max_call_duration_minutes` | number | No | Hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached, the assistant speaks a brief farewell and the call is torn down gracefully (recording, transcripts, usage and webhook all finalize cleanly). When unset or `null`, the platform default of **30 minutes** applies. Does not apply to passthrough calls (no AI agent). The call termination reason is reported as `max_duration_exceeded` in the end-of-call webhook payload and in the `CallRecord.call_end_reason` field. |
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.

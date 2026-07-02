@@ -49,23 +49,23 @@ class MistralTTSConfig(BaseModel):
 
 # ── Assistant LLM Config sub-model ───────────────────
 class AssistantLLMConfig(BaseModel):
-    provider: Optional[Literal["gemini"]] = Field(
+    provider: Optional[Literal["gemini", "openai"]] = Field(
         None,
-        description="Realtime provider. Supported today: gemini. Ignored in pipeline mode.",
+        description="LLM vendor for either mode: gemini | openai. Defaults to gemini in realtime mode, openai in pipeline mode.",
     )
     model: Optional[str] = Field(
         None,
-        description="Realtime model override. Ignored in pipeline mode.",
+        description="Model override for the selected provider.",
     )
     voice: Optional[str] = Field(
         None,
-        description="Realtime voice override. Ignored in pipeline mode.",
+        description="Voice override. Used when the model speaks its own audio (realtime mode).",
     )
     api_key: Optional[str] = Field(
         None,
         min_length=1,
         max_length=200,
-        description="Provider API key override. In pipeline mode this overrides the OpenAI key; in realtime mode it overrides the Gemini key.",
+        description="Provider API key override for the selected provider (openai or gemini).",
     )
 
 
@@ -87,7 +87,7 @@ class AssistantInteractionConfigSchema(BaseModel):
     thinking_sound_enabled: bool = Field(True, description="Enable the typing-style thinking sound while the assistant is processing")
     allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. If unset, model auto-detects all languages.")
-    user_stt_provider: Literal["sarvam", "openai"] = Field("sarvam", description="User-transcription source for OpenAI half-cascade realtime mode. 'sarvam' (default) runs Sarvam Saras v3 in parallel and disables OpenAI's gpt-4o-transcribe side channel — produces native-script Indic transcripts. 'openai' keeps the legacy gpt-4o-transcribe path. Ignored for pipeline mode and for realtime+gemini.")
+    user_stt_provider: Literal["sarvam", "native"] = Field("sarvam", description="User-transcription source in pipeline mode (either provider). 'sarvam' (default) runs Sarvam Saras v3 as a parallel tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-transcribe on an OpenAI pipeline, Gemini's own on a Gemini pipeline). Ignored in realtime (audio-out) mode.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. When reached, agent says a brief farewell then hangs up gracefully. Unset/null defaults to 30 minutes at runtime.")
 
 
@@ -101,7 +101,7 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     thinking_sound_enabled: Optional[bool] = Field(None, description="Enable or disable the typing-style thinking sound")
     allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. Pass empty list to clear.")
-    user_stt_provider: Optional[Literal["sarvam", "openai"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'openai'). Only affects OpenAI half-cascade realtime mode.")
+    user_stt_provider: Optional[Literal["sarvam", "native"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'native'). Only affects pipeline mode.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. Pass null/omit to use platform default (30 min).")
 
 
