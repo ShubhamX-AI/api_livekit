@@ -6,8 +6,9 @@ Complete inventory of what this platform provides.
 
 ## 1. Voice AI Assistants
 
-- **Pipeline mode** — OpenAI Realtime handles STT + LLM; a separate TTS provider synthesises speech output
-- **Realtime mode** — Google Gemini Realtime handles STT + LLM + TTS in a single model; no external TTS required
+- **Pipeline mode** — LLM (OpenAI default, or Gemini) emits text; a separate TTS provider synthesises speech output
+- **Realtime mode** — LLM speaks its own audio (Gemini default, or OpenAI); no external TTS required
+- **Provider is independent of mode** — `assistant_llm_config.provider` (`openai` | `gemini`) selects the vendor in either mode
 - **Configurable system prompt** — full control over assistant persona, instructions, and behavior
 - **Dynamic prompt placeholders** — embed call metadata (`{{caller_number}}`, `{{assistant_name}}`, etc.) and caller-fetched CRM data (`{{context.*}}`) directly in prompts via Mustache templates
 - **Speaks-first / wait-for-caller** — toggle whether the assistant greets first or waits for the caller to speak
@@ -38,8 +39,8 @@ Four synthesis providers supported in pipeline mode:
 ## 3. STT / Speech Recognition
 
 - **Sarvam Saras v3 parallel STT** — secondary STT tap running in parallel for enhanced multilingual transcription
-- **OpenAI Realtime STT** — default in pipeline mode via OpenAI's half-cascade path
-- Per-call `user_stt_provider` toggle: `sarvam` or `openai`
+- **Native LLM transcription** — the conversational LLM transcribes itself (OpenAI `gpt-4o-transcribe`, or Gemini's own) when `user_stt_provider="native"`
+- Per-call `user_stt_provider` toggle: `sarvam` (default) or `native`
 - Phone vs. web noise-reduction branching: `far_field` (G.711/PSTN) vs. `near_field` (browser mic) sent to OpenAI Realtime
 
 ---

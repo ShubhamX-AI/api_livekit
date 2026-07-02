@@ -33,12 +33,11 @@ Update an existing assistant. Only send fields you want to change.
 
 ## LLM Config Rules
 
-- In `pipeline` mode, `assistant_llm_config` is optional. Only `api_key` is used; `provider`, `model`, and `voice` are ignored.
-- In `pipeline` mode, `assistant_llm_config.api_key` overrides the system `OPENAI_API_KEY`. Omit `assistant_llm_config` entirely to use the system key.
+- In `pipeline` mode, `assistant_llm_config` is optional and defaults to `provider="openai"`. Send it to pick `gemini`, override `model`, or set `api_key`; `voice` is ignored (external TTS handles audio).
+- `assistant_llm_config.api_key` overrides the system key for the selected provider (`OPENAI_API_KEY` or `GOOGLE_API_KEY`). Omit `assistant_llm_config` to use system keys + mode default provider.
 - You can update `assistant_llm_config` alone (without re-sending `assistant_llm_mode` or TTS fields) and the existing TTS config is preserved.
-- In `realtime` mode, `assistant_llm_config` is required only when switching into realtime.
-- In `realtime` mode, Gemini defaults still apply when fields are omitted: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`.
-- In `realtime` mode, `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
+- In `realtime` mode, `assistant_llm_config` is required only when switching into realtime; it defaults to `provider="gemini"`.
+- Defaults when fields are omitted — Gemini: `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`.
 
 ## Switching Modes
 

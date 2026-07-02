@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional, Literal, List, Dict
 from beanie import Document, Indexed
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from pymongo import IndexModel
 from pymongo.collation import Collation
 import uuid
@@ -35,11 +35,17 @@ class AssistantInteractionConfig(BaseModel):
     thinking_sound_enabled: bool = True
     allow_interruptions: bool = False
     preferred_languages: Optional[List[str]] = None
-    # User STT source for realtime (OpenAI half-cascade) mode.
-    # "sarvam" runs Sarvam Saras v3 in parallel and disables OpenAI's transcription side-channel.
-    user_stt_provider: Literal["sarvam", "openai"] = "sarvam"
+    # User STT source in pipeline mode. "sarvam" runs Sarvam Saras v3 in parallel;
+    # "native" = the conversational LLM transcribes itself (OpenAI gpt-4o-transcribe on an
+    # OpenAI pipeline, Gemini's own transcription on a Gemini pipeline). Provider-agnostic.
+    user_stt_provider: Literal["sarvam", "native"] = "sarvam"
     # Hard ceiling for active-call duration. None → falls back to platform default (30 min) at runtime.
     max_call_duration_minutes: Optional[float] = None
+
+    @field_validator("user_stt_provider", mode="before")
+    @classmethod
+    def _coerce_legacy_stt(cls, v):
+        return "native" if v == "openai" else v  # ponytail: legacy alias; delete once no "openai" rows remain
 
 
 class GreetingAudioConfig(BaseModel):
@@ -309,7 +315,7 @@ class UsageRecord(Document):
 
     # LLM pipeline info
     llm_mode: Optional[str] = None  # "pipeline" | "realtime"
-    llm_realtime_provider: Optional[str] = None  # "gemini" | "openai" (only for realtime mode)
+    llm_realtime_provider: Optional[str] = None  # LLM vendor "gemini" | "openai" (recorded for both modes)
 
     # LLM tokens (from SDK UsageCollector — exact values)
     llm_input_audio_tokens: int = 0

@@ -30,14 +30,16 @@ Save the `api_key` from the response. All subsequent requests require `Authoriza
 
 Assistants support two execution modes:
 
-- `pipeline` (default): OpenAI realtime handles STT+LLM and a separate TTS provider speaks output.
-- `realtime`: Gemini realtime handles STT+LLM+TTS in one model.
+Mode = output shape; `assistant_llm_config.provider` = LLM vendor (`openai` | `gemini`), honored in both modes.
+
+- `pipeline` (default): LLM emits text, a separate TTS provider speaks it. Vendor `openai` (default) or `gemini`.
+- `realtime`: LLM speaks its own audio (no external TTS). Vendor `gemini` (default) or `openai`.
 
 LLM config rules:
 
-- `pipeline`: `assistant_llm_config` is optional. If present, only `assistant_llm_config.api_key` is used, and it overrides `OPENAI_API_KEY`.
+- `pipeline`: `assistant_llm_config` is optional (defaults to `provider="openai"`). Set `gemini` to switch vendor; `api_key` overrides the selected vendor's system key.
 - `realtime`: `assistant_llm_config` is required, but `provider`, `model`, and `voice` may be omitted to use defaults.
-- `realtime` defaults: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`.
+- Defaults — Gemini: `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`.
 
 Both modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted).
 
