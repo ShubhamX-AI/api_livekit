@@ -1,3 +1,10 @@
+"""ElevenLabs eleven_v3 TTS over the HTTP /stream endpoint.
+
+v3 is the latest, highest-quality model but has no websocket API (the official
+plugin's multi-stream endpoint 403s on v3 — livekit/agents#4901). This client
+uses HTTP chunked streaming instead: capabilities.streaming=False, so the agent
+drives it per-sentence via synthesize(), and audio flows as it's generated."""
+
 from __future__ import annotations
 
 import asyncio
@@ -54,7 +61,7 @@ TTSEncoding = Literal[
 
 API_BASE_URL_V1 = "https://api.elevenlabs.io/v1"
 AUTHORIZATION_HEADER = "xi-api-key"
-_DEFAULT_ENCODING: TTSEncoding = "mp3_22050_32"
+_DEFAULT_ENCODING: TTSEncoding = "pcm_24000"
 
 
 def _sample_rate_from_format(output_format: TTSEncoding) -> int:
@@ -126,10 +133,14 @@ class ElevenLabsNonStreamingTTS(tts.TTS):
             num_channels=1,
         )
 
-        elevenlabs_api_key = api_key if is_given(api_key) else os.environ.get("ELEVEN_API_KEY")
+        elevenlabs_api_key = (
+            api_key
+            if is_given(api_key)
+            else os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVEN_API_KEY")
+        )
         if not elevenlabs_api_key:
             raise ValueError(
-                "ElevenLabs API key is required, either as argument or set ELEVEN_API_KEY environmental variable"
+                "ElevenLabs API key is required, either as argument or set ELEVENLABS_API_KEY (or legacy ELEVEN_API_KEY) environment variable"
             )
 
         self._opts = _TTSOptions(
@@ -165,9 +176,8 @@ class ElevenLabsNonStreamingTTS(tts.TTS):
         return _ChunkedStream(tts=self, input_text=text, conn_options=conn_options)
 
     async def aclose(self) -> None:
-        if self._session:
-            await self._session.close()
-            self._session = None
+        # shared session owned by http_context — don't close it, just drop the ref
+        self._session = None
 
 
 class _ChunkedStream(tts.ChunkedStream):
@@ -239,8 +249,10 @@ class _ChunkedStream(tts.ChunkedStream):
 
 
 def _synthesize_url(opts: _TTSOptions) -> str:
+    # /stream = HTTP chunked, audio flows as generated (v3-safe; only the websocket
+    # multi-stream endpoint 403s on v3). Big TTFB win vs the blocking endpoint.
     url = (
-        f"{opts.base_url}/text-to-speech/{opts.voice_id}?output_format={opts.encoding}"
+        f"{opts.base_url}/text-to-speech/{opts.voice_id}/stream?output_format={opts.encoding}"
         f"&enable_logging={str(opts.enable_logging).lower()}"
     )
     if is_given(opts.optimize_latency):
