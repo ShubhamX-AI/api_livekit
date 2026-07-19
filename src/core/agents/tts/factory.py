@@ -53,6 +53,7 @@ def create_tts(assistant):
             logger.error(f"Missing voice_id for ElevenLabs assistant {assistant_id}")
             return None
         api_key = tts_config.get("api_key") or settings.ELEVENLABS_API_KEY
+        # eleven_v3 (latest, best quality) has no websocket API — HTTP /stream only.
         return ElevenLabsNonStreamingTTS(
             model="eleven_v3",
             voice_id=voice_id,
