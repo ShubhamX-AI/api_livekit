@@ -15,7 +15,7 @@ Create a new assistant configuration.
 | `assistant_description` | string | Yes | Assistant description. |
 | `assistant_prompt` | string | Yes | System prompt. |
 | `assistant_llm_mode` | string | No | LLM mode: `pipeline` or `realtime`. Default: `pipeline`. |
-| `assistant_start_instruction` | string | No | Opening response text. Used when `assistant_interaction_config.speaks_first=true` (max 200 chars). |
+| `assistant_start_instruction` | string | No | Opening response text. Used when `assistant_interaction_config.speaks_first=true` (max 500 chars). |
 | `assistant_interaction_config` | object | No | Interaction settings (see below). |
 | `assistant_greeting_audio` | object | No | Prerecorded greeting reference: `{ "enabled": bool, "audio_id": string }`. `audio_id` must reference one of your active [audio assets](../../api/audio/index.md). When `enabled` and `speaks_first=true`, the clip plays instead of a model-generated greeting. |
 | `assistant_end_call_enabled` | boolean | No | Enables built-in end-call tool. Default: `false`. |
