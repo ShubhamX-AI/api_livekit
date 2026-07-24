@@ -295,10 +295,14 @@ async def entrypoint(ctx: JobContext):
     # Watchdog/tools stamp a reason before teardown persists it.
     _end_reason: str = "natural"
     _max_duration_task: asyncio.Task | None = None
+    _teardown_started: bool = False
 
     # Single teardown path used by both EndCallTool and participant disconnect
     async def _flush_and_end_call(delay: float = 0.0):
-        nonlocal call_end_triggered
+        nonlocal call_end_triggered, _teardown_started
+        if _teardown_started:  # ponytail: idempotency guard, single teardown per call
+            return
+        _teardown_started = True
         call_end_triggered = True  # Block duplicate from disconnect handler
         _sarvam_stop.set()
         if _max_duration_task is not None and not _max_duration_task.done():
@@ -341,21 +345,59 @@ async def entrypoint(ctx: JobContext):
         agent_message = (getattr(assistant, "assistant_end_call_agent_message", None) or "Thank you, goodbye!").strip()
 
         trigger_condition = (
-            f"ONLY call this when the user clearly says: '{trigger_phrase}'."
+            f"Call this as soon as the user signals they want to end or finish the call — "
+            f"in ANY language, dialect, or wording, including partial, misspelled, or accented "
+            f"speech. Do not require an exact phrase. Example of such intent: '{trigger_phrase}'."
             if trigger_phrase else
-            "Call this when the user clearly wants to end the call."
+            "Call this as soon as the user signals they want to end or finish the call, "
+            "in any language or wording."
         )
         tool_description = f"End the current call. {trigger_condition}"
 
         @function_tool(description=tool_description)
         async def end_call(_ctx: RunContext):
-            """Wait for the LLM's goodbye speech to finish, then end the call."""
-            # Small buffer for recording egress to finalize audio capture
-            asyncio.create_task(_flush_and_end_call(delay=1.5))
+            """Wait for the LLM's goodbye reply to actually finish playing, then end the call."""
+            async def _end_after_goodbye():
+                # Realtime models emit the goodbye as a NEW speech handle after the tool
+                # returns; catch it via speech_created, then wait for real playout.
+                # Mirrors livekit.agents.beta EndCallTool._delayed_session_shutdown.
+                fut: asyncio.Future = asyncio.Future()
+
+                @session.once("speech_created")
+                def _on_created(ev):
+                    if not fut.done():
+                        fut.set_result(ev.speech_handle)
+
+                try:
+                    handle = await asyncio.wait_for(fut, timeout=5.0)
+                    await handle.wait_for_playout()
+                except asyncio.TimeoutError:
+                    logger.warning("end_call goodbye reply timed out; ending anyway")
+                finally:
+                    session.off("speech_created", _on_created)
+                # small buffer for egress to finalize the tail, then teardown
+                await _flush_and_end_call(delay=0.5)
+
+            _ctx.speech_handle.add_done_callback(
+                lambda _: asyncio.create_task(_end_after_goodbye())
+            )
             return f"Say this to the user: '{agent_message}'"
 
         tools.append(end_call)
         logger.info(f"Custom end_call tool enabled for assistant {assistant.assistant_id}")
+
+        # System-prompt directive is the strong trigger signal (tool description alone is weak).
+        # Intent-based + multilingual so the model fires on approximate/other-language speech.
+        _phrase_hint = f' For example, when the user says something like "{trigger_phrase}".' if trigger_phrase else ""
+        assistant.assistant_prompt = (assistant.assistant_prompt or "") + (
+            "\n\n---\nENDING THE CALL:\n"
+            "You have an `end_call` tool. Call it the moment the user shows they want to "
+            "end, finish, or hang up the call — in ANY language or wording, even if their "
+            "words are partial, misspelled, mispronounced, or only roughly match."
+            f"{_phrase_hint} "
+            "Do not wait for an exact phrase and do not ask for confirmation. "
+            "After calling it, speak the goodbye it gives you, then stop.\n---"
+        )
 
     # --- Build Agent & LLM ---
     agent_instance = DynamicAssistant(
