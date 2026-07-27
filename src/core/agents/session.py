@@ -583,7 +583,8 @@ async def entrypoint(ctx: JobContext):
             use_llm_for_speech=is_realtime,
         ) if silence_reprompts_enabled else None
     )
-    filler_controller = FillerController(session=session, context_turns=context_turns) if filler_words_enabled else None
+    _filler_api_key = (llm_config or {}).get("api_key") or settings.OPENAI_API_KEY
+    filler_controller = FillerController(session=session, context_turns=context_turns, openai_api_key=_filler_api_key) if filler_words_enabled else None
     hold_controller = HoldController(
         logger=logger,
         session=session,
@@ -811,6 +812,7 @@ async def entrypoint(ctx: JobContext):
             target_identity=primary_participant_identity,
             on_final=_on_sarvam_final,
             stop_event=_sarvam_stop,
+            api_key=(assistant.assistant_tts_config or {}).get("api_key") or settings.SARVAM_API_KEY,
         ))
 
     # --- Start Instruction ---

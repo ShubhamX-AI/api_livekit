@@ -17,6 +17,7 @@ async def run_sarvam_parallel_stt(
     target_identity: str,
     on_final: Callable[[str], None],
     stop_event: asyncio.Event,
+    api_key: str | None = None,
 ) -> None:
     """Stream caller audio into Sarvam Saras v3 and invoke `on_final` for each finalized utterance.
 
@@ -27,7 +28,7 @@ async def run_sarvam_parallel_stt(
         model="saaras:v3",
         mode="codemix",
         language="unknown",
-        api_key=settings.SARVAM_API_KEY,
+        api_key=api_key or settings.SARVAM_API_KEY,
         sample_rate=16000,
     )
     stream = sarvam_stt.stream()

@@ -16,14 +16,15 @@ _recent_fillers: deque[str] = deque(maxlen=5)
 _client: AsyncOpenAI | None = None
 
 
-async def generate_filler(context: list[dict[str, str]]) -> str | None:
+async def generate_filler(context: list[dict[str, str]], api_key: str | None = None) -> str | None:
     """Generate a short filler phrase for live backchanneling."""
     global _client
-    if not settings.OPENAI_API_KEY:
+    resolved_key = api_key or settings.OPENAI_API_KEY
+    if not resolved_key:
         return None
 
     if _client is None:
-        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        _client = AsyncOpenAI(api_key=resolved_key)
 
     avoid = list(_recent_fillers)
     avoid_clause = f"Do not use any of these phrases: {avoid}. " if avoid else ""
@@ -302,9 +303,11 @@ class FillerController:
         self,
         session: AgentSession,
         context_turns: deque[dict[str, str]],
+        openai_api_key: str | None = None,
     ) -> None:
         self._session = session
         self._context_turns = context_turns
+        self._openai_api_key = openai_api_key
         self._filler_task: asyncio.Task | None = None
 
     def stop(self) -> None:
@@ -324,7 +327,7 @@ class FillerController:
             # Initial wait before first filler
             await asyncio.sleep(random.uniform(2.0, 3.0))
             while True:
-                text = await generate_filler(list(self._context_turns))
+                text = await generate_filler(list(self._context_turns), self._openai_api_key)
                 if text:
                     await self._session.say(text, allow_interruptions=True)
                 await asyncio.sleep(random.uniform(4.0, 6.0))
