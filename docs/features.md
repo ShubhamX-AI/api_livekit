@@ -115,6 +115,21 @@ Four synthesis providers supported in pipeline mode:
 - **Polyphase FIR resampling** (`resample_poly` 8 kHz ↔ 48 kHz) — eliminates aliasing and metallic hiss vs. linear interpolation
 - **`tanh` soft-clipping** — inbound gain + soft limiter preserves speech dynamics without harmonic distortion; outbound 0.7 scale + soft limiter keeps TTS within G.711 headroom
 - **Outbound downsample** — 48 kHz TTS audio → 8 kHz G.711 with anti-aliasing FIR before encoding
+- **Input speech gate** — applies to phone *and* web; see below
+
+---
+
+## 10a. Input Speech Gate (Noise Rejection)
+
+Stops background noise from interrupting the agent mid-sentence. Runs in the agent process on both web and Exotel calls, so it needs no LiveKit Cloud (BVC/Krisp is Cloud-only, and this deployment is self-hosted).
+
+- **WebRTC noise suppression + high-pass** (`rtc.AudioProcessingModule`) — around −11 dB on stationary noise. AGC and AEC stay off: AGC re-amplified the agent's own echo into false barge-ins
+- **Silero VAD v5** (ONNX, CPU, vendored at `src/core/agents/models/silero_vad.onnx`) — zeroes non-speech audio, so the realtime model's VAD cannot register noise as speech-start
+- Only the VAD's own copy is resampled to 16 kHz — the model still receives full-rate audio, so web calls keep content above 8 kHz
+- Measured: 94.6% of speech energy kept, 0% of typing and white noise passed, 18% of office ambience (that recording contains real voices)
+- Under 2 ms per 50 ms frame, roughly 1 core-% per concurrent call, no added latency
+- Applied to the session input *and* the Sarvam STT tap, which opens its own stream and was otherwise transcribing noise
+- **Does not** remove a TV or a second person in the room — that is speech, and separating it needs speaker identification. Short filler sounds ("um") are also speech; the input guard handles those
 
 ---
 
@@ -129,10 +144,11 @@ Four synthesis providers supported in pipeline mode:
 
 ## 12. Per-Utterance Input Guard
 
-- **Fragment-loop prevention** — mutes caller audio source for the first N seconds (default 3 s) of each agent reply
+- **Fragment-loop prevention** — blanks caller audio for the first N seconds of each agent reply, configurable per assistant via `input_guard_window_sec` (default 3 s, range 0–10; `0` disables)
 - Prevents "Hello? Hello?" repeat barge-ins from fragmenting the agent's response
-- Re-enables immediately when the agent finishes speaking (if before the window)
-- Pipeline mode only (Gemini realtime owns its own audio pipeline)
+- **Blocks filler words** — "um" / "uh" / "hmm" is genuine speech, so the speech gate cannot filter it; only this window can
+- Unmutes immediately when the agent finishes speaking (if before the window), so short replies cost less than the full window
+- Runs in **both** pipeline and realtime modes — it mutes through `SpeechGate` rather than detaching the input, so the model keeps receiving a continuous feed
 - Auto-disabled in text-only web calls (no audio to guard)
 
 ---

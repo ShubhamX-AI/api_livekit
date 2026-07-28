@@ -202,7 +202,7 @@ Three event handlers check `hold_controller.is_on_hold` and suppress activity:
 
 ## Per-Utterance Input Guard
 
-Phone callers frequently repeat themselves while the agent is producing its reply ("Hello… Hello?"). Each repeat is a legitimate ≥0.9 s word, so the standard `interruption.min_duration` gate cannot filter it — the framework correctly classifies it as a barge-in, the agent fragments its current sentence, the LLM generates an apology, and the cycle repeats. Observed in production as the "Sorry, I'm here / Yes, I'm…" loop.
+Phone callers frequently repeat themselves while the agent is producing its reply ("Hello… Hello?"). Each repeat is a legitimate ≥0.9 s word, so no duration-based filter would help even if one ran — and under `turn_detection="realtime_llm"` none does, as described above. The framework correctly classifies the repeat as a barge-in, the agent fragments its current sentence, the LLM generates an apology, and the cycle repeats. Observed in production as the "Sorry, I'm here / Yes, I'm…" loop.
 
 The same gate cannot filter **filler sounds** either. "um" / "uh" / "hmm" is 200–400 ms of voiced speech, and Silero correctly identifies it as speech. Measured against a real voiced burst: on a quiet line, bursts under ~400 ms are rejected (an accident of the noise suppressor's adaptation, not a feature); over office ambience, even a 200 ms burst passes. So filler-word barge-in is the input guard's job, not the gate's.
 
@@ -226,19 +226,20 @@ sequenceDiagram
     autonumber
     participant LK as LiveKit Session
     participant Guard as InputGuardController
+    participant Gate as SpeechGate
     participant User as Caller (impatient)
 
     LK->>Guard: agent_state_changed → speaking
-    Guard->>LK: session.input.set_audio_enabled(False)
+    Guard->>Gate: muted = True
     Guard->>Guard: spawn _auto_reenable task (window_sec)
     User-->>LK: "Hello?" (repeat 1)
-    Note over LK: audio source detached — VAD never sees it
-    User-->>LK: "Hello?" (repeat 2)
+    Note over LK,Gate: frames still flow, zeroed — model sees silence, not a gap
+    User-->>LK: "um…" (filler)
     alt agent finishes reply before window
         LK->>Guard: agent_state_changed → listening
-        Guard->>LK: set_audio_enabled(True), cancel task
+        Guard->>Gate: muted = False, cancel task
     else window expires first
-        Guard->>LK: set_audio_enabled(True)
+        Guard->>Gate: muted = False
         Note over LK,User: user can now interrupt long answer
     end
 ```

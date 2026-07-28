@@ -76,7 +76,11 @@ Fetch full configuration for one assistant.
       "silence_max_reprompts": 2,
       "background_sound_enabled": true,
       "thinking_sound_enabled": true,
-      "allow_interruptions": false
+      "allow_interruptions": false,
+      "input_guard_window_sec": 3.0,
+      "preferred_languages": null,
+      "user_stt_provider": "sarvam",
+      "max_call_duration_minutes": null
     },
     "assistant_end_call_enabled": false,
     "assistant_end_call_trigger_phrase": null,
