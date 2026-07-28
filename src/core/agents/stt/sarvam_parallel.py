@@ -7,6 +7,7 @@ from livekit import rtc
 from livekit.agents import stt as stt_pkg
 from livekit.plugins import sarvam as sarvam_plugin
 
+from src.core.agents.audio_denoise import SpeechGate
 from src.core.config import settings
 from src.core.logger import logger
 
@@ -35,7 +36,14 @@ async def run_sarvam_parallel_stt(
     pump_task: asyncio.Task | None = None
 
     async def _pump(track: rtc.Track) -> None:
-        audio = rtc.AudioStream(track, sample_rate=16000, num_channels=1)
+        # This tap opens its own AudioStream, so it does not inherit the SpeechGate that
+        # RoomIO applies to the LLM's input — it needs its own instance (the APM and VAD
+        # are both stateful per stream). Gating here also keeps Sarvam from transcribing
+        # noise, which is what produced the hallucinated scripts described in
+        # docs/architecture/audio-pipeline.md.
+        audio = rtc.AudioStream(
+            track, sample_rate=16000, num_channels=1, noise_cancellation=SpeechGate()
+        )
         try:
             async for ev in audio:
                 if stop_event.is_set():

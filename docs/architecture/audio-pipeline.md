@@ -46,7 +46,59 @@ final PCM int16 at 48 kHz → LiveKit AudioSource → STT
 2. Pre-processing with WebRTC NS shifted the spectral signature OpenAI's `far_field` mode expects → STT accuracy degraded.
 3. With AGC enabled, WebRTC AGC amplified the residual echo of the agent's own voice back into the room, triggering OpenAI's VAD as a false barge-in → the agent kept cutting itself off mid-sentence.
 
-The current design lets the inbound bridge do only minimal, spectrum-preserving cleanup (DC removal, gain, soft-clip, resampling) and delegates all noise-reduction policy to OpenAI Realtime (see *STT Noise-Reduction Branching* below).
+That revert stands: the bridge still does only minimal, spectrum-preserving cleanup (DC removal, gain, soft-clip, resampling). Noise suppression now lives one layer downstream, in the agent process, where a single implementation covers phone **and** web calls — see *Input Speech Gate* below.
+
+## Input Speech Gate
+
+Background noise was cutting the agent off mid-sentence on both web and Exotel calls, and none of the LiveKit-side interruption settings could stop it. Two reasons, both structural:
+
+| Constraint | Consequence |
+|---|---|
+| Self-hosted LiveKit (not Cloud) | Cloud enhanced noise cancellation (BVC/Krisp) is unavailable, and `agent_activity.py` skips adaptive interruption entirely when the worker is not Cloud-hosted. |
+| `turn_detection="realtime_llm"` | `on_vad_inference_done` returns early, so VAD-based interruption never runs. `"adaptive"` interruption additionally requires a streaming `stt=`, a `vad=`, and a non-realtime LLM — none present. |
+| `_on_input_speech_started` | Calls `interrupt()` **unconditionally** when the realtime model's own VAD reports speech-start. No threshold, no minimum duration. |
+
+Net effect: the realtime model's VAD was the sole barge-in decision-maker, and the `interruption={"min_duration": 2.5, "min_words": 0, ...}` block that was supposed to filter noise never executed. Those keys have been removed from `session.py` rather than left in place looking functional.
+
+The fix is a filter *upstream* of that VAD. `AudioInputOptions.noise_cancellation` accepts a `rtc.FrameProcessor` alongside the Cloud-only `NoiseCancellationOptions`, and a FrameProcessor runs in-process inside `rtc.AudioStream` — neither Cloud-gated nor bypassed by `realtime_llm`. `SpeechGate` (`src/core/agents/audio_denoise.py`) occupies that hook:
+
+```
+caller audio (mono, whatever rate RoomIO delivers — 24 kHz by default)
+    ↓  rtc.AudioProcessingModule(noise_suppression, high_pass_filter)
+around -11 dB on stationary noise; AGC and AEC deliberately off
+    ↓  rtc.AudioResampler → 16 kHz COPY, for the VAD only
+the frame the model receives keeps its original rate; nothing is downsampled away
+    ↓  Silero VAD v5 (ONNX, CPU, 512-sample windows + 64-sample context)
+per-frame speech decision, 600 ms hangover
+    ↓  non-speech frames zeroed
+realtime model hears silence during noise → cannot fire speech-start → cannot interrupt
+```
+
+**Why a speech gate and not just a denoiser?** A denoiser lowers the noise *level*; the model's VAD still fires on the residual. Only a speech/non-speech classifier can decide that audio is not the caller talking. The WebRTC NS stage is there to clean what does pass through, not to make the barge-in decision.
+
+**Why AGC stays off.** `AudioInputOptions.auto_gain_control` defaults to `True`, and it was silently active because `session.py` passed `audio_input=True` as a bare bool. That is the same AGC that reason 3 above blames for echo-driven false barge-ins. It is now explicitly `False`.
+
+**Silero's context window.** Each inference must be fed `context + window` samples (64 + 512 at 16 kHz), where the context is the tail of the previous window. Feeding a bare 512-sample window returns ~0.0 for *every* input — including clear speech — and raises nothing, because the ONNX graph declares a dynamic input shape. `tests/test_audio_denoise.py` covers both directions specifically to catch that silent failure.
+
+**Measured behaviour** (33 s telephone-band speech, `assets/audio/*_48k.wav` for noise):
+
+| Input | Speech energy kept | Frames passed |
+|---|---|---|
+| Telephone-band speech | 94.6% | 79% (the gap is the silence between sentences) |
+| Speech mixed with office ambience | 88.0% | 88% |
+| Office ambience alone | — | 18% (this fixture contains real background voices) |
+| Keyboard typing | — | 0% |
+| White noise | — | 0% |
+
+Verified at 16 / 24 / 48 kHz input: the VAD's decisions are identical across all three (79% of speech frames pass at every rate), because it always sees the same 16 kHz resampled copy.
+
+**Latency.** Under 2 ms per 50 ms frame (NS ~0.1 ms, Silero ~1 ms per 32 ms window), roughly 1 core-% per concurrent stream. No buffering and no lookahead, so nothing is added to round-trip time. The cost is that a speech onset is detected within one frame rather than instantly; the gate opens for the whole frame if *any* window in it reads as speech, which recovers the onset.
+
+**What it does not fix.** A television, or a second person talking in the room, is speech. No denoiser and no VAD separates it from the caller — that needs speaker identification.
+
+**Coverage.** `SpeechGate` is applied twice, with a separate instance each time because both the APM and the VAD are stateful per stream: once on the session's audio input (`session.py`), and once inside the Sarvam parallel STT tap (`stt/sarvam_parallel.py`), which opens its own `AudioStream` and would otherwise transcribe raw noise.
+
+**Calibration** — `_THRESHOLD` (0.5), `_HANGOVER_MS` (600), `_ATTENUATION` (0.0, hard gate) at the top of `audio_denoise.py`. Lower the threshold if quiet callers get clipped; raise it if noise still reaches the model. `_HANGOVER_MS` multiplies the cost of every false positive — one bad window holds the gate open that long.
 
 ## Outbound RTP Audio Processing
 
@@ -80,7 +132,10 @@ In `session.py`, the OpenAI Realtime LLM is configured with `input_audio_noise_r
 
 The same branching also prepends a short note to the STT prompt on phone calls ("Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). Expect static, line hum, codec artifacts...") so the transcription model is aware of the channel and refuses to fabricate words on unintelligible audio.
 
-**Dependencies:** `scipy>=1.13.0`, `numpy>=1.26.0`. (`webrtc_noise_gain` is no longer used by the inbound pipeline; remove if not referenced elsewhere.)
+**Dependencies:** `scipy>=1.13.0`, `numpy>=1.26.0`, `onnxruntime>=1.20.0` (Silero VAD). `webrtc-noise-gain` has been dropped — the WebRTC NS now comes from `rtc.AudioProcessingModule`, part of `livekit-rtc`. The Silero model is vendored at `src/core/agents/models/silero_vad.onnx` (2.2 MB, MIT) and ships via `COPY src` in every image.
+
+!!! warning "`docker/requirements-agent.txt` pins deps separately"
+    The agent container installs from `docker/requirements-agent.txt`, not `pyproject.toml`, and it does not carry the `turn-detector` extra that otherwise pulls in `onnxruntime`. `onnxruntime` is therefore listed explicitly there. Adding a runtime dependency to `pyproject.toml` alone will `ImportError` in production.
 
 ## Hold & Resume Detection
 
@@ -149,16 +204,22 @@ Three event handlers check `hold_controller.is_on_hold` and suppress activity:
 
 Phone callers frequently repeat themselves while the agent is producing its reply ("Hello… Hello?"). Each repeat is a legitimate ≥0.9 s word, so the standard `interruption.min_duration` gate cannot filter it — the framework correctly classifies it as a barge-in, the agent fragments its current sentence, the LLM generates an apology, and the cycle repeats. Observed in production as the "Sorry, I'm here / Yes, I'm…" loop.
 
-`InputGuardController` (`src/core/agents/voice_features.py`) closes this loop by blanket-muting user audio at the source for the first N seconds of every agent utterance. Implementation uses the official LiveKit Agents API `session.input.set_audio_enabled(False/True)` — detaches the audio source from the VAD + STT pipeline without muting the caller's actual microphone.
+The same gate cannot filter **filler sounds** either. "um" / "uh" / "hmm" is 200–400 ms of voiced speech, and Silero correctly identifies it as speech. Measured against a real voiced burst: on a quiet line, bursts under ~400 ms are rejected (an accident of the noise suppressor's adaptation, not a feature); over office ambience, even a 200 ms burst passes. So filler-word barge-in is the input guard's job, not the gate's.
+
+`InputGuardController` (`src/core/agents/voice_features.py`) closes both loops by blanking user audio for the first N seconds of every agent utterance.
+
+**Why it mutes rather than detaches.** It sets `SpeechGate.muted = True`, which zeroes every frame while leaving the stream flowing. It previously called `session.input.set_audio_enabled(False)`, which detaches the input — and `_ParticipantInputStream._forward_task` then **drops frames outright** (`if not self._attached: continue`). A realtime model that expects a continuous audio feed can misbehave on that gap, which is why realtime mode used to be excluded from the guard entirely. Muting has no such hazard, so the guard now runs in **both** realtime and pipeline modes. Cost of the change: the model is billed for the silent audio that a detached stream would not have sent.
 
 **Lifecycle (per agent reply):**
 
 | Event | Action |
 |---|---|
-| Agent state → `"speaking"` | `set_audio_enabled(False)` + schedule re-enable task (window = `input_guard_window_sec`, default 3.0 s) |
-| Agent state leaves `"speaking"` before window expires | Cancel task, re-enable immediately (don't make user wait when agent finished early) |
-| Window expires while still speaking | Re-enable anyway — user can interrupt long answers after the dead-time |
-| Call teardown (`_flush_and_end_call`) | `aclose()` cancels task + force-enables audio |
+| Agent state → `"speaking"` | `gate.muted = True` + schedule unmute task (window = `input_guard_window_sec`, default 3.0 s) |
+| Agent state leaves `"speaking"` before window expires | Cancel task, unmute immediately (don't make user wait when agent finished early) |
+| Window expires while still speaking | Unmute anyway — user can interrupt long answers after the dead-time |
+| Call teardown (`_flush_and_end_call`) | `aclose()` cancels task + force-unmutes |
+
+`input_guard_window_sec` is a real field on `assistant_interaction_config` (default `3.0`, range 0–10, settable via `/assistant/create` and `/assistant/update`). Raise it to reject more filler words; the caller also cannot genuinely interrupt within the window, so it is a direct trade. `0` disables the guard — the controller is not constructed at all.
 
 ```mermaid
 sequenceDiagram
@@ -182,17 +243,23 @@ sequenceDiagram
     end
 ```
 
-**Skipped in realtime mode.** Constructor guard at `session.py`:
+**Active in every mode that has audio.** Constructor guard at `session.py`:
 
 ```python
-input_guard = None if is_realtime else InputGuardController(
-    session=session,
+speech_gate = None if is_text_only else SpeechGate()
+...
+_guard_window = interaction_config.input_guard_window_sec
+input_guard = None if (speech_gate is None or _guard_window <= 0) else InputGuardController(
     logger=logger,
-    window_sec=getattr(interaction_config, "input_guard_window_sec", 3.0),
+    gate=speech_gate,
+    window_sec=_guard_window,
 )
 ```
 
-Gemini full-realtime (`assistant_llm_mode="realtime"`, `provider="gemini"`) owns its own audio pipeline + internal VAD; detaching the input source would cut the audio feed the model relies on. Pipeline mode (OpenAI half-cascade + external TTS) is the only path where the fragment loop reproduces, so the guard is scoped accordingly. The field `input_guard_window_sec` is read with `getattr(..., 3.0)` so per-assistant tuning becomes possible the moment the field is added to `assistant_interaction_config` — no code change required.
+Realtime mode is no longer excluded. The exclusion existed because Gemini full-realtime (`assistant_llm_mode="realtime"`, `provider="gemini"`) owns its own audio pipeline and internal VAD, and detaching the input source cut the feed it relies on. Muting through `SpeechGate` keeps the feed continuous, so the hazard is gone and realtime calls get the same filler-word protection. Text-only chats have no audio input, so `speech_gate` is `None` and no guard is built.
+
+!!! note "Verify on a Gemini realtime call"
+    Muting is safe in principle — frames keep arriving at the same rate, carrying silence — but the original exclusion was written against observed Gemini behaviour. Worth one realtime-mode call to confirm Gemini Live tolerates a 3 s silent stretch mid-session before relying on it in production.
 
 **Interaction with the first-utterance VAD disable.** The existing greeting path (`session.py` lines 636–688) sets `llm._opts.turn_detection = None` for the full duration of `session.generate_reply()` when `allow_interruptions=False`. That VAD-level block fully covers the greeting end-to-end. `InputGuardController` *also* fires on the greeting (3 s source mute on top), but its window is redundant during the greeting because the VAD is already off. Subsequent replies, where the greeting code does not run, are the ones the guard actually protects.
 

@@ -34,6 +34,11 @@ class AssistantInteractionConfig(BaseModel):
     background_sound_enabled: bool = True
     thinking_sound_enabled: bool = True
     allow_interruptions: bool = False
+    # Seconds of every agent utterance during which caller audio is blanked. Stops repeats
+    # ("Hello? Hello?") and short filler sounds ("um", "uh") from barging in — SpeechGate
+    # cannot filter those, since they are genuine speech. Raise it to reject more fillers,
+    # at the cost of the caller being unable to genuinely interrupt for that long.
+    input_guard_window_sec: float = 3.0
     preferred_languages: Optional[List[str]] = None
     # User STT source in pipeline mode. "sarvam" runs Sarvam Saras v3 in parallel;
     # "native" = the conversational LLM transcribes itself (OpenAI gpt-4o-transcribe on an

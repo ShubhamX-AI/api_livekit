@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 
 from src.core.config import settings
 from src.core.logger import logger, setup_logging, set_room_context
+from src.core.agents.audio_denoise import SpeechGate
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
@@ -547,6 +548,15 @@ async def entrypoint(ctx: JobContext):
             # preemptive_generation=True,  # Deprecated in favor of turn_detection options below
             use_tts_aligned_transcript=True,
             aec_warmup_duration=1.0,  # seconds
+            # No `interruption={...}` here on purpose. With turn_detection="realtime_llm"
+            # the SDK skips VAD-based interruption entirely (agent_activity.py
+            # on_vad_inference_done), and "adaptive" mode additionally needs a streaming
+            # stt=, a vad=, a non-realtime LLM and a Cloud-hosted worker
+            # (agent_activity._resolve_interruption_detection) — none of which apply. So
+            # min_duration / min_words / false_interruption_timeout were dead config:
+            # _on_input_speech_started interrupts unconditionally the moment the realtime
+            # model's VAD reports speech. Noise filtering happens in SpeechGate instead,
+            # upstream of that VAD. Don't re-add knobs here; tune audio_denoise.py.
             turn_handling=TurnHandlingOptions(
                 turn_detection="realtime_llm",
                 endpointing={
@@ -554,15 +564,7 @@ async def entrypoint(ctx: JobContext):
                     "min_delay": 0.3,
                     "max_delay": 1.0,
                 },
-                interruption={
-                    "mode": "adaptive",
-                    "min_duration": 2.5,
-                    "min_words": 0,
-                    "discard_audio_if_uninterruptible": True,
-                    "false_interruption_timeout": 0.2,
-                    "resume_false_interruption": True,
-                },
-        )
+            ),
         )
 
     # --- Usage Tracking ---
@@ -574,6 +576,9 @@ async def entrypoint(ctx: JobContext):
 
     context_turns = deque(maxlen=4)
     user_is_speaking = False
+    # Built here rather than inline in RoomOptions because InputGuardController mutes
+    # through it. Text-only chats have no audio input, so there is nothing to gate.
+    speech_gate = None if is_text_only else SpeechGate()
     silence_watchdog = (
         SilenceWatchdogController(
             session=session,
@@ -591,10 +596,14 @@ async def entrypoint(ctx: JobContext):
         silence_watchdog=silence_watchdog,
         filler_controller=filler_controller,
     )
-    input_guard = None if (is_realtime or is_text_only) else InputGuardController(
-        session=session,
+    # Enabled in realtime mode too: the guard now blanks audio through SpeechGate instead
+    # of detaching the input, so the model keeps receiving a continuous feed (the reason
+    # realtime used to be excluded). Text-only chats have no audio to guard.
+    _guard_window = interaction_config.input_guard_window_sec
+    input_guard = None if (speech_gate is None or _guard_window <= 0) else InputGuardController(
         logger=logger,
-        window_sec=getattr(interaction_config, "input_guard_window_sec", 3.0),
+        gate=speech_gate,
+        window_sec=_guard_window,
     )
 
     # Background audio
@@ -607,9 +616,22 @@ async def entrypoint(ctx: JobContext):
         f"text_input={is_web_call} | text_only={is_text_only}"
     )
 
+    # SpeechGate is the only barge-in filter that works here: self-hosted rules out Cloud
+    # noise cancellation, and turn_detection="realtime_llm" makes every LiveKit-side
+    # interruption knob inert (see the comment on the AgentSession above). It runs upstream
+    # of the realtime model, so noise never reaches the VAD that interrupts the agent.
+    # AGC is off deliberately — the SDK default is True, and WebRTC AGC re-amplified the
+    # agent's own echo into false barge-ins (docs/architecture/audio-pipeline.md).
     room_options = room_io.RoomOptions(
         text_input=is_web_call,
-        audio_input=not is_text_only,
+        audio_input=(
+            # sample_rate is left at the SDK default: the gate resamples only its own VAD
+            # copy, so the model still receives full-rate audio.
+            False if speech_gate is None else room_io.AudioInputOptions(
+                noise_cancellation=speech_gate,
+                auto_gain_control=False,
+            )
+        ),
         audio_output=not is_text_only,
         text_output=True,
         close_on_disconnect=False,
