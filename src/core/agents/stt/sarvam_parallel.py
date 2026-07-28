@@ -29,7 +29,7 @@ async def run_sarvam_parallel_stt(
         model="saaras:v3",
         mode="codemix",
         language="unknown",
-        api_key=api_key or settings.SARVAM_API_KEY,
+        api_key=settings.SARVAM_API_KEY,
         sample_rate=16000,
     )
     stream = sarvam_stt.stream()
