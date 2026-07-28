@@ -1,5 +1,39 @@
-from pydantic import BaseModel, EmailStr, Field, model_validator
+import re
+
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Optional, Literal, Union, Annotated, List, Any
+
+
+# ── API key hygiene ────────────────────────────────
+# GET /assistant/details and /assistant/list return provider keys masked (see
+# mask_api_key in src/api/routes/assistant.py). Clients that read an assistant,
+# edit one field and PATCH the whole object back would otherwise persist the
+# mask as a real key — which then wins over the system key and 401s mid-call.
+SYSTEM_KEY_PLACEHOLDER = "Using System provided API Key"
+_MASK_PATTERN = re.compile(r".{4}\.\.\..{4}")
+
+
+def reject_masked_key(v: Optional[str]) -> Optional[str]:
+    """Refuse api_key values that came out of mask_api_key."""
+    if isinstance(v, str) and (
+        v == SYSTEM_KEY_PLACEHOLDER or v == "****" or _MASK_PATTERN.fullmatch(v)
+    ):
+        raise ValueError(
+            "api_key looks masked (as returned by GET /assistant/details). "
+            "Send the real key, or omit the field to use the system key."
+        )
+    return v
+
+
+class ProviderKeyConfig(BaseModel):
+    """Base for any provider config carrying an optional `api_key` override."""
+
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Provider API key (optional, falls back to system key)")
+
+    @field_validator("api_key")
+    @classmethod
+    def _no_masked_api_key(cls, v):
+        return reject_masked_key(v)
 
 
 # Model for creating API key
@@ -22,33 +56,33 @@ class CreateApiKey(BaseModel):
 
 
 # ── TTS Config sub-models ──────────────────────────
-class CartesiaTTSConfig(BaseModel):
+class CartesiaTTSConfig(ProviderKeyConfig):
     type: Literal["cartesia"] = "cartesia"  # discriminator field
     voice_id: str = Field(..., min_length=1, max_length=100, description="Cartesia voice ID")
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system key)")
 
 
-class SarvamTTSConfig(BaseModel):
+class SarvamTTSConfig(ProviderKeyConfig):
     type: Literal["sarvam"] = "sarvam"
     speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier")
     target_language_code: str = Field("bn-IN", max_length=10, description="BCP-47 language code")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key)")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_interaction_config.stt_api_key.")
 
 
-class ElevenLabsTTSConfig(BaseModel):
+class ElevenLabsTTSConfig(ProviderKeyConfig):
     type: Literal["elevenlabs"] = "elevenlabs"
     voice_id: str = Field(..., min_length=1, max_length=100, description="ElevenLabs voice ID")
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
 
 
-class MistralTTSConfig(BaseModel):
+class MistralTTSConfig(ProviderKeyConfig):
     type: Literal["mistral"] = "mistral"
     voice_id: str = Field(..., min_length=1, max_length=100, description="Mistral voice ID")
     api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
 
 
 # ── Assistant LLM Config sub-model ───────────────────
-class AssistantLLMConfig(BaseModel):
+class AssistantLLMConfig(ProviderKeyConfig):
     provider: Optional[Literal["gemini", "openai"]] = Field(
         None,
         description="LLM vendor for either mode: gemini | openai. Defaults to gemini in realtime mode, openai in pipeline mode.",
@@ -88,8 +122,14 @@ class AssistantInteractionConfigSchema(BaseModel):
     allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
     input_guard_window_sec: float = Field(3.0, ge=0.0, le=10.0, description="Seconds at the start of every agent reply during which caller audio is blanked. Blocks repeated 'Hello? Hello?' and short filler sounds ('um', 'uh') from cutting the agent off. Raise to reject more fillers; the caller also cannot genuinely interrupt within the window. 0 disables.")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. If unset, model auto-detects all languages.")
+    stt_api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key for user transcription (user_stt_provider='sarvam'). Separate from assistant_tts_config.api_key, which is scoped to the selected TTS provider. Falls back to the system key.")
     user_stt_provider: Literal["sarvam", "native"] = Field("sarvam", description="User-transcription source in pipeline mode (either provider). 'sarvam' (default) runs Sarvam Saras v3 as a parallel tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-transcribe on an OpenAI pipeline, Gemini's own on a Gemini pipeline). Ignored in realtime (audio-out) mode.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. When reached, agent says a brief farewell then hangs up gracefully. Unset/null defaults to 30 minutes at runtime.")
+
+    @field_validator("stt_api_key")
+    @classmethod
+    def _no_masked_stt_key(cls, v):
+        return reject_masked_key(v)
 
 
 class UpdateAssistantInteractionConfigSchema(BaseModel):
@@ -103,8 +143,14 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
     input_guard_window_sec: Optional[float] = Field(None, ge=0.0, le=10.0, description="Seconds at the start of every agent reply during which caller audio is blanked, blocking repeats and filler sounds. 0 disables.")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. Pass empty list to clear.")
+    stt_api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key for user transcription. Omit to keep the stored value; falls back to the system key when never set.")
     user_stt_provider: Optional[Literal["sarvam", "native"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'native'). Only affects pipeline mode.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. Pass null/omit to use platform default (30 min).")
+
+    @field_validator("stt_api_key")
+    @classmethod
+    def _no_masked_stt_key(cls, v):
+        return reject_masked_key(v)
 
 
 # ── Greeting audio sub-models ──────────────────

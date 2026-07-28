@@ -44,6 +44,11 @@ class AssistantInteractionConfig(BaseModel):
     # "native" = the conversational LLM transcribes itself (OpenAI gpt-4o-transcribe on an
     # OpenAI pipeline, Gemini's own transcription on a Gemini pipeline). Provider-agnostic.
     user_stt_provider: Literal["sarvam", "native"] = "sarvam"
+    # Sarvam key for the parallel STT tap. Deliberately separate from
+    # assistant_tts_config["api_key"], which is scoped to whichever TTS provider is
+    # selected — feeding that one to Sarvam 403s whenever TTS is not sarvam.
+    # None -> settings.SARVAM_API_KEY.
+    stt_api_key: Optional[str] = None
     # Hard ceiling for active-call duration. None → falls back to platform default (30 min) at runtime.
     max_call_duration_minutes: Optional[float] = None
 

@@ -74,6 +74,7 @@ List assistants created by the current user.
           "input_guard_window_sec": 3.0,
           "preferred_languages": null,
           "user_stt_provider": "sarvam",
+          "stt_api_key": "Using System provided API Key",
           "max_call_duration_minutes": null
         },
         "assistant_created_by_email": "admin@example.com"

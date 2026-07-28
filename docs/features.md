@@ -41,6 +41,7 @@ Four synthesis providers supported in pipeline mode:
 - **Sarvam Saras v3 parallel STT** — secondary STT tap running in parallel for enhanced multilingual transcription
 - **Native LLM transcription** — the conversational LLM transcribes itself (OpenAI `gpt-4o-transcribe`, or Gemini's own) when `user_stt_provider="native"`
 - Per-call `user_stt_provider` toggle: `sarvam` (default) or `native`
+- Per-assistant `stt_api_key` for the Sarvam tap, separate from the TTS provider key
 - Phone vs. web noise-reduction branching: `far_field` (G.711/PSTN) vs. `near_field` (browser mic) sent to OpenAI Realtime
 
 ---

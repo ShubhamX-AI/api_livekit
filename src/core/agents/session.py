@@ -834,7 +834,9 @@ async def entrypoint(ctx: JobContext):
             target_identity=primary_participant_identity,
             on_final=_on_sarvam_final,
             stop_event=_sarvam_stop,
-            api_key=(assistant.assistant_tts_config or {}).get("api_key") or settings.SARVAM_API_KEY,
+            # Never assistant_tts_config["api_key"] — that key belongs to the selected TTS
+            # provider (cartesia/elevenlabs/mistral) and Sarvam rejects it with a 403.
+            api_key=interaction_config.stt_api_key or settings.SARVAM_API_KEY,
         ))
 
     # --- Start Instruction ---

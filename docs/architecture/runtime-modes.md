@@ -132,6 +132,8 @@ Configured per assistant via `assistant_interaction_config.user_stt_provider`:
 | `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). |
 | `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap. |
 
+**API key.** The tap authenticates with `assistant_interaction_config.stt_api_key`, falling back to the system `SARVAM_API_KEY`. It deliberately does **not** read `assistant_tts_config["api_key"]`: that field is scoped to the selected TTS provider, so on a Cartesia/ElevenLabs/Mistral assistant it holds a foreign key and Sarvam answers `403 Invalid response status`. Because the tap also disables the LLM's own transcription, an auth failure there means the call runs with **no user transcripts at all** — so keep the two keys separate.
+
 **Data flow per utterance:**
 
 ```mermaid
