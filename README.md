@@ -28,6 +28,16 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Inbound calls: `exotel` only.
 - Twilio inbound is not implemented.
 
+## Provider API Keys
+
+Per-assistant provider keys live in `assistant_tts_config`, `assistant_stt_config` and `assistant_llm_config`; each falls back to the matching system key when unset. Rules live in `src/core/providers/keys.py`:
+
+- Keys are stored as sent — they are never validated against the provider, so a wrong key surfaces on the first call.
+- `GET /assistant/details` and `GET /assistant/list` mask `api_key` in all three configs (`mask_assistant_keys`). Native STT has no key, so its config is returned untouched.
+- Masked values (`sk-t...5678`, `****`, `Using System provided API Key`) are rejected on write with `422`; storing the mask would make it win over the system key and 401 mid-call.
+- Free-form configs are masked by key name: `GET /tool/details` and the inbound-context strategies return `****` for `authorization` / `token` / `secret` / `api_key` / `password` entries (including inside `headers`) and leave the `url` readable. Writing a `****` value back is also a `422`.
+- Filler words always call OpenAI, so an assistant's LLM key is reused there only when its LLM provider is `openai` — otherwise the system `OPENAI_API_KEY` is used (`provider_key_or_system`).
+
 ## Exotel Outbound Lifecycle
 
 - Exotel outbound API calls are queued first and return `202 Accepted` with a `queue_id`.
@@ -380,6 +390,9 @@ api_livekit/
 │   │   │   └── tts/
 │   │   │       ├── __init__.py
 │   │   │       └── factory.py          # TTS factory + Sarvam WS keepalive
+│   │   ├── providers/
+│   │   │   ├── __init__.py
+│   │   │   └── keys.py                 # provider key registry + masking helpers
 │   │   ├── db/
 │   │   ├── config.py
 │   │   └── logger.py

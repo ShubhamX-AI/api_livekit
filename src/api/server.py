@@ -22,6 +22,8 @@ from src.api.routes import (
     analytics,
     admin,
 )
+from starlette.routing import Route
+from src.api.mcp_docs import asgi_app as docs_mcp_asgi, mcp as docs_mcp
 from src.core.logger import setup_logging, logger
 from src.core.db.database import init_db, close_db
 from src.api.models.response_models import apiResponse
@@ -43,14 +45,21 @@ async def lifespan(app: FastAPI):
     # In production, the dedicated sip_dispatcher container sets both to "true" and the
     # api container sets both to "false" — preventing port conflicts and duplicate dispatch.
     if os.getenv("ENABLE_SIP_LISTENER", "true").lower() == "true":
-        from src.services.exotel.custom_sip_reach.inbound_listener import ensure_inbound_server
+        from src.services.exotel.custom_sip_reach.inbound_listener import (
+            ensure_inbound_server,
+        )
+
         await ensure_inbound_server()
 
     if os.getenv("ENABLE_DISPATCHER", "true").lower() == "true":
         from src.services.outbound_dispatcher import outbound_dispatcher_loop
+
         dispatcher_task = asyncio.create_task(outbound_dispatcher_loop())
 
-    yield
+    # Starlette does not propagate lifespan into mounted sub-apps, so the MCP
+    # streamable-HTTP session manager has to be started here or /mcp 500s.
+    async with docs_mcp.session_manager.run():
+        yield
 
     # Shutdown
     if dispatcher_task is not None:
@@ -137,7 +146,11 @@ app.include_router(tool.router, prefix="/tool", tags=["Tool"])
 app.include_router(logs.router, prefix="/logs", tags=["Logs"])
 app.include_router(web_call.router, prefix="/web_call", tags=["Web Call"])
 app.include_router(inbound.router, prefix="/inbound", tags=["Inbound Call"])
-app.include_router(inbound_context_strategy.router,prefix="/inbound_context_strategy",tags=["Inbound Context Strategy"])
+app.include_router(
+    inbound_context_strategy.router,
+    prefix="/inbound_context_strategy",
+    tags=["Inbound Context Strategy"],
+)
 app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
@@ -149,6 +162,9 @@ if site_dir.exists():
         StaticFiles(directory=str(site_dir), html=True),
         name="documentation",
     )
+
+# Serve the same documentation to AI agents over MCP (streamable HTTP).
+app.router.routes.append(Route("/mcp", endpoint=docs_mcp_asgi, name="mcp_docs"))
 
 if __name__ == "__main__":
     import uvicorn

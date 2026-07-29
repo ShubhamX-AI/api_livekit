@@ -24,9 +24,11 @@ Fetch details for a specific tool.
 | `data.tool_description`      | string  | The description of the tool.               |
 | `data.tool_parameters`       | array   | List of parameter definitions.             |
 | `data.tool_execution_type`   | string  | Either `webhook` or `static_return`.       |
-| `data.tool_execution_config` | object  | Execution configuration.                   |
+| `data.tool_execution_config` | object  | Execution configuration, with secrets masked. |
 | `data.tool_created_at`       | string  | ISO 8601 timestamp of creation.            |
 | `data.tool_updated_at`       | string  | ISO 8601 timestamp of last update.         |
+
+Secret-looking entries in `tool_execution_config` (`authorization`, `token`, `secret`, `api_key`, `password`, including inside `headers`) are returned as `****`; `url` and everything else is returned as stored. Sending a `****` value back to `POST /tool/create` or `PATCH /tool/update` is rejected with `422` — send the real value, or omit the field to keep the stored one.
 
 ### HTTP Status Codes
 
@@ -67,7 +69,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/tool/details/880e
       "url": "https://api.weather.com/v1/current",
       "timeout": 5,
       "headers": {
-        "Authorization": "Bearer weather_api_token"
+        "Authorization": "****"
       }
     },
     "tool_created_at": "2024-01-15T10:00:00.000000",

@@ -4,6 +4,7 @@ from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Tool, Assistant, APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger
+from src.core.providers.keys import mask_secret_values
 import uuid
 from datetime import datetime, timezone
 
@@ -137,10 +138,13 @@ async def get_tool_details(
     if not tool:
         raise HTTPException(status_code=404, detail="Tool not found")
 
+    tool_data = tool.model_dump(exclude={"id"})
+    tool_data["tool_execution_config"] = mask_secret_values(tool_data.get("tool_execution_config"))
+
     return apiResponse(
         success=True,
         message="Tool details retrieved successfully",
-        data=tool.model_dump(exclude={"id"}),
+        data=tool_data,
     )
 
 

@@ -15,28 +15,9 @@ from src.core.db.db_schemas import (
     InboundSIP,
 )
 from src.core.logger import logger
+from src.core.providers.keys import mask_secret_values
 
 router = APIRouter()
-
-
-def mask_strategy_config(config: dict | None) -> dict | None:
-    """Mask sensitive headers in webhook strategy configs."""
-    if not config:
-        return config
-
-    masked_config = config.copy()
-    headers = masked_config.get("headers")
-    if isinstance(headers, dict):
-        masked_headers = {}
-        for key, value in headers.items():
-            lowered_key = key.lower()
-            if any(token in lowered_key for token in ("authorization", "token", "secret", "api-key", "apikey")) and value:
-                masked_headers[key] = "****"
-            else:
-                masked_headers[key] = value
-        masked_config["headers"] = masked_headers
-
-    return masked_config
 
 
 @router.post("/create")
@@ -139,7 +120,7 @@ async def list_inbound_context_strategies(
             "strategy_id": strategy.strategy_id,
             "strategy_name": strategy.strategy_name,
             "strategy_type": strategy.strategy_type,
-            "strategy_config": mask_strategy_config(strategy.strategy_config),
+            "strategy_config": mask_secret_values(strategy.strategy_config),
             "strategy_created_at": strategy.strategy_created_at,
             "strategy_updated_at": strategy.strategy_updated_at,
         }
@@ -169,7 +150,7 @@ async def get_inbound_context_strategy_details(
         raise HTTPException(status_code=404, detail="Inbound context strategy not found")
 
     data = strategy.model_dump(exclude={"id"})
-    data["strategy_config"] = mask_strategy_config(data.get("strategy_config"))
+    data["strategy_config"] = mask_secret_values(data.get("strategy_config"))
 
     return apiResponse(
         success=True,

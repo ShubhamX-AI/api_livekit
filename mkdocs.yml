@@ -96,6 +96,7 @@ nav:
     - Operations:
       - Health Check: api/health.md
       - Documentation Endpoint: api/documentation.md
+      - MCP Documentation Server: api/mcp.md
 
     - Assistants (Pipeline/Realtime):
       - Overview: api/assistant/index.md

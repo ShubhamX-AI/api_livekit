@@ -244,3 +244,7 @@ These sound settings are assistant defaults and apply to runtime sessions starte
 | 400 | Validation or payload mismatch error. |
 | 401 | Unauthorized. |
 | 500 | Internal server error. |
+
+## API Keys
+
+Provider keys are stored as sent — they are not checked against the provider, so a wrong key first shows up as a failure during a call. Every `api_key` is returned masked by `GET /assistant/details` and `GET /assistant/list`, and sending a masked value back is rejected with `422`.

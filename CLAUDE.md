@@ -74,9 +74,11 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | Tool loader (DB-backed function tools) | `src/core/agents/tool_builder.py` |
 | Outbound dispatcher loop | `src/services/outbound_dispatcher/dispatcher.py` |
 | Exotel SIP/RTP bridge | `src/services/exotel/custom_sip_reach/` |
+| Provider key masking | `src/core/providers/` |
 | MongoDB schemas (Beanie ODM) | `src/core/db/db_schemas.py` |
 | Settings / env config | `src/core/config.py` |
 | API routes | `src/api/routes/` |
+| MCP docs server (`/mcp`) | `src/api/mcp_docs.py` |
 
 ### Assistant modes
 

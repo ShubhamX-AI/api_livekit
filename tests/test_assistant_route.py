@@ -7,18 +7,22 @@ from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
 
 from src.api.models.api_schemas import (
-    SYSTEM_KEY_PLACEHOLDER,
+    CreateAssistant,
     NativeSTTConfig,
     UpdateAssistant,
 )
 from src.api.routes.assistant import (
     get_assistant_details,
-    mask_api_key,
-    mask_stt_config,
     merge_interaction_config,
     update_assistant,
 )
 from src.core.agents.stt.factory import resolve_stt
+from src.core.providers.keys import (
+    SYSTEM_KEY_PLACEHOLDER,
+    mask_api_key,
+    mask_assistant_keys,
+    provider_key_or_system,
+)
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts"))
 from migrate_stt_config import legacy_to_stt  # noqa: E402
@@ -39,6 +43,7 @@ class TestAssistantRoute(unittest.IsolatedAsyncioTestCase):
         )
         current_user = SimpleNamespace(user_email="user@example.com")
         assistant = SimpleNamespace(
+            assistant_llm_mode="pipeline",
             assistant_interaction_config=AssistantInteractionConfig(
                 speaks_first=True,
                 filler_words=True,
@@ -256,18 +261,51 @@ class TestMaskApiKey(unittest.TestCase):
         masked = mask_api_key({"api_key": "sk_sarvam_1234"})
         self.assertEqual(masked["api_key"], "sk_s...1234")
 
-    def test_native_stt_config_untouched(self):
-        self.assertEqual(mask_stt_config({"type": "native"}), {"type": "native"})
-
-    def test_sarvam_stt_config_masked(self):
-        masked = mask_stt_config({"type": "sarvam", "api_key": "sk_sarvam_1234"})
-        self.assertEqual(masked["api_key"], "sk_s...1234")
-
     def test_absent_key_still_announces_system_fallback_by_default(self):
         self.assertEqual(mask_api_key({"voice_id": "v1"})["api_key"], SYSTEM_KEY_PLACEHOLDER)
 
     def test_short_key_fully_hidden(self):
         self.assertEqual(mask_api_key({"api_key": "short"})["api_key"], "****")
+
+
+class TestMaskAssistantKeys(unittest.TestCase):
+    """Every key-bearing config is masked; native STT is left alone."""
+
+    def test_masks_all_key_bearing_configs(self):
+        masked = mask_assistant_keys(
+            {
+                "assistant_tts_config": {"type": "cartesia", "api_key": "sk_cartesia_1234"},
+                "assistant_stt_config": {"type": "sarvam", "api_key": "sk_sarvam_1234"},
+                "assistant_llm_config": {"provider": "openai", "api_key": "sk-proj-12345678"},
+            }
+        )
+        self.assertEqual(masked["assistant_tts_config"]["api_key"], "sk_c...1234")
+        self.assertEqual(masked["assistant_stt_config"]["api_key"], "sk_s...1234")
+        self.assertEqual(masked["assistant_llm_config"]["api_key"], "sk-p...5678")
+
+    def test_native_stt_config_untouched(self):
+        masked = mask_assistant_keys({"assistant_stt_config": {"type": "native"}})
+        self.assertEqual(masked["assistant_stt_config"], {"type": "native"})
+
+class TestProviderKeyOrSystem(unittest.TestCase):
+    """A key belonging to one provider must never be sent to another (see 6e77183)."""
+
+    def test_matching_provider_uses_assistant_key(self):
+        config = {"provider": "openai", "api_key": "sk-proj-assistant"}
+        self.assertEqual(
+            provider_key_or_system(config, "openai", "openai", "sk-system"),
+            "sk-proj-assistant",
+        )
+
+    def test_other_provider_falls_back_to_system_key(self):
+        config = {"provider": "gemini", "api_key": "google-key"}
+        self.assertEqual(
+            provider_key_or_system(config, "gemini", "openai", "sk-system"),
+            "sk-system",
+        )
+
+    def test_no_config_falls_back_to_system_key(self):
+        self.assertEqual(provider_key_or_system(None, None, "openai", "sk-system"), "sk-system")
 
 
 if __name__ == "__main__":

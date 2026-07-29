@@ -1,10 +1,10 @@
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from src.api.models.api_schemas import (
-    SYSTEM_KEY_PLACEHOLDER,
     CreateAssistant,
     UpdateAssistant,
 )
+from src.core.providers.keys import mask_assistant_keys
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Assistant, APIKey, CallRecord, AudioAsset
 from src.api.dependencies import get_current_user
@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 router = APIRouter()
 
 
-# Utility functions to merge interaction config and mask API keys in TTS config for security when listing assistants or fetching details
 def merge_interaction_config(base, overrides: dict) -> dict:
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
     return {**base_dict, **overrides}
@@ -30,26 +29,6 @@ async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
     )
     if not asset:
         raise HTTPException(status_code=404, detail="Audio asset not found")
-
-
-def mask_api_key(config: dict, field: str = "api_key") -> dict:
-    """Mask a provider key in a config dict for security."""
-    if not config:
-        return config
-    masked_config = config.copy()
-    key = masked_config.get(field)
-    if key:
-        masked_config[field] = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
-    else:
-        masked_config[field] = SYSTEM_KEY_PLACEHOLDER
-    return masked_config
-
-
-def mask_stt_config(config: Optional[dict]) -> Optional[dict]:
-    """Mask the STT key. Native STT takes no key, so leave that config untouched."""
-    if not config or config.get("type") == "native":
-        return config
-    return mask_api_key(config)
 
 
 # Create new assistant
@@ -214,17 +193,19 @@ async def list_assistants(
 
     # Filter only requested fields
     filtered_assistants = [
-        {
-            "assistant_id": assistant.assistant_id,
-            "assistant_name": assistant.assistant_name,
-            "assistant_llm_mode": assistant.assistant_llm_mode,
-            "assistant_tts_model": assistant.assistant_tts_model,
-            "assistant_tts_config": mask_api_key(assistant.assistant_tts_config) if assistant.assistant_tts_config else None,
-            "assistant_stt_model": assistant.assistant_stt_model,
-            "assistant_stt_config": mask_stt_config(assistant.assistant_stt_config),
-            "assistant_interaction_config": assistant.assistant_interaction_config.model_dump(),
-            "assistant_created_by_email": assistant.assistant_created_by_email,
-        }
+        mask_assistant_keys(
+            {
+                "assistant_id": assistant.assistant_id,
+                "assistant_name": assistant.assistant_name,
+                "assistant_llm_mode": assistant.assistant_llm_mode,
+                "assistant_tts_model": assistant.assistant_tts_model,
+                "assistant_tts_config": assistant.assistant_tts_config,
+                "assistant_stt_model": assistant.assistant_stt_model,
+                "assistant_stt_config": assistant.assistant_stt_config,
+                "assistant_interaction_config": assistant.assistant_interaction_config.model_dump(),
+                "assistant_created_by_email": assistant.assistant_created_by_email,
+            }
+        )
         for assistant in assistants
     ]
 
@@ -259,13 +240,7 @@ async def get_assistant_details(
     if not assistant:
         raise HTTPException(status_code=404, detail="Assistant not found")
 
-    assistant_data = assistant.model_dump(exclude={"id"})
-    if assistant_data.get("assistant_tts_config"):
-        assistant_data["assistant_tts_config"] = mask_api_key(assistant_data["assistant_tts_config"])
-    if assistant_data.get("assistant_llm_config"):
-        assistant_data["assistant_llm_config"] = mask_api_key(assistant_data["assistant_llm_config"])
-    if assistant_data.get("assistant_stt_config"):
-        assistant_data["assistant_stt_config"] = mask_stt_config(assistant_data["assistant_stt_config"])
+    assistant_data = mask_assistant_keys(assistant.model_dump(exclude={"id"}))
 
     return apiResponse(
         success=True,

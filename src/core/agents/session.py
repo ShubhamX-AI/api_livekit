@@ -40,6 +40,7 @@ from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.db.database import Database
+from src.core.providers.keys import provider_key_or_system
 from src.core.db.db_schemas import Assistant, AudioAsset, InboundContextStrategy, UsageRecord, CallRecord
 from src.services.livekit.livekit_svc import LiveKitService
 from src.services.storage import s3_audio
@@ -586,7 +587,11 @@ async def entrypoint(ctx: JobContext):
             use_llm_for_speech=is_realtime,
         ) if silence_reprompts_enabled else None
     )
-    _filler_api_key = (llm_config or {}).get("api_key") or settings.OPENAI_API_KEY
+    # Filler words always go through OpenAI, so the assistant's LLM key only fits
+    # when the assistant's LLM provider is OpenAI too.
+    _filler_api_key = provider_key_or_system(
+        llm_config, realtime_provider, "openai", settings.OPENAI_API_KEY
+    )
     filler_controller = FillerController(session=session, context_turns=context_turns, openai_api_key=_filler_api_key) if filler_words_enabled else None
     hold_controller = HoldController(
         logger=logger,

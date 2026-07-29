@@ -1,39 +1,7 @@
-import re
-
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from typing import Optional, Literal, Union, Annotated, List, Any
 
-
-# ── API key hygiene ────────────────────────────────
-# GET /assistant/details and /assistant/list return provider keys masked (see
-# mask_api_key in src/api/routes/assistant.py). Clients that read an assistant,
-# edit one field and PATCH the whole object back would otherwise persist the
-# mask as a real key — which then wins over the system key and 401s mid-call.
-SYSTEM_KEY_PLACEHOLDER = "Using System provided API Key"
-_MASK_PATTERN = re.compile(r".{4}\.\.\..{4}")
-
-
-def reject_masked_key(v: Optional[str]) -> Optional[str]:
-    """Refuse api_key values that came out of mask_api_key."""
-    if isinstance(v, str) and (
-        v == SYSTEM_KEY_PLACEHOLDER or v == "****" or _MASK_PATTERN.fullmatch(v)
-    ):
-        raise ValueError(
-            "api_key looks masked (as returned by GET /assistant/details). "
-            "Send the real key, or omit the field to use the system key."
-        )
-    return v
-
-
-class ProviderKeyConfig(BaseModel):
-    """Base for any provider config carrying an optional `api_key` override."""
-
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Provider API key (optional, falls back to system key)")
-
-    @field_validator("api_key")
-    @classmethod
-    def _no_masked_api_key(cls, v):
-        return reject_masked_key(v)
+from src.core.providers.keys import ProviderApiKey, reject_masked_config
 
 
 # Model for creating API key
@@ -56,33 +24,33 @@ class CreateApiKey(BaseModel):
 
 
 # ── TTS Config sub-models ──────────────────────────
-class CartesiaTTSConfig(ProviderKeyConfig):
+class CartesiaTTSConfig(BaseModel):
     type: Literal["cartesia"] = "cartesia"  # discriminator field
     voice_id: str = Field(..., min_length=1, max_length=100, description="Cartesia voice ID")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system key)")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system key)")
 
 
-class SarvamTTSConfig(ProviderKeyConfig):
+class SarvamTTSConfig(BaseModel):
     type: Literal["sarvam"] = "sarvam"
     speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier")
     target_language_code: str = Field("bn-IN", max_length=10, description="BCP-47 language code")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_stt_config.api_key.")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_stt_config.api_key.")
 
 
-class ElevenLabsTTSConfig(ProviderKeyConfig):
+class ElevenLabsTTSConfig(BaseModel):
     type: Literal["elevenlabs"] = "elevenlabs"
     voice_id: str = Field(..., min_length=1, max_length=100, description="ElevenLabs voice ID")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
 
 
-class MistralTTSConfig(ProviderKeyConfig):
+class MistralTTSConfig(BaseModel):
     type: Literal["mistral"] = "mistral"
     voice_id: str = Field(..., min_length=1, max_length=100, description="Mistral voice ID")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
 
 
 # ── Assistant LLM Config sub-model ───────────────────
-class AssistantLLMConfig(ProviderKeyConfig):
+class AssistantLLMConfig(BaseModel):
     provider: Optional[Literal["gemini", "openai"]] = Field(
         None,
         description="LLM vendor for either mode: gemini | openai. Defaults to gemini in realtime mode, openai in pipeline mode.",
@@ -95,7 +63,7 @@ class AssistantLLMConfig(ProviderKeyConfig):
         None,
         description="Voice override. Used when the model speaks its own audio (realtime mode).",
     )
-    api_key: Optional[str] = Field(
+    api_key: ProviderApiKey = Field(
         None,
         min_length=1,
         max_length=200,
@@ -117,11 +85,11 @@ class NativeSTTConfig(BaseModel):
     type: Literal["native"] = "native"  # discriminator field
 
 
-class SarvamSTTConfig(ProviderKeyConfig):
+class SarvamSTTConfig(BaseModel):
     type: Literal["sarvam"] = "sarvam"
     model: str = Field("saaras:v3", max_length=40, description="Sarvam STT model")
     language: str = Field("unknown", max_length=10, description="BCP-47 language code, or 'unknown' to auto-detect")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key for the parallel STT tap (optional, falls back to system SARVAM_API_KEY). Distinct from assistant_tts_config.api_key, which belongs to the selected TTS provider.")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Sarvam API key for the parallel STT tap (optional, falls back to system SARVAM_API_KEY). Distinct from assistant_tts_config.api_key, which belongs to the selected TTS provider.")
 
 
 STTConfig = Annotated[
@@ -704,6 +672,11 @@ class CreateTool(BaseModel):
         description="Execution config: {'url': '...'} for webhook, {'value': ...} for static_return",
     )
 
+    @field_validator("tool_execution_config")
+    @classmethod
+    def _no_masked_secrets(cls, v):
+        return reject_masked_config(v)
+
     class Config:
         str_strip_whitespace = True
         json_schema_extra = {
@@ -742,6 +715,11 @@ class UpdateTool(BaseModel):
         None, description="Execution type"
     )
     tool_execution_config: Optional[dict] = Field(None, description="Execution config")
+
+    @field_validator("tool_execution_config")
+    @classmethod
+    def _no_masked_secrets(cls, v):
+        return reject_masked_config(v)
 
     class Config:
         str_strip_whitespace = True
