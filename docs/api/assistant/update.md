@@ -54,6 +54,8 @@ Update an existing assistant. Only send fields you want to change.
     | `assistant_llm_mode` | string | Yes | Set to `pipeline`. |
     | `assistant_tts_model` | string | Conditional | Required only if no TTS config exists in DB. |
     | `assistant_tts_config` | object | Conditional | Required if `assistant_tts_model` is provided. Must be sent together. |
+    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. |
+    | `assistant_stt_config` | object | No | Config for the selected STT provider. Requires `assistant_stt_model`; omit it to reset that provider's defaults. |
 
     !!! note "Stale realtime LLM config is cleared automatically"
         When switching back to pipeline mode, any Gemini/realtime `assistant_llm_config` stored from the previous realtime session is automatically cleared. The assistant will fall back to the system `OPENAI_API_KEY` unless you explicitly provide a new `assistant_llm_config.api_key`.
@@ -112,6 +114,7 @@ Update an existing assistant. Only send fields you want to change.
 ## Validation Rules
 
 - TTS fields must come in pairs: send both `assistant_tts_model` and `assistant_tts_config`, or neither.
+- STT is looser: `assistant_stt_model` alone resets the config to that provider's defaults; `assistant_stt_config` alone is rejected (no discriminator to resolve against).
 - In `pipeline` mode, `assistant_llm_config` may be omitted entirely.
 - In `pipeline` mode, only `assistant_llm_config.api_key` affects runtime behavior.
 - Switching to `realtime` requires `assistant_llm_config`.
@@ -128,7 +131,8 @@ Update an existing assistant. Only send fields you want to change.
 - `assistant_interaction_config.input_guard_window_sec` sets how many seconds of **every** agent reply have caller audio blanked (0.0-10.0, default `3.0`). This is what blocks repeated "Hello? Hello?" and short filler sounds ("um", "uh") from cutting the agent off — the input speech gate cannot, because those are genuine speech. Raising it rejects more fillers but also prevents genuine interruptions for that long; `0` disables the guard entirely. The window is a ceiling, not a fixed cost: it releases early when the reply finishes. Applies in both `pipeline` and `realtime` modes.
 - `assistant_interaction_config.preferred_languages` accepts a list of BCP-47 codes (e.g. `["hi-IN", "en-US"]`). Pass an empty list `[]` to clear the hint and revert to auto-detection.
 - `assistant_interaction_config.max_call_duration_minutes` sets a hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached the assistant speaks a brief farewell and the call is torn down gracefully. Unset or `null` falls back to the platform default of **30 minutes**. Does not apply to passthrough calls. The end-of-call webhook payload and `CallRecord.call_end_reason` are set to `max_duration_exceeded` for cuts triggered by this limit.
-- `assistant_interaction_config.stt_api_key` is the Sarvam key for the parallel STT tap (`user_stt_provider="sarvam"`). It is **not** the same field as `assistant_tts_config.api_key`, which belongs to the selected TTS provider — sending a Cartesia/ElevenLabs/Mistral key to Sarvam fails with `403`. Omit it to keep the stored value; unset falls back to the system `SARVAM_API_KEY`.
+- `assistant_stt_config.api_key` is the Sarvam key for the parallel STT tap (`assistant_stt_model="sarvam"`). It is **not** the same field as `assistant_tts_config.api_key`, which belongs to the selected TTS provider — sending a Cartesia/ElevenLabs/Mistral key to Sarvam fails with `403`. Unset falls back to the system `SARVAM_API_KEY`.
+- The retired `assistant_interaction_config.user_stt_provider` / `.stt_api_key` keys now return `422`. Use `assistant_stt_model` + `assistant_stt_config` instead.
 - Masked keys are rejected. `GET /assistant/details` returns keys as `sk-t...5678`, `****`, or `Using System provided API Key`; PATCHing any of those back returns `422`. Send the real key or omit the field.
 - Partial `assistant_interaction_config` updates are merged with the stored config; omitted fields are preserved.
 - Call-trigger APIs do not provide per-call overrides for these sound settings.

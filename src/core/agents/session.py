@@ -35,7 +35,7 @@ from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
-from src.core.agents.stt import run_sarvam_parallel_stt
+from src.core.agents.stt import resolve_stt, run_sarvam_parallel_stt
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
@@ -415,6 +415,7 @@ async def entrypoint(ctx: JobContext):
     realtime_provider = (llm_config.get("provider") or _default_provider).lower()
     # Set inside the half-cascade branches when Sarvam parallel STT is active.
     _use_sarvam_stt = False
+    _stt_provider, _stt_config = resolve_stt(assistant)
 
     if is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
@@ -479,10 +480,7 @@ async def entrypoint(ctx: JobContext):
         # Sarvam is active we skip the LLM's own transcription to avoid dual writes and save cost.
         # Text-only chats have no audio, so treat as "no parallel STT" — the SDK's own
         # conversation events carry the user text.
-        _use_sarvam_stt = (
-            not is_text_only
-            and (interaction_config.user_stt_provider or "sarvam") == "sarvam"
-        )
+        _use_sarvam_stt = not is_text_only and _stt_provider == "sarvam"
         _openai_transcription = None if _use_sarvam_stt else AudioTranscription(
             model="gpt-4o-transcribe",
             prompt=_stt_prompt,
@@ -834,9 +832,9 @@ async def entrypoint(ctx: JobContext):
             target_identity=primary_participant_identity,
             on_final=_on_sarvam_final,
             stop_event=_sarvam_stop,
-            # Never assistant_tts_config["api_key"] — that key belongs to the selected TTS
-            # provider (cartesia/elevenlabs/mistral) and Sarvam rejects it with a 403.
-            api_key=interaction_config.stt_api_key or settings.SARVAM_API_KEY,
+            api_key=_stt_config.get("api_key"),
+            model=_stt_config.get("model"),
+            language=_stt_config.get("language"),
         ))
 
     # --- Start Instruction ---

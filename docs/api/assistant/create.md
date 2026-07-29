@@ -47,6 +47,29 @@ Create a new assistant configuration.
     | :--- | :--- | :--- | :--- |
     | `api_key` | string | No | Optional per-assistant OpenAI key. Overrides system `OPENAI_API_KEY`. |
 
+    **STT configuration** (optional — defaults to Sarvam with the system key)
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. |
+    | `assistant_stt_config` | object | No | Config for the selected STT provider (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
+
+    === "Sarvam"
+
+        Runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts, avoids the script-switching hallucinations of a generic model on code-switched speech. The LLM still consumes the audio directly for understanding.
+
+        | Field | Type | Required | Description |
+        | :--- | :--- | :--- | :--- |
+        | `model` | string | No | Sarvam STT model. Default: `saaras:v3`. |
+        | `language` | string | No | BCP-47 code, or `unknown` to auto-detect. Default: `unknown`. |
+        | `api_key` | string | No | Optional Sarvam API key. Falls back to system `SARVAM_API_KEY`. **Distinct from `assistant_tts_config.api_key`**, which belongs to whichever TTS provider you selected — Sarvam STT rejects a Cartesia/ElevenLabs/Mistral key with `403`. Masked in `GET /assistant/details` and `GET /assistant/list`. |
+
+    === "Native"
+
+        The conversational LLM transcribes itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No configuration fields — send `{}` or omit `assistant_stt_config`.
+
+    Ignored in `realtime` (audio-out) mode, where the model always transcribes.
+
     **TTS provider configuration**
 
     === "Cartesia"
@@ -135,7 +158,7 @@ Create a new assistant configuration.
     | `api_key` | string | No | Optional per-assistant provider key. Falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY`. |
 
     !!! tip "Sarvam parallel STT (pipeline mode)"
-        In `pipeline` mode (either provider), user transcripts default to Sarvam Saras v3 (see `assistant_interaction_config.user_stt_provider` below) — native-script Indic transcripts for code-switched calls. The LLM still consumes the audio directly for understanding. Realtime (audio-out) mode transcribes via the model itself.
+        In `pipeline` mode (either provider), user transcripts default to Sarvam Saras v3 (see `assistant_stt_model` in the Pipeline tab) — native-script Indic transcripts for code-switched calls. The LLM still consumes the audio directly for understanding. Realtime (audio-out) mode transcribes via the model itself.
 
     **Minimal realtime example**
 
@@ -169,6 +192,9 @@ Create a new assistant configuration.
 
 ## Interaction Configuration
 
+!!! warning "`user_stt_provider` and `stt_api_key` were moved"
+    STT is now selected like TTS, through the top-level `assistant_stt_model` + `assistant_stt_config` pair (see the Pipeline tab above). Sending the old `assistant_interaction_config.user_stt_provider` or `.stt_api_key` keys now fails with `422` — silently ignoring them would have dropped per-assistant Sarvam keys. Existing assistants are migrated by `scripts/migrate_stt_config.py`; behavior is unchanged.
+
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `speaks_first` | boolean | No | If `true` (default), assistant sends an opening response first in both `pipeline` and `realtime` modes. |
@@ -181,8 +207,6 @@ Create a new assistant configuration.
 | `allow_interruptions` | boolean | No | If `true`, users can interrupt the assistant's initial greeting. Default: `false` (greeting is uninterruptible). |
 | `input_guard_window_sec` | number | No | Seconds at the start of **every** agent reply during which caller audio is blanked (0.0-10.0). Default: `3.0`. Blocks repeated "Hello? Hello?" and short filler sounds ("um", "uh") from cutting the agent off — the noise gate cannot filter those, since they are genuine speech. Raise it to reject more fillers; the caller also cannot genuinely interrupt within the window. `0` disables the guard. Unmutes early if the reply finishes first. |
 | `preferred_languages` | array of strings | No | BCP-47 language codes the agent supports (e.g. `["hi-IN", "en-US", "ta-IN"]`). Used to hint the STT model when the speaker is multilingual or switches between languages. If omitted, the STT model auto-detects all languages. |
-| `user_stt_provider` | string | No | User-transcription source in `pipeline` mode (either provider). `sarvam` (default) runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts, avoids script-switching hallucinations. `native` lets the conversational LLM transcribe itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). Ignored in `realtime` (audio-out) mode, where the model transcribes. |
-| `stt_api_key` | string | No | Sarvam API key used by the parallel STT tap when `user_stt_provider="sarvam"`. Falls back to the system `SARVAM_API_KEY` when unset. **Distinct from `assistant_tts_config.api_key`**, which belongs to whichever TTS provider you selected — Sarvam STT rejects a Cartesia/ElevenLabs/Mistral key with `403`. Masked in `GET /assistant/details` and `GET /assistant/list`. |
 | `max_call_duration_minutes` | number | No | Hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached, the assistant speaks a brief farewell and the call is torn down gracefully (recording, transcripts, usage and webhook all finalize cleanly). When unset or `null`, the platform default of **30 minutes** applies. Does not apply to passthrough calls (no AI agent). The call termination reason is reported as `max_duration_exceeded` in the end-of-call webhook payload and in the `CallRecord.call_end_reason` field. |
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.

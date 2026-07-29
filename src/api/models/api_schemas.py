@@ -1,6 +1,6 @@
 import re
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from typing import Optional, Literal, Union, Annotated, List, Any
 
 
@@ -66,7 +66,7 @@ class SarvamTTSConfig(ProviderKeyConfig):
     type: Literal["sarvam"] = "sarvam"
     speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier")
     target_language_code: str = Field("bn-IN", max_length=10, description="BCP-47 language code")
-    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_interaction_config.stt_api_key.")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_stt_config.api_key.")
 
 
 class ElevenLabsTTSConfig(ProviderKeyConfig):
@@ -110,6 +110,46 @@ TTSConfig = Annotated[
 ]
 
 
+# ── STT Config sub-models ──────────────────────────
+class NativeSTTConfig(BaseModel):
+    """No knobs — the conversational LLM transcribes itself with the prompt built at runtime."""
+
+    type: Literal["native"] = "native"  # discriminator field
+
+
+class SarvamSTTConfig(ProviderKeyConfig):
+    type: Literal["sarvam"] = "sarvam"
+    model: str = Field("saaras:v3", max_length=40, description="Sarvam STT model")
+    language: str = Field("unknown", max_length=10, description="BCP-47 language code, or 'unknown' to auto-detect")
+    api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key for the parallel STT tap (optional, falls back to system SARVAM_API_KEY). Distinct from assistant_tts_config.api_key, which belongs to the selected TTS provider.")
+
+
+STTConfig = Annotated[
+    Union[NativeSTTConfig, SarvamSTTConfig],
+    Field(discriminator="type"),
+]
+
+
+def inject_provider_type(data: dict, model_field: str, config_field: str) -> None:
+    """Copy the provider name into config["type"] so the discriminated union resolves."""
+    model = data.get(model_field)
+    config = data.get(config_field)
+    if model and isinstance(config, dict):
+        config["type"] = model
+
+
+def inject_stt_config(data: dict) -> None:
+    """STT config is optional — a bare assistant_stt_model gets a defaults-only config.
+
+    Keeps the stored pair consistent, so a sarvam→native switch cannot leave a stale
+    sarvam config behind.
+    """
+    model = data.get("assistant_stt_model")
+    if model and data.get("assistant_stt_config") is None:
+        data["assistant_stt_config"] = {}
+    inject_provider_type(data, "assistant_stt_model", "assistant_stt_config")
+
+
 # ── Interaction Config sub-models ──────────────────
 class AssistantInteractionConfigSchema(BaseModel):
     speaks_first: bool = Field(True, description="If True (default), assistant speaks first. If False, assistant stays silent and waits for the user to speak.")
@@ -122,14 +162,11 @@ class AssistantInteractionConfigSchema(BaseModel):
     allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
     input_guard_window_sec: float = Field(3.0, ge=0.0, le=10.0, description="Seconds at the start of every agent reply during which caller audio is blanked. Blocks repeated 'Hello? Hello?' and short filler sounds ('um', 'uh') from cutting the agent off. Raise to reject more fillers; the caller also cannot genuinely interrupt within the window. 0 disables.")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. If unset, model auto-detects all languages.")
-    stt_api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key for user transcription (user_stt_provider='sarvam'). Separate from assistant_tts_config.api_key, which is scoped to the selected TTS provider. Falls back to the system key.")
-    user_stt_provider: Literal["sarvam", "native"] = Field("sarvam", description="User-transcription source in pipeline mode (either provider). 'sarvam' (default) runs Sarvam Saras v3 as a parallel tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-transcribe on an OpenAI pipeline, Gemini's own on a Gemini pipeline). Ignored in realtime (audio-out) mode.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. When reached, agent says a brief farewell then hangs up gracefully. Unset/null defaults to 30 minutes at runtime.")
 
-    @field_validator("stt_api_key")
-    @classmethod
-    def _no_masked_stt_key(cls, v):
-        return reject_masked_key(v)
+    # STT moved out to assistant_stt_model / assistant_stt_config. Reject the retired
+    # keys loudly — silently ignoring them would drop a caller's per-assistant Sarvam key.
+    model_config = ConfigDict(extra="forbid")
 
 
 class UpdateAssistantInteractionConfigSchema(BaseModel):
@@ -143,14 +180,9 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
     input_guard_window_sec: Optional[float] = Field(None, ge=0.0, le=10.0, description="Seconds at the start of every agent reply during which caller audio is blanked, blocking repeats and filler sounds. 0 disables.")
     preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. Pass empty list to clear.")
-    stt_api_key: Optional[str] = Field(None, min_length=1, max_length=100, description="Sarvam API key for user transcription. Omit to keep the stored value; falls back to the system key when never set.")
-    user_stt_provider: Optional[Literal["sarvam", "native"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'native'). Only affects pipeline mode.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. Pass null/omit to use platform default (30 min).")
 
-    @field_validator("stt_api_key")
-    @classmethod
-    def _no_masked_stt_key(cls, v):
-        return reject_masked_key(v)
+    model_config = ConfigDict(extra="forbid")  # see AssistantInteractionConfigSchema
 
 
 # ── Greeting audio sub-models ──────────────────
@@ -173,6 +205,8 @@ class CreateAssistant(BaseModel):
     assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode.",)
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline mode)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline mode)")
+    assistant_stt_model: Optional[Literal["native", "sarvam"]] = Field(None, description="User-transcription source in pipeline mode. 'sarvam' (the default when unset) runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-transcribe, or Gemini's own). Ignored in realtime (audio-out) mode.")
+    assistant_stt_config: Optional[STTConfig] = Field(None, description="STT configuration object. Optional — omit for provider defaults and the system API key.")
     assistant_start_instruction: Optional[str] = Field(None, max_length=500, description="Assistant's start instruction")
     assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
     assistant_greeting_audio: GreetingAudioSchema = Field(default_factory=GreetingAudioSchema, description="Optional prerecorded greeting (references an audio asset from /audio)")
@@ -237,12 +271,10 @@ class CreateAssistant(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def inject_tts_type(cls, data: dict):
-        """Inject the `type` discriminator into tts_config so Pydantic picks the right model."""
+        """Inject the `type` discriminator into tts_config/stt_config so Pydantic picks the right model."""
         if isinstance(data, dict):
-            model = data.get("assistant_tts_model")
-            config = data.get("assistant_tts_config")
-            if model and isinstance(config, dict):
-                config["type"] = model
+            inject_provider_type(data, "assistant_tts_model", "assistant_tts_config")
+            inject_stt_config(data)
         return data
 
     @model_validator(mode="after")
@@ -256,6 +288,8 @@ class CreateAssistant(BaseModel):
         elif self.assistant_llm_mode == "realtime":
             if not self.assistant_llm_config:
                 raise ValueError("assistant_llm_config is required when assistant_llm_mode is 'realtime'")
+        if self.assistant_stt_config and not self.assistant_stt_model:
+            raise ValueError("`assistant_stt_config` requires `assistant_stt_model`.")
         if self.assistant_end_call_enabled:
             if not self.assistant_end_call_trigger_phrase:
                 raise ValueError("assistant_end_call_trigger_phrase is required when assistant_end_call_enabled is True")
@@ -273,6 +307,8 @@ class UpdateAssistant(BaseModel):
     assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. In pipeline mode only api_key is used (overrides system OPENAI_API_KEY); in realtime mode provider/model/voice/api_key are supported.")
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider. Required when switching to pipeline mode only if no TTS config is already stored on the assistant.")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
+    assistant_stt_model: Optional[Literal["native", "sarvam"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'native'). Only affects pipeline mode. Sending it without assistant_stt_config resets the config to provider defaults.")
+    assistant_stt_config: Optional[STTConfig] = Field(None, description="STT configuration object. Must be sent together with assistant_stt_model.")
     assistant_start_instruction: Optional[str] = Field(None, max_length=500, description="Assistant's start instruction (optional)")
     assistant_interaction_config: Optional[UpdateAssistantInteractionConfigSchema] = Field(None, description="Update interaction settings")
     assistant_greeting_audio: Optional[UpdateGreetingAudioSchema] = Field(None, description="Attach/detach a greeting audio asset or toggle it on/off")
@@ -306,19 +342,22 @@ class UpdateAssistant(BaseModel):
     def inject_tts_type(cls, data: dict):
         """Same injection for updates."""
         if isinstance(data, dict):
-            model = data.get("assistant_tts_model")
-            config = data.get("assistant_tts_config")
-            if model and isinstance(config, dict):
-                config["type"] = model
+            inject_provider_type(data, "assistant_tts_model", "assistant_tts_config")
+            inject_stt_config(data)
         return data
 
     @model_validator(mode="after")
     def validate_update_consistency(self):
-        """Validate TTS and LLM config consistency on update."""
+        """Validate TTS, STT and LLM config consistency on update."""
         # TTS fields must come in pairs
         if bool(self.assistant_tts_model) != bool(self.assistant_tts_config):
             raise ValueError(
                 "Provide both `assistant_tts_model` and `assistant_tts_config` together, or neither."
+            )
+        # An STT config with no model has no discriminator to resolve against.
+        if self.assistant_stt_config and not self.assistant_stt_model:
+            raise ValueError(
+                "`assistant_stt_config` requires `assistant_stt_model`."
             )
         # Switching to realtime requires llm_config
         if self.assistant_llm_mode == "realtime" and not self.assistant_llm_config:

@@ -30,6 +30,8 @@ List assistants created by the current user.
 | `data.assistants[].assistant_llm_mode` | string | Assistant mode: `pipeline` or `realtime`. |
 | `data.assistants[].assistant_tts_model` | string/null | TTS provider for pipeline assistants. |
 | `data.assistants[].assistant_tts_config` | object/null | Masked TTS config. |
+| `data.assistants[].assistant_stt_model` | string/null | STT provider (`sarvam` \| `native`). `null` means the default, `sarvam`. |
+| `data.assistants[].assistant_stt_config` | object/null | Masked STT config (`native` carries no key and is returned as-is). |
 | `data.assistants[].assistant_interaction_config` | object | Interaction settings. |
 | `data.assistants[].assistant_created_by_email` | string | Creator email. |
 | `data.pagination.total` | integer | Total matching assistants. |
@@ -62,6 +64,13 @@ List assistants created by the current user.
           "voice_id": "a16...275",
           "api_key": "Using System provided API Key"
         },
+        "assistant_stt_model": "sarvam",
+        "assistant_stt_config": {
+          "type": "sarvam",
+          "model": "saaras:v3",
+          "language": "unknown",
+          "api_key": "Using System provided API Key"
+        },
         "assistant_interaction_config": {
           "speaks_first": true,
           "filler_words": true,
@@ -73,8 +82,6 @@ List assistants created by the current user.
           "allow_interruptions": false,
           "input_guard_window_sec": 3.0,
           "preferred_languages": null,
-          "user_stt_provider": "sarvam",
-          "stt_api_key": "Using System provided API Key",
           "max_call_duration_minutes": null
         },
         "assistant_created_by_email": "admin@example.com"

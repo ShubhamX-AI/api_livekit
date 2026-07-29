@@ -375,6 +375,7 @@ api_livekit/
 │   │   │   ├── utils.py                # render_prompt
 │   │   │   ├── stt/
 │   │   │   │   ├── __init__.py
+│   │   │   │   ├── factory.py          # STT resolver (native | sarvam)
 │   │   │   │   └── sarvam_parallel.py  # Sarvam Saras v3 parallel STT tap
 │   │   │   └── tts/
 │   │   │       ├── __init__.py

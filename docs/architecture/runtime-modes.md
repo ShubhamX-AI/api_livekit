@@ -115,7 +115,7 @@ The function (`src/core/agents/tts/factory.py`):
 
 ## Sarvam Parallel User Transcription
 
-**Problem.** In OpenAI pipeline mode (`assistant_llm_mode="pipeline"`, `provider="openai"`) with `user_stt_provider="native"`, the `input_audio_transcription` side channel uses `gpt-4o-transcribe`. On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
+**Problem.** In OpenAI pipeline mode (`assistant_llm_mode="pipeline"`, `provider="openai"`) with `assistant_stt_model="native"`, the `input_audio_transcription` side channel uses `gpt-4o-transcribe`. On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
 
 - Switches scripts mid-utterance (Devanagari → Tamil → Arabic → Spanish)
 - Romanises words instead of using the speaker's native script
@@ -123,16 +123,18 @@ The function (`src/core/agents/tts/factory.py`):
 
 Direct fix by swapping the transcription model is **not possible** — `input_audio_transcription.model` is a closed whitelist controlled server-side by OpenAI (`whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe-diarize`). The field accepts no URL, callback, or third-party endpoint.
 
-**Solution.** Run **Sarvam Saras v3** (`saaras:v3`, `codemix` mode, `language="unknown"`) as a parallel audio tap from the LiveKit room. Sarvam is trained on Indic + code-switched speech and outputs each word in its correct native script. The OpenAI Realtime LLM continues to consume the audio directly for understanding and reply generation — only the persisted user transcript is overridden.
+**Solution.** Run **Sarvam Saras v3** (`saaras:v3`, `codemix` mode, `language="unknown"` by default) as a parallel audio tap from the LiveKit room. Sarvam is trained on Indic + code-switched speech and outputs each word in its correct native script. The OpenAI Realtime LLM continues to consume the audio directly for understanding and reply generation — only the persisted user transcript is overridden.
 
-Configured per assistant via `assistant_interaction_config.user_stt_provider`:
+Selected per assistant via `assistant_stt_model`, configured via `assistant_stt_config` — the same model-plus-config shape TTS uses. `src/core/agents/stt/factory.py::resolve_stt` resolves the pair; unset means `sarvam`.
 
 | Value | Effect |
 |-------|--------|
-| `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). |
-| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap. |
+| `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). Config: `model`, `language`, `api_key`. |
+| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap, no config fields. |
 
-**API key.** The tap authenticates with `assistant_interaction_config.stt_api_key`, falling back to the system `SARVAM_API_KEY`. It deliberately does **not** read `assistant_tts_config["api_key"]`: that field is scoped to the selected TTS provider, so on a Cartesia/ElevenLabs/Mistral assistant it holds a foreign key and Sarvam answers `403 Invalid response status`. Because the tap also disables the LLM's own transcription, an auth failure there means the call runs with **no user transcripts at all** — so keep the two keys separate.
+**API key.** The tap authenticates with `assistant_stt_config.api_key`, falling back to the system `SARVAM_API_KEY`. It deliberately does **not** read `assistant_tts_config["api_key"]`: that field is scoped to the selected TTS provider, so on a Cartesia/ElevenLabs/Mistral assistant it holds a foreign key and Sarvam answers `403 Invalid response status`. Because the tap also disables the LLM's own transcription, an auth failure there means the call runs with **no user transcripts at all** — so keep the two keys separate. When neither key is present, `resolve_stt` logs a warning and degrades the call to `native` rather than starting a tap that cannot authenticate.
+
+**Migration.** These two fields used to live inside `assistant_interaction_config` (`user_stt_provider`, `stt_api_key`). `scripts/migrate_stt_config.py` moves them; the retired keys are now rejected with `422`.
 
 **Data flow per utterance:**
 

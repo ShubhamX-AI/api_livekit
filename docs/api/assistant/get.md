@@ -47,10 +47,10 @@ Fetch full configuration for one assistant.
 
 ## Example Response
 
-`assistant_llm_config.api_key`, `assistant_tts_config.api_key` and `assistant_interaction_config.stt_api_key` are always masked in detail responses. If no per-assistant key is stored, the response shows `Using System provided API Key`.
+`assistant_llm_config.api_key`, `assistant_tts_config.api_key` and `assistant_stt_config.api_key` are always masked in detail responses. If no per-assistant key is stored, the response shows `Using System provided API Key`. A `native` STT config carries no key and is returned untouched.
 
 !!! warning "Do not PATCH a masked key back"
-    The masked forms (`sk-t...5678`, `****`, `Using System provided API Key`) are rejected with `422` by `POST /assistant/create` and `PATCH /assistant/update`. When editing an assistant, either send the real key or omit the field entirely — omitting keeps the stored key (for `stt_api_key`) or falls back to the system key. Persisting a mask used to break TTS/STT mid-call with a `401`/`403`.
+    The masked forms (`sk-t...5678`, `****`, `Using System provided API Key`) are rejected with `422` by `POST /assistant/create` and `PATCH /assistant/update`. When editing an assistant, either send the real key or omit the field entirely — omitting falls back to the system key. Persisting a mask used to break TTS/STT mid-call with a `401`/`403`.
 
 ```json
 {
@@ -70,6 +70,13 @@ Fetch full configuration for one assistant.
     },
     "assistant_tts_model": null,
     "assistant_tts_config": null,
+    "assistant_stt_model": "sarvam",
+    "assistant_stt_config": {
+      "type": "sarvam",
+      "model": "saaras:v3",
+      "language": "unknown",
+      "api_key": "Using System provided API Key"
+    },
     "assistant_start_instruction": null,
     "assistant_interaction_config": {
       "speaks_first": true,
@@ -82,8 +89,6 @@ Fetch full configuration for one assistant.
       "allow_interruptions": false,
       "input_guard_window_sec": 3.0,
       "preferred_languages": null,
-      "user_stt_provider": "sarvam",
-      "stt_api_key": "Using System provided API Key",
       "max_call_duration_minutes": null
     },
     "assistant_end_call_enabled": false,

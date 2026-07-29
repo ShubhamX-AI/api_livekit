@@ -19,6 +19,8 @@ async def run_sarvam_parallel_stt(
     on_final: Callable[[str], None],
     stop_event: asyncio.Event,
     api_key: str | None = None,
+    model: str | None = None,
+    language: str | None = None,
 ) -> None:
     """Stream caller audio into Sarvam Saras v3 and invoke `on_final` for each finalized utterance.
 
@@ -26,10 +28,12 @@ async def run_sarvam_parallel_stt(
     Exits when `stop_event` is set.
     """
     sarvam_stt = sarvam_plugin.STT(
-        model="saaras:v3",
+        model=model or "saaras:v3",
         mode="codemix",
-        language="unknown",
-        api_key=settings.SARVAM_API_KEY,
+        language=language or "unknown",
+        # Never assistant_tts_config["api_key"] — that key belongs to the selected TTS
+        # provider (cartesia/elevenlabs/mistral) and Sarvam rejects it with a 403.
+        api_key=api_key or settings.SARVAM_API_KEY,
         sample_rate=16000,
     )
     stream = sarvam_stt.stream()

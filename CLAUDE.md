@@ -69,6 +69,7 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | Session lifecycle (gate, recording) | `src/core/agents/session_lifecycle.py` |
 | Voice features (silence watchdog, filler, hold) | `src/core/agents/voice_features.py` |
 | TTS factory (cartesia/sarvam/elevenlabs/mistral) | `src/core/agents/tts/factory.py` |
+| STT resolver (native/sarvam) | `src/core/agents/stt/factory.py` |
 | Sarvam parallel STT tap | `src/core/agents/stt/sarvam_parallel.py` |
 | Tool loader (DB-backed function tools) | `src/core/agents/tool_builder.py` |
 | Outbound dispatcher loop | `src/services/outbound_dispatcher/dispatcher.py` |
@@ -83,6 +84,8 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 - **`realtime`**: Gemini realtime handles STT+LLM+TTS in one model. `assistant_tts_model` / `assistant_tts_config` are ignored at runtime.
 
 TTS providers: `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Per-provider config lives in `assistant_tts_config` dict on the `Assistant` document; factory is `src/core/agents/tts/factory.py`.
+
+STT providers: `sarvam` (default — Saras v3 parallel tap) and `native` (the conversational LLM transcribes itself). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document, resolved by `src/core/agents/stt/factory.py::resolve_stt`. Unset means `sarvam`. Ignored in realtime mode.
 
 ### MongoDB collections (Beanie documents)
 
@@ -117,7 +120,9 @@ All read in `src/core/config.py` (`Settings`). Beyond `ENABLE_SIP_LISTENER` / `E
 
 ## One-off scripts
 
-`scripts/` holds migration/backfill jobs (e.g. `migrate_assistants.py`, `backfill_call_records.py`, `backfill_billable_duration_minutes.py`). Run with `uv run python scripts/<name>.py`.
+`scripts/` holds migration/backfill jobs (e.g. `migrate_assistants.py`, `migrate_stt_config.py`, `backfill_call_records.py`, `backfill_billable_duration_minutes.py`). Run with `uv run python scripts/<name>.py`.
+
+`migrate_stt_config.py` runs in two passes: default copies the legacy `assistant_interaction_config.user_stt_provider` / `.stt_api_key` into `assistant_stt_model` / `assistant_stt_config` (safe before deploy), `--unset` removes the old keys (after deploy is verified).
 
 ## Webhook contracts
 

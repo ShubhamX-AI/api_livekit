@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional, Literal, List, Dict
 from beanie import Document, Indexed
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field, EmailStr
 from pymongo import IndexModel
 from pymongo.collation import Collation
 import uuid
@@ -40,22 +40,10 @@ class AssistantInteractionConfig(BaseModel):
     # at the cost of the caller being unable to genuinely interrupt for that long.
     input_guard_window_sec: float = 3.0
     preferred_languages: Optional[List[str]] = None
-    # User STT source in pipeline mode. "sarvam" runs Sarvam Saras v3 in parallel;
-    # "native" = the conversational LLM transcribes itself (OpenAI gpt-4o-transcribe on an
-    # OpenAI pipeline, Gemini's own transcription on a Gemini pipeline). Provider-agnostic.
-    user_stt_provider: Literal["sarvam", "native"] = "sarvam"
-    # Sarvam key for the parallel STT tap. Deliberately separate from
-    # assistant_tts_config["api_key"], which is scoped to whichever TTS provider is
-    # selected — feeding that one to Sarvam 403s whenever TTS is not sarvam.
-    # None -> settings.SARVAM_API_KEY.
-    stt_api_key: Optional[str] = None
+    # STT moved to Assistant.assistant_stt_model / assistant_stt_config (mirrors TTS).
+    # scripts/migrate_stt_config.py backfills the retired user_stt_provider / stt_api_key.
     # Hard ceiling for active-call duration. None → falls back to platform default (30 min) at runtime.
     max_call_duration_minutes: Optional[float] = None
-
-    @field_validator("user_stt_provider", mode="before")
-    @classmethod
-    def _coerce_legacy_stt(cls, v):
-        return "native" if v == "openai" else v  # ponytail: legacy alias; delete once no "openai" rows remain
 
 
 class GreetingAudioConfig(BaseModel):
@@ -100,6 +88,8 @@ class Assistant(Document):
     assistant_llm_config: Optional[Dict] = None  # shared assistant LLM config; pipeline currently uses only api_key
     assistant_tts_model: Optional[str] = None  # required for pipeline, ignored for realtime
     assistant_tts_config: Optional[Dict] = None  # required for pipeline, ignored for realtime
+    assistant_stt_model: Optional[str] = None  # "native" | "sarvam"; None -> sarvam. Ignored for realtime
+    assistant_stt_config: Optional[Dict] = None  # provider config; None -> provider defaults + system key
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
     assistant_interaction_config: AssistantInteractionConfig = Field(default_factory=AssistantInteractionConfig)

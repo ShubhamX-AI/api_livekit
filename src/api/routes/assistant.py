@@ -32,22 +32,24 @@ async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
         raise HTTPException(status_code=404, detail="Audio asset not found")
 
 
-def mask_api_key(config: dict, field: str = "api_key", only_if_present: bool = False) -> dict:
-    """Mask a provider key in a config dict for security.
-
-    only_if_present=True skips configs that carry no such key at all — used for
-    interaction_config, where announcing a system-key fallback for an absent
-    stt_api_key would invent a field the client never sent.
-    """
+def mask_api_key(config: dict, field: str = "api_key") -> dict:
+    """Mask a provider key in a config dict for security."""
     if not config:
         return config
     masked_config = config.copy()
     key = masked_config.get(field)
     if key:
         masked_config[field] = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
-    elif field in masked_config or not only_if_present:
+    else:
         masked_config[field] = SYSTEM_KEY_PLACEHOLDER
     return masked_config
+
+
+def mask_stt_config(config: Optional[dict]) -> Optional[dict]:
+    """Mask the STT key. Native STT takes no key, so leave that config untouched."""
+    if not config or config.get("type") == "native":
+        return config
+    return mask_api_key(config)
 
 
 # Create new assistant
@@ -218,11 +220,9 @@ async def list_assistants(
             "assistant_llm_mode": assistant.assistant_llm_mode,
             "assistant_tts_model": assistant.assistant_tts_model,
             "assistant_tts_config": mask_api_key(assistant.assistant_tts_config) if assistant.assistant_tts_config else None,
-            "assistant_interaction_config": mask_api_key(
-                assistant.assistant_interaction_config.model_dump(),
-                field="stt_api_key",
-                only_if_present=True,
-            ),
+            "assistant_stt_model": assistant.assistant_stt_model,
+            "assistant_stt_config": mask_stt_config(assistant.assistant_stt_config),
+            "assistant_interaction_config": assistant.assistant_interaction_config.model_dump(),
             "assistant_created_by_email": assistant.assistant_created_by_email,
         }
         for assistant in assistants
@@ -264,12 +264,8 @@ async def get_assistant_details(
         assistant_data["assistant_tts_config"] = mask_api_key(assistant_data["assistant_tts_config"])
     if assistant_data.get("assistant_llm_config"):
         assistant_data["assistant_llm_config"] = mask_api_key(assistant_data["assistant_llm_config"])
-    if assistant_data.get("assistant_interaction_config"):
-        assistant_data["assistant_interaction_config"] = mask_api_key(
-            assistant_data["assistant_interaction_config"],
-            field="stt_api_key",
-            only_if_present=True,
-        )
+    if assistant_data.get("assistant_stt_config"):
+        assistant_data["assistant_stt_config"] = mask_stt_config(assistant_data["assistant_stt_config"])
 
     return apiResponse(
         success=True,

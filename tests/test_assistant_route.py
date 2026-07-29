@@ -1,16 +1,27 @@
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
-from src.api.models.api_schemas import SYSTEM_KEY_PLACEHOLDER, UpdateAssistant
+from src.api.models.api_schemas import (
+    SYSTEM_KEY_PLACEHOLDER,
+    NativeSTTConfig,
+    UpdateAssistant,
+)
 from src.api.routes.assistant import (
     get_assistant_details,
     mask_api_key,
+    mask_stt_config,
     merge_interaction_config,
     update_assistant,
 )
+from src.core.agents.stt.factory import resolve_stt
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts"))
+from migrate_stt_config import legacy_to_stt  # noqa: E402
 from src.core.db.db_schemas import AssistantInteractionConfig
 
 
@@ -138,17 +149,21 @@ class TestMaskedKeyGuard(unittest.TestCase):
 
     def test_masked_stt_key_rejected(self):
         with self.assertRaises(ValidationError):
-            UpdateAssistant(assistant_interaction_config={"stt_api_key": SYSTEM_KEY_PLACEHOLDER})
+            UpdateAssistant(
+                assistant_stt_model="sarvam",
+                assistant_stt_config={"api_key": SYSTEM_KEY_PLACEHOLDER},
+            )
 
     def test_real_keys_accepted(self):
         request = UpdateAssistant(
             assistant_tts_model="cartesia",
             assistant_tts_config={"voice_id": "v1", "api_key": "sk_cartesia_real_key"},
             assistant_llm_config={"provider": "openai", "api_key": "sk-proj-realkey"},
-            assistant_interaction_config={"stt_api_key": "sk_sarvam_real_key"},
+            assistant_stt_model="sarvam",
+            assistant_stt_config={"api_key": "sk_sarvam_real_key"},
         )
         self.assertEqual(request.assistant_tts_config.api_key, "sk_cartesia_real_key")
-        self.assertEqual(request.assistant_interaction_config.stt_api_key, "sk_sarvam_real_key")
+        self.assertEqual(request.assistant_stt_config.api_key, "sk_sarvam_real_key")
 
     def test_omitted_keys_accepted(self):
         request = UpdateAssistant(
@@ -158,14 +173,95 @@ class TestMaskedKeyGuard(unittest.TestCase):
         self.assertIsNone(request.assistant_tts_config.api_key)
 
 
+class TestSTTConfig(unittest.TestCase):
+    """assistant_stt_model / assistant_stt_config mirror the TTS pair."""
+
+    def test_bare_model_gets_defaults_config(self):
+        request = UpdateAssistant(assistant_stt_model="sarvam")
+        self.assertEqual(request.assistant_stt_config.model, "saaras:v3")
+        self.assertEqual(request.assistant_stt_config.language, "unknown")
+        self.assertIsNone(request.assistant_stt_config.api_key)
+
+    def test_discriminator_injected_from_model(self):
+        request = UpdateAssistant(assistant_stt_model="native", assistant_stt_config={})
+        self.assertIsInstance(request.assistant_stt_config, NativeSTTConfig)
+
+    def test_config_without_model_rejected(self):
+        with self.assertRaises(ValidationError):
+            UpdateAssistant(assistant_stt_config={"type": "sarvam"})
+
+    def test_retired_interaction_fields_rejected(self):
+        for field in ("user_stt_provider", "stt_api_key"):
+            with self.subTest(field=field):
+                with self.assertRaises(ValidationError):
+                    UpdateAssistant(assistant_interaction_config={field: "sarvam"})
+
+
+class TestResolveSTT(unittest.TestCase):
+    def test_unset_defaults_to_sarvam(self):
+        assistant = SimpleNamespace(assistant_stt_model=None, assistant_stt_config=None)
+        self.assertEqual(resolve_stt(assistant), ("sarvam", {}))
+
+    def test_legacy_openai_maps_to_native(self):
+        assistant = SimpleNamespace(assistant_stt_model="openai", assistant_stt_config=None)
+        self.assertEqual(resolve_stt(assistant), ("native", {}))
+
+    def test_no_key_anywhere_degrades_to_native(self):
+        """An unauthenticated Sarvam tap would leave the call with no transcripts at all."""
+        assistant = SimpleNamespace(
+            assistant_id="assistant-1", assistant_stt_model="sarvam", assistant_stt_config={}
+        )
+        with patch("src.core.agents.stt.factory.settings.SARVAM_API_KEY", ""):
+            self.assertEqual(resolve_stt(assistant), ("native", {}))
+
+    def test_per_assistant_key_survives_missing_system_key(self):
+        assistant = SimpleNamespace(
+            assistant_id="assistant-1",
+            assistant_stt_model="sarvam",
+            assistant_stt_config={"api_key": "sk_x"},
+        )
+        with patch("src.core.agents.stt.factory.settings.SARVAM_API_KEY", ""):
+            self.assertEqual(resolve_stt(assistant), ("sarvam", {"api_key": "sk_x"}))
+
+    def test_returns_stored_config(self):
+        config = {"type": "sarvam", "api_key": "sk_x", "language": "hi-IN"}
+        assistant = SimpleNamespace(assistant_stt_model="sarvam", assistant_stt_config=config)
+        self.assertEqual(resolve_stt(assistant), ("sarvam", config))
+
+
+class TestSTTBackfill(unittest.TestCase):
+    """scripts/migrate_stt_config.py translation — the part that can lose a customer key."""
+
+    def test_sarvam_key_carried_over(self):
+        self.assertEqual(
+            legacy_to_stt({"user_stt_provider": "sarvam", "stt_api_key": "sk_x"}),
+            ("sarvam", {"type": "sarvam", "api_key": "sk_x"}),
+        )
+
+    def test_legacy_openai_alias(self):
+        self.assertEqual(legacy_to_stt({"user_stt_provider": "openai"}), ("native", {"type": "native"}))
+
+    def test_missing_fields_default_to_sarvam(self):
+        self.assertEqual(legacy_to_stt({}), ("sarvam", {"type": "sarvam"}))
+
+    def test_native_drops_stale_sarvam_key(self):
+        self.assertEqual(
+            legacy_to_stt({"user_stt_provider": "native", "stt_api_key": "sk_x"}),
+            ("native", {"type": "native"}),
+        )
+
+
 class TestMaskApiKey(unittest.TestCase):
     def test_masks_named_field(self):
-        masked = mask_api_key({"stt_api_key": "sk_sarvam_1234"}, field="stt_api_key")
-        self.assertEqual(masked["stt_api_key"], "sk_s...1234")
+        masked = mask_api_key({"api_key": "sk_sarvam_1234"})
+        self.assertEqual(masked["api_key"], "sk_s...1234")
 
-    def test_only_if_present_does_not_invent_field(self):
-        masked = mask_api_key({"speaks_first": True}, field="stt_api_key", only_if_present=True)
-        self.assertNotIn("stt_api_key", masked)
+    def test_native_stt_config_untouched(self):
+        self.assertEqual(mask_stt_config({"type": "native"}), {"type": "native"})
+
+    def test_sarvam_stt_config_masked(self):
+        masked = mask_stt_config({"type": "sarvam", "api_key": "sk_sarvam_1234"})
+        self.assertEqual(masked["api_key"], "sk_s...1234")
 
     def test_absent_key_still_announces_system_fallback_by_default(self):
         self.assertEqual(mask_api_key({"voice_id": "v1"})["api_key"], SYSTEM_KEY_PLACEHOLDER)
