@@ -125,7 +125,7 @@ RTP packet → Exotel → mobile phone
 
 ## STT Noise-Reduction Branching
 
-`noise_reduction_for()` in `src/core/agents/stt/native_prompt.py` picks `input_audio_noise_reduction` from the call origin. It applies to **every** OpenAI branch — half-cascade and full realtime alike. Full realtime used to pass neither this setting nor a transcription prompt, so it silently fell back to `gpt-4o-mini-transcribe` with no instructions and no phone tuning.
+`noise_reduction_for()` in `src/core/agents/stt/native_prompt.py` picks `input_audio_noise_reduction` from the call origin. It applies to **every** OpenAI branch — half-cascade and full realtime alike. Full realtime used to pass neither this setting nor a transcription prompt, so it ran on the `gpt-4o-mini-transcribe` default with no instructions and no phone tuning. The model is still mini on both branches: what was missing was the prompt and `far_field`, and mini accepts both, so the fix costs nothing per minute.
 
 | Call type | `input_audio_noise_reduction` | Rationale |
 |-----------|-------------------------------|-----------|

@@ -36,7 +36,6 @@ from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
 from src.core.agents.stt import (
-    DRAIN_TIMEOUT_S,
     FinalCoalescer,
     build_native_stt_prompt,
     noise_reduction_for,
@@ -60,6 +59,11 @@ load_dotenv(override=True)
 
 # Platform default applied when assistant_interaction_config.max_call_duration_minutes is unset.
 DEFAULT_MAX_CALL_DURATION_MINUTES = 30.0
+
+# How long teardown keeps the transcript path open after the caller's audio stops, so the
+# last utterance can come back from whichever STT owns it. Everything after it — the queue
+# join, the usage record and the end-of-call webhook — is delayed by this much.
+END_OF_CALL_GRACE_S = 4.0
 
 
 def should_record(role: str | None, *, on_hold: bool, gate_active: bool) -> bool:
@@ -338,7 +342,15 @@ async def entrypoint(ctx: JobContext):
         _teardown_started = True
         call_end_triggered = True  # Block duplicate from disconnect handler
         _sarvam_stop.set()
-        if _max_duration_task is not None and not _max_duration_task.done():
+        # Never on the max-duration path: the watchdog calls this teardown itself, so there
+        # _max_duration_task is the task running these very lines. Cancelling it killed
+        # teardown at the next await and the watchdog's own `except CancelledError: pass`
+        # swallowed it — no transcripts, no usage record, no webhook, no delete_room, silently.
+        if (
+            _max_duration_task is not None
+            and _max_duration_task is not asyncio.current_task()
+            and not _max_duration_task.done()
+        ):
             _max_duration_task.cancel()
         if input_guard is not None:
             await input_guard.aclose()
@@ -347,34 +359,28 @@ async def entrypoint(ctx: JobContext):
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
         if delay > 0:
             await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
-        # Give whichever STT owns user transcripts a chance to finalize the caller's last
-        # utterance before the transcript path shuts. This is the window that the caller's
-        # final sentence lands in — it comes back after their audio has already stopped.
-        if _sarvam_task is not None and not _sarvam_task.done():
-            try:
-                # Unshielded: on timeout wait_for cancels the tap, whose finally still
-                # flushes the coalescer — so a slow drain degrades to a partial line
-                # rather than to nothing.
-                await asyncio.wait_for(_sarvam_task, timeout=DRAIN_TIMEOUT_S)
-            except asyncio.TimeoutError:
-                logger.warning("Timed out draining Sarvam STT; last utterance may be missing")
-        elif not is_text_only:
-            # Native path: the model is still holding uncommitted audio. commit_user_turn
-            # sends input_audio_buffer.commit, so it transcribes that audio and fires one
-            # more conversation_item_added. skip_reply stops it answering a caller who has
-            # already hung up. No-op on Gemini — its plugin logs commit_audio as unsupported
-            # and only finalizes a transcript on turn_complete, which a mid-turn hangup never
-            # reaches, so a Gemini caller's last line is unrecoverable from here.
-            try:
-                await asyncio.wait_for(
-                    session.commit_user_turn(skip_reply=True), timeout=DRAIN_TIMEOUT_S
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Timed out committing final user turn; last utterance may be missing")
-            except Exception as e:
-                logger.warning(f"Could not commit final user turn: {e}")
+        # The caller's last utterance comes back *after* their audio has stopped, on both STT
+        # paths: Sarvam needs a network round-trip, and the realtime model has to transcribe
+        # the audio it is still holding. Ask each to finalize, then hold the transcript path
+        # open for one fixed window. Both feed the same _user_coalescer, so one flush at the
+        # end catches whichever produced text and no per-path bookkeeping is needed.
+        # _sarvam_stop was set above; the tap drains and keeps feeding the coalescer here.
+        if not is_text_only:
+            if _sarvam_task is None:
+                # Native: commit_user_turn sends input_audio_buffer.commit so the model
+                # transcribes the audio it holds and fires one more conversation_item_added.
+                # skip_reply stops it answering a caller who has already hung up. Not awaited:
+                # the future it returns resolves immediately in realtime mode (no separate STT
+                # — see agents/voice/audio_recognition.py::commit_user_turn), so awaiting it
+                # gives no grace at all; the sleep below is the grace. No-op on Gemini, whose
+                # plugin logs commit_audio as unsupported and only finalizes on turn_complete,
+                # which a mid-turn hangup never reaches.
+                try:
+                    session.commit_user_turn(skip_reply=True)
+                except Exception as e:
+                    logger.warning(f"Could not commit final user turn: {e}")
+            await asyncio.sleep(END_OF_CALL_GRACE_S)
         if _user_coalescer is not None:
-            # No-op on the Sarvam path — the tap already flushed in its own teardown.
             _user_coalescer.flush()
         # No new transcripts past this point, so the queue below can be joined.
         _transcripts_closed = True
@@ -482,12 +488,15 @@ async def entrypoint(ctx: JobContext):
     # Shared by both modes: whenever the LLM does its own transcription it gets the same
     # prompt and the same phone-tuned noise reduction. Full realtime used to pass neither
     # and silently fell back to gpt-4o-mini-transcribe with no instructions at all.
+    # The model stays mini deliberately. What was actually missing was the prompt and
+    # far_field, not model size, and mini takes both — so the fix costs nothing per minute.
+    # Swap to "gpt-4o-transcribe" if Indic accuracy is ever measured to justify the price.
     _is_phone_call = job_metadata.get("call_type") != "web"
     _noise_reduction = noise_reduction_for(_is_phone_call)
     _stt_prompt = build_native_stt_prompt(
         interaction_config.preferred_languages, is_phone_call=_is_phone_call
     )
-    _native_transcription = AudioTranscription(model="gpt-4o-transcribe", prompt=_stt_prompt)
+    _native_transcription = AudioTranscription(model="gpt-4o-mini-transcribe", prompt=_stt_prompt)
 
     if is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
@@ -829,6 +838,32 @@ async def entrypoint(ctx: JobContext):
     participant = await ctx.wait_for_participant()
     primary_participant_identity = participant.identity
 
+    # --- Wait for Disconnect ---
+    # Registered here, not after the greeting: the greeting block below can await the
+    # readiness gate, recorder start and a full audio playout, and with close_on_disconnect
+    # =False nothing else ends the job — so a caller who hung up in that window used to get
+    # no teardown at all. Every name this closure reads is already bound by this point.
+    @ctx.room.on("participant_disconnected")
+    def on_participant_disconnected(participant):
+        nonlocal call_end_triggered
+        if filler_controller:
+            filler_controller.stop()
+        if silence_watchdog:
+            silence_watchdog.stop()
+        logger.info(f"Participant disconnected: {participant.identity}")
+        if participant.identity != primary_participant_identity:
+            logger.info(
+                f"Ignoring non-primary disconnect: {participant.identity} "
+                f"(primary={primary_participant_identity})"
+            )
+            return
+        if call_end_triggered:
+            logger.info(f"Call end already triggered for room: {ctx.room.name}")
+            return
+        call_end_triggered = True  # Immediate guard before task creation
+        asyncio.create_task(_flush_and_end_call(delay=0.0))  # No delay — user already gone
+        logger.info(f"Agent session ended for room: {ctx.room.name}")
+
     # --- Max call-duration watchdog ---
     # Hard cap on active-call length. Counts from gate-ready (post-answer for Exotel outbound,
     # immediately otherwise). On expiry, agent says a brief farewell then teardown runs.
@@ -1003,27 +1038,6 @@ async def entrypoint(ctx: JobContext):
             "assistant is silent and waiting for the user to speak first"
         )
 
-    # --- Wait for Disconnect ---
-    @ctx.room.on("participant_disconnected")
-    def on_participant_disconnected(participant):
-        nonlocal call_end_triggered
-        if filler_controller:
-            filler_controller.stop()
-        if silence_watchdog:
-            silence_watchdog.stop()
-        logger.info(f"Participant disconnected: {participant.identity}")
-        if participant.identity != primary_participant_identity:
-            logger.info(
-                f"Ignoring non-primary disconnect: {participant.identity} "
-                f"(primary={primary_participant_identity})"
-            )
-            return
-        if call_end_triggered:
-            logger.info(f"Call end already triggered for room: {ctx.room.name}")
-            return
-        call_end_triggered = True  # Immediate guard before task creation
-        asyncio.create_task(_flush_and_end_call(delay=0.0))  # No delay — user already gone
-        logger.info(f"Agent session ended for room: {ctx.room.name}")
 
 if __name__ == "__main__":
     cli.run_app(

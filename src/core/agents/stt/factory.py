@@ -9,7 +9,7 @@ def resolve_stt(assistant) -> tuple[str, dict]:
 
     "sarvam" runs Sarvam Saras v3 as a parallel audio tap (native-script Indic
     transcripts); "native" lets the conversational LLM transcribe itself
-    (OpenAI gpt-4o-transcribe, or Gemini's own). Ignored in realtime (audio-out) mode.
+    (OpenAI gpt-4o-mini-transcribe, or Gemini's own). Ignored in realtime (audio-out) mode.
     """
     model = assistant.assistant_stt_model or "sarvam"
     if model == "openai":

@@ -173,7 +173,7 @@ class CreateAssistant(BaseModel):
     assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode.",)
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline mode)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline mode)")
-    assistant_stt_model: Optional[Literal["native", "sarvam"]] = Field(None, description="User-transcription source in pipeline mode. 'sarvam' (the default when unset) runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-transcribe, or Gemini's own). Ignored in realtime (audio-out) mode.")
+    assistant_stt_model: Optional[Literal["native", "sarvam"]] = Field(None, description="User-transcription source in pipeline mode. 'sarvam' (the default when unset) runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-mini-transcribe, or Gemini's own). Ignored in realtime (audio-out) mode.")
     assistant_stt_config: Optional[STTConfig] = Field(None, description="STT configuration object. Optional — omit for provider defaults and the system API key.")
     assistant_start_instruction: Optional[str] = Field(None, max_length=500, description="Assistant's start instruction")
     assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
