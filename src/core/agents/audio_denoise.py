@@ -102,6 +102,9 @@ class SpeechGate(rtc.FrameProcessor[rtc.AudioFrame]):
         self._hangover_ms = 0.0
         self._warned_format = False
         self._muted = False
+        # ponytail: a strong reference, not id(), so a freed frame's address cannot be
+        # reused and alias the next one. See _process for why this exists at all.
+        self._last_frame: rtc.AudioFrame | None = None
 
     @property
     def enabled(self) -> bool:
@@ -153,6 +156,19 @@ class SpeechGate(rtc.FrameProcessor[rtc.AudioFrame]):
         return np.concatenate(chunks) if chunks else np.empty(0, dtype=np.int16)
 
     def _process(self, frame: rtc.AudioFrame) -> rtc.AudioFrame:
+        # RoomIO hands the same instance to the SDK twice — once as the input stream's
+        # `processor` (voice/room_io/_input.py: __init__ -> _apply_audio_processor) and once
+        # as the AudioStream's `noise_cancellation` (rtc/audio_stream.py) — so without this
+        # every frame is processed twice. That is not merely wasted work: the first pass
+        # zeroes non-speech samples, then the second pass runs the VAD over those zeros,
+        # scores them as silence, and decrements `_hangover_ms` a second time. The 600 ms
+        # hangover below would behave like 300 ms, cutting the gate mid-sentence.
+        # The tap in stt/sarvam_parallel.py builds its own AudioStream and is applied once.
+        # ponytail: harmless no-op if the SDK ever stops double-wiring.
+        if frame is self._last_frame:
+            return frame
+        self._last_frame = frame
+
         # APM rewrites the buffer in place and converts it to a bytearray, which is what
         # makes the samples writable below.
         self._apm.process_stream(frame)

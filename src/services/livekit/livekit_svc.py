@@ -134,20 +134,27 @@ class LiveKitService:
         call_type: Optional[str] = None,
         call_service: Optional[str] = None,
         platform_number: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
     ):
-        """Append a transcript entry to an existing call record or create a new one."""
-        # If room name present in call_records collection, update it
-        call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
-        if call_record:
-            call_record.transcripts.append(
-                {
-                    "speaker": speaker,
-                    "text": text,
-                    "timestamp": datetime.now(timezone.utc),
-                }
-            )
-            await call_record.save()
-        else:
+        """Append a transcript entry to an existing call record or create a new one.
+
+        `timestamp` is when the utterance was captured, not when it is written. User
+        transcripts come back from Sarvam after a network round-trip, so they can be
+        written after the agent reply they triggered — the $sort below slots them back
+        into speaking order.
+        """
+        entry = {
+            "speaker": speaker,
+            "text": text,
+            "timestamp": timestamp or datetime.now(timezone.utc),
+        }
+        # Atomic append. A read-modify-save() here would race the other writers of this
+        # document (update_call_status, end_call, the dispatcher safety net) and could
+        # overwrite transcripts with a stale snapshot.
+        result = await CallRecord.find_one(CallRecord.room_name == room_name).update(
+            {"$push": {"transcripts": {"$each": [entry], "$sort": {"timestamp": 1}}}}
+        )
+        if getattr(result, "matched_count", 0) == 0:
             # Create new call record (fallback if initialize_call_record was not called)
             call_record = CallRecord(
                 room_name=room_name,
@@ -155,13 +162,7 @@ class LiveKitService:
                 assistant_name=assistant_name,
                 to_number=to_number,
                 recording_path=recording_path,
-                transcripts=[
-                    {
-                        "speaker": speaker,
-                        "text": text,
-                        "timestamp": datetime.now(timezone.utc),
-                    }
-                ],
+                transcripts=[entry],
                 started_at=datetime.now(timezone.utc),
                 created_by_email=created_by_email,
                 call_type=call_type,

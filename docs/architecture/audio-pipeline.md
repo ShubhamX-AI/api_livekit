@@ -98,6 +98,8 @@ Verified at 16 / 24 / 48 kHz input: the VAD's decisions are identical across all
 
 **Coverage.** `SpeechGate` is applied twice, with a separate instance each time because both the APM and the VAD are stateful per stream: once on the session's audio input (`session.py`), and once inside the Sarvam parallel STT tap (`stt/sarvam_parallel.py`), which opens its own `AudioStream` and would otherwise transcribe raw noise.
 
+**Why `_process` guards against being called twice on the same frame.** RoomIO hands the *same* instance to the SDK at two points — as the input stream's `processor` (`voice/room_io/_input.py`, `_apply_audio_processor`) and as the `AudioStream`'s `noise_cancellation` (`rtc/audio_stream.py`). Without a guard every frame on the session's audio input was processed twice, and that is not merely wasted work: the first pass zeroes non-speech samples, then the second pass runs the VAD over those zeros, scores them as silence, and decrements the hangover *again*. The configured 600 ms behaved as 300 ms, so the model's own VAD endpointed mid-sentence and split user utterances. `SpeechGate` now holds a reference to the last frame it saw and returns it untouched on a repeat — a strong reference rather than `id()`, so a freed frame's address cannot alias the next one. The Sarvam tap builds its own `AudioStream` and was always applied once, which is why this showed up as a native-STT problem. Pinned by `test_hangover_is_unaffected_by_the_sdks_double_application`.
+
 **Calibration** — `_THRESHOLD` (0.5), `_HANGOVER_MS` (600), `_ATTENUATION` (0.0, hard gate) at the top of `audio_denoise.py`. Lower the threshold if quiet callers get clipped; raise it if noise still reaches the model. `_HANGOVER_MS` multiplies the cost of every false positive — one bad window holds the gate open that long.
 
 ## Outbound RTP Audio Processing
@@ -123,14 +125,14 @@ RTP packet → Exotel → mobile phone
 
 ## STT Noise-Reduction Branching
 
-In `session.py`, the OpenAI Realtime LLM is configured with `input_audio_noise_reduction` chosen based on the call origin:
+`noise_reduction_for()` in `src/core/agents/stt/native_prompt.py` picks `input_audio_noise_reduction` from the call origin. It applies to **every** OpenAI branch — half-cascade and full realtime alike. Full realtime used to pass neither this setting nor a transcription prompt, so it silently fell back to `gpt-4o-mini-transcribe` with no instructions and no phone tuning.
 
 | Call type | `input_audio_noise_reduction` | Rationale |
 |-----------|-------------------------------|-----------|
 | Web (`call_type == "web"`) | `near_field` | Browser mic is close to the speaker; default WebRTC-style NS profile applies. |
 | Phone (Exotel SIP, all non-web `call_type`) | `far_field` | OpenAI's far-field model is trained on lossy PSTN / G.711 audio. Using `near_field` on phone calls degraded transcription. |
 
-The same branching also prepends a short note to the STT prompt on phone calls ("Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). Expect static, line hum, codec artifacts...") so the transcription model is aware of the channel and refuses to fabricate words on unintelligible audio.
+`build_native_stt_prompt()` in the same module prepends a matching note to the STT prompt on phone calls ("Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). Expect static, line hum, codec artifacts...") so the transcription model is aware of the channel and refuses to fabricate words on unintelligible audio. Gemini accepts no transcription prompt, so neither applies there — see [Native Transcription](runtime-modes.md#native-transcription).
 
 **Dependencies:** `scipy>=1.13.0`, `numpy>=1.26.0`, `onnxruntime>=1.20.0` (Silero VAD). `webrtc-noise-gain` has been dropped — the WebRTC NS now comes from `rtc.AudioProcessingModule`, part of `livekit-rtc`. The Silero model is vendored at `src/core/agents/models/silero_vad.onnx` (2.2 MB, MIT) and ships via `COPY src` in every image.
 
@@ -193,7 +195,7 @@ Three event handlers check `hold_controller.is_on_hold` and suppress activity:
 
 | Event | Behavior during hold |
 | :--- | :--- |
-| `conversation_item_added` | Returns early; interrupts assistant speech; no transcript saved |
+| `conversation_item_added` | Interrupts assistant speech; assistant transcript dropped. **Caller transcripts are still saved** — see `should_record` in `session.py`. No filler-context or silence-watchdog side effects. |
 | `user_state_changed` | Returns early; no filler/silence watchdog triggers |
 | `agent_state_changed` | Calls `session.interrupt()` if agent starts speaking |
 

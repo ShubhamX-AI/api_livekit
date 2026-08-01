@@ -85,10 +85,10 @@ Content-Type: application/json
 | `data.answered_at`             | string  | Timestamp when the user answered (if answered). |
 | `data.call_end_reason`         | string  | Reason the call ended. `natural` for normal user/agent hang-up, `max_duration_exceeded` when the assistant's `max_call_duration_minutes` ceiling was hit. May be `null` for legacy records created before this field existed. |
 | `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
-| `data.transcripts`             | array   | List of conversation messages. Always `[]` for passthrough calls (no STT). |
+| `data.transcripts`             | array   | List of conversation messages, ordered by `timestamp` (speaking order). Always `[]` for passthrough calls (no STT). |
 | `data.transcripts[].speaker`   | string  | Who spoke (`agent` or `user`).             |
-| `data.transcripts[].text`      | string  | The transcribed text.                      |
-| `data.transcripts[].timestamp` | string  | ISO 8601 timestamp.                        |
+| `data.transcripts[].text`      | string  | The transcribed text. One entry per utterance — user fragments split by Sarvam's endpointing are rejoined before storage. |
+| `data.transcripts[].timestamp` | string  | ISO 8601 timestamp of when the utterance was **captured**, not when it was written. User entries are stamped at the start of the utterance. |
 | `data.started_at`              | string  | Call start time (ISO 8601).                |
 | `data.ended_at`                | string  | Call end time (ISO 8601).                  |
 | `data.call_duration_minutes`   | number  | Actual measured call duration in minutes.  |
