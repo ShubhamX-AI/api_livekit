@@ -24,8 +24,9 @@ uv run python -m unittest discover -s tests -v
 uv run python -m unittest tests/test_session_lifecycle.py -v
 
 # Lint
-uv run ruff check .
-uv run ruff format .
+# (ruff is not a project dependency — uvx fetches it on demand)
+uvx ruff check .
+uvx ruff format .
 
 # Build docs
 mkdocs build --strict
@@ -69,8 +70,10 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | Session lifecycle (gate, recording) | `src/core/agents/session_lifecycle.py` |
 | Voice features (silence watchdog, filler, hold) | `src/core/agents/voice_features.py` |
 | TTS factory (cartesia/sarvam/elevenlabs/mistral) | `src/core/agents/tts/factory.py` |
-| STT resolver (native/sarvam) | `src/core/agents/stt/factory.py` |
-| Sarvam parallel STT tap | `src/core/agents/stt/sarvam_parallel.py` |
+| STT resolver (native/sarvam) + cascade STT builder (sarvam/cartesia) | `src/core/agents/stt/factory.py` |
+| LLM factory (cascade only, OpenAI) | `src/core/agents/llm/factory.py` |
+| Per-component usage folding (`session.usage` → `UsageRecord`) | `src/core/agents/usage.py` |
+| Sarvam parallel STT tap (pipeline mode only) | `src/core/agents/stt/sarvam_parallel.py` |
 | Tool loader (DB-backed function tools) | `src/core/agents/tool_builder.py` |
 | Outbound dispatcher loop | `src/services/outbound_dispatcher/dispatcher.py` |
 | Exotel SIP/RTP bridge | `src/services/exotel/custom_sip_reach/` |
@@ -82,12 +85,19 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 
 ### Assistant modes
 
-- **`pipeline`** (default): OpenAI realtime for STT+LLM, separate TTS provider. Requires `assistant_tts_model` + `assistant_tts_config`.
+Selected by the `assistant_mode` field (`pipeline` | `realtime` | `cascade`) on the `Assistant` document — it sets the session *shape*, not the LLM vendor (that is `assistant_llm_config.provider`).
+
+- **`pipeline`** (default, half-cascade): OpenAI realtime for STT+LLM, separate TTS provider. Requires `assistant_tts_model` + `assistant_tts_config`.
 - **`realtime`**: Gemini realtime handles STT+LLM+TTS in one model. `assistant_tts_model` / `assistant_tts_config` are ignored at runtime.
+- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam` or `cartesia` (`native` rejected); provider must be `openai`. Docs: `docs/architecture/cascade-pipeline.md`.
 
 TTS providers: `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Per-provider config lives in `assistant_tts_config` dict on the `Assistant` document; factory is `src/core/agents/tts/factory.py`.
 
-STT providers: `sarvam` (default — Saras v3 parallel tap) and `native` (the conversational LLM transcribes itself). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document, resolved by `src/core/agents/stt/factory.py::resolve_stt`. Unset means `sarvam`. Ignored in realtime mode.
+STT providers: `sarvam` (default — Saras v3), `native` (the conversational LLM transcribes itself), and `cartesia` (cascade only). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document. **Two resolvers, don't mix them:** `resolve_stt` returns a `(provider, config)` tuple for the pipeline-mode parallel tap; `create_stt` builds an actual plugin STT object for cascade. Both in `src/core/agents/stt/factory.py`. Unset means `sarvam`. Ignored in realtime mode.
+
+LLM: `src/core/agents/llm/factory.py::create_llm` — cascade only. The other two modes build a `RealtimeModel` inline in `session.py`.
+
+**Self-hosted constraint:** `inference.STT/LLM/TTS` (the LiveKit Inference gateway), `inference.TurnDetector(version="v1")` and `interruption={"mode":"adaptive"}` all require LiveKit Cloud credentials and must not be used. `inference.VAD(model="silero")` and `inference.TurnDetector(version="v1-mini")` are fully local (weights ship in `livekit-local-inference`, a core SDK dep) and are what cascade uses.
 
 ### MongoDB collections (Beanie documents)
 

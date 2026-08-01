@@ -49,6 +49,21 @@ class MistralTTSConfig(BaseModel):
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
 
 
+# ── Runtime mode ────────────────────────────────────
+# Selects the shape of the whole session (which stages exist, plugin vs. one realtime
+# model) — not an LLM choice. That lives in AssistantLLMConfig.provider/model below.
+AssistantMode = Literal["pipeline", "realtime", "cascade"]
+
+_RETIRED_MODE_KEY_ERROR = (
+    "`assistant_llm_mode` has been renamed to `assistant_mode`. Update your request."
+)
+
+
+def reject_retired_mode_key(data: dict) -> None:
+    if isinstance(data, dict) and "assistant_llm_mode" in data:
+        raise ValueError(_RETIRED_MODE_KEY_ERROR)
+
+
 # ── Assistant LLM Config sub-model ───────────────────
 class AssistantLLMConfig(BaseModel):
     provider: Optional[Literal["gemini", "openai"]] = Field(
@@ -87,13 +102,23 @@ class NativeSTTConfig(BaseModel):
 
 class SarvamSTTConfig(BaseModel):
     type: Literal["sarvam"] = "sarvam"
-    model: str = Field("saaras:v3", max_length=40, description="Sarvam STT model")
+    model: str = Field("saaras:v3", max_length=40, description="Sarvam STT model: saaras:v3 (recommended), saaras:v2.5 or saarika:v2.5")
     language: str = Field("unknown", max_length=10, description="BCP-47 language code, or 'unknown' to auto-detect")
+    mode: str = Field("codemix", max_length=20, description="Transcription mode (saaras:v3 only): codemix (default — keeps code-switching intact), transcribe, translate, verbatim or translit")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Sarvam API key for the parallel STT tap (optional, falls back to system SARVAM_API_KEY). Distinct from assistant_tts_config.api_key, which belongs to the selected TTS provider.")
 
 
+class CartesiaSTTConfig(BaseModel):
+    """Cascade mode only. Cartesia STT cannot auto-detect, so language is always fixed."""
+
+    type: Literal["cartesia"] = "cartesia"
+    model: str = Field("ink-whisper", max_length=40, description="ink-whisper (43 languages, one at a time) or ink-2 (English only)")
+    language: Optional[str] = Field(None, max_length=10, description="Fixed language code — Cartesia STT has no auto-detect. When omitted, falls back to the first entry of assistant_interaction_config.preferred_languages, then 'en'. Use Sarvam for multilingual calls.")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system CARTESIA_API_KEY). Distinct from assistant_tts_config.api_key.")
+
+
 STTConfig = Annotated[
-    Union[NativeSTTConfig, SarvamSTTConfig],
+    Union[NativeSTTConfig, SarvamSTTConfig, CartesiaSTTConfig],
     Field(discriminator="type"),
 ]
 
@@ -104,6 +129,26 @@ def inject_provider_type(data: dict, model_field: str, config_field: str) -> Non
     config = data.get(config_field)
     if model and isinstance(config, dict):
         config["type"] = model
+
+
+def validate_cascade_llm_and_stt(llm_config, stt_model) -> None:
+    """The two cascade-only rules, shared by the create and update validators.
+
+    Cascade runs a plain LLM, so there is no realtime model to speak its own audio or
+    transcribe itself: 'native' STT is meaningless, and only OpenAI is wired up as a
+    non-realtime LLM (see src/core/agents/llm/factory.py).
+    """
+    if stt_model == "native":
+        raise ValueError(
+            "assistant_stt_model 'native' is not valid in cascade mode — "
+            "choose 'sarvam' (multilingual) or 'cartesia'."
+        )
+    provider = getattr(llm_config, "provider", None)
+    if provider and provider != "openai":
+        raise ValueError(
+            f"assistant_llm_config.provider '{provider}' is not supported in cascade mode — "
+            "cascade supports 'openai' only."
+        )
 
 
 def inject_stt_config(data: dict) -> None:
@@ -169,11 +214,11 @@ class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
     assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
-    assistant_llm_mode: Literal["pipeline", "realtime"] = Field("pipeline", description="LLM pipeline mode: pipeline (separate TTS) or realtime (model handles STT+LLM+TTS)")
-    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode.",)
-    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline mode)")
-    assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline mode)")
-    assistant_stt_model: Optional[Literal["native", "sarvam"]] = Field(None, description="User-transcription source in pipeline mode. 'sarvam' (the default when unset) runs Sarvam Saras v3 as a parallel audio tap — native-script Indic transcripts. 'native' lets the conversational LLM transcribe itself (OpenAI gpt-4o-mini-transcribe, or Gemini's own). Ignored in realtime (audio-out) mode.")
+    assistant_mode: AssistantMode = Field("pipeline", description="Runtime mode. 'pipeline' (default, half-cascade): a realtime model emits text, an external TTS speaks it. 'realtime': one model handles STT+LLM+TTS. 'cascade': a true three-stage pipeline — plugin STT, a plain LLM, plugin TTS, each billed and swappable on its own.")
+    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None,description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode. In cascade mode the provider must be 'openai' (or omitted).",)
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline and cascade modes)")
+    assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline and cascade modes)")
+    assistant_stt_model: Optional[Literal["native", "sarvam", "cartesia"]] = Field(None, description="User-transcription source. In pipeline mode: 'sarvam' (the default when unset) runs Sarvam Saras v3 as a parallel audio tap, 'native' lets the conversational LLM transcribe itself. In cascade mode this is the session's own STT stage — 'sarvam' (multilingual, auto-detect + code-mixing) or 'cartesia' (single fixed language); 'native' is rejected because there is no realtime model to self-transcribe. Ignored in realtime (audio-out) mode.")
     assistant_stt_config: Optional[STTConfig] = Field(None, description="STT configuration object. Optional — omit for provider defaults and the system API key.")
     assistant_start_instruction: Optional[str] = Field(None, max_length=500, description="Assistant's start instruction")
     assistant_interaction_config: AssistantInteractionConfigSchema = Field(default_factory=AssistantInteractionConfigSchema, description="Interaction settings for the assistant")
@@ -195,7 +240,7 @@ class CreateAssistant(BaseModel):
                         "assistant_name": "Test Assistant",
                         "assistant_description": "Test Assistant Description(Optional)",
                         "assistant_prompt": "You are a helpful assistant.",
-                        "assistant_llm_mode": "pipeline",
+                        "assistant_mode": "pipeline",
                         "assistant_llm_config": {
                             "api_key": "sk-..."
                         },
@@ -225,7 +270,7 @@ class CreateAssistant(BaseModel):
                         "assistant_name": "Gemini Assistant",
                         "assistant_description": "Full realtime assistant",
                         "assistant_prompt": "You are a helpful assistant.",
-                        "assistant_llm_mode": "realtime",
+                        "assistant_mode": "realtime",
                         "assistant_llm_config": {
                             "provider": "gemini",
                             "model": "gemini-3.1-flash-live-preview",
@@ -240,6 +285,7 @@ class CreateAssistant(BaseModel):
     @classmethod
     def inject_tts_type(cls, data: dict):
         """Inject the `type` discriminator into tts_config/stt_config so Pydantic picks the right model."""
+        reject_retired_mode_key(data)
         if isinstance(data, dict):
             inject_provider_type(data, "assistant_tts_model", "assistant_tts_config")
             inject_stt_config(data)
@@ -247,15 +293,19 @@ class CreateAssistant(BaseModel):
 
     @model_validator(mode="after")
     def validate_mode_fields(self):
-        """Validate fields based on llm_mode."""
-        if self.assistant_llm_mode == "pipeline":
+        """Validate fields based on assistant_mode."""
+        # pipeline and cascade both speak through an external TTS, so both require the pair.
+        if self.assistant_mode in ("pipeline", "cascade"):
+            mode = self.assistant_mode
             if not self.assistant_tts_model:
-                raise ValueError("assistant_tts_model is required when assistant_llm_mode is 'pipeline'")
+                raise ValueError(f"assistant_tts_model is required when assistant_mode is '{mode}'")
             if not self.assistant_tts_config:
-                raise ValueError("assistant_tts_config is required when assistant_llm_mode is 'pipeline'")
-        elif self.assistant_llm_mode == "realtime":
+                raise ValueError(f"assistant_tts_config is required when assistant_mode is '{mode}'")
+            if mode == "cascade":
+                validate_cascade_llm_and_stt(self.assistant_llm_config, self.assistant_stt_model)
+        elif self.assistant_mode == "realtime":
             if not self.assistant_llm_config:
-                raise ValueError("assistant_llm_config is required when assistant_llm_mode is 'realtime'")
+                raise ValueError("assistant_llm_config is required when assistant_mode is 'realtime'")
         if self.assistant_stt_config and not self.assistant_stt_model:
             raise ValueError("`assistant_stt_config` requires `assistant_stt_model`.")
         if self.assistant_end_call_enabled:
@@ -271,11 +321,11 @@ class UpdateAssistant(BaseModel):
     assistant_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant's name (optional)")
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
-    assistant_llm_mode: Optional[Literal["pipeline", "realtime"]] = Field(None, description="LLM pipeline mode. When switching to 'pipeline', any stored realtime llm_config is cleared automatically unless you provide a new one.")
-    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. In pipeline mode only api_key is used (overrides system OPENAI_API_KEY); in realtime mode provider/model/voice/api_key are supported.")
-    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider. Required when switching to pipeline mode only if no TTS config is already stored on the assistant.")
+    assistant_mode: Optional[AssistantMode] = Field(None, description="Runtime mode: pipeline, realtime or cascade. When switching to 'pipeline', any stored realtime llm_config is cleared automatically unless you provide a new one.")
+    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. In pipeline mode only api_key is used (overrides system OPENAI_API_KEY); in realtime mode provider/model/voice/api_key are supported; in cascade mode provider must be 'openai' and model selects the chat model (e.g. gpt-4.1-mini).")
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider. Required when switching to pipeline or cascade mode only if no TTS config is already stored on the assistant.")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
-    assistant_stt_model: Optional[Literal["native", "sarvam"]] = Field(None, description="Change the user-transcription source ('sarvam' or 'native'). Only affects pipeline mode. Sending it without assistant_stt_config resets the config to provider defaults.")
+    assistant_stt_model: Optional[Literal["native", "sarvam", "cartesia"]] = Field(None, description="Change the user-transcription source ('sarvam', 'cartesia' or 'native'). Ignored in realtime mode. 'cartesia' and 'native' are mutually exclusive with the wrong mode: 'native' is rejected in cascade. Sending it without assistant_stt_config resets the config to provider defaults.")
     assistant_stt_config: Optional[STTConfig] = Field(None, description="STT configuration object. Must be sent together with assistant_stt_model.")
     assistant_start_instruction: Optional[str] = Field(None, max_length=500, description="Assistant's start instruction (optional)")
     assistant_interaction_config: Optional[UpdateAssistantInteractionConfigSchema] = Field(None, description="Update interaction settings")
@@ -309,6 +359,7 @@ class UpdateAssistant(BaseModel):
     @classmethod
     def inject_tts_type(cls, data: dict):
         """Same injection for updates."""
+        reject_retired_mode_key(data)
         if isinstance(data, dict):
             inject_provider_type(data, "assistant_tts_model", "assistant_tts_config")
             inject_stt_config(data)
@@ -328,10 +379,15 @@ class UpdateAssistant(BaseModel):
                 "`assistant_stt_config` requires `assistant_stt_model`."
             )
         # Switching to realtime requires llm_config
-        if self.assistant_llm_mode == "realtime" and not self.assistant_llm_config:
+        if self.assistant_mode == "realtime" and not self.assistant_llm_config:
             raise ValueError(
                 "assistant_llm_config is required when switching to realtime mode."
             )
+        # Fires only when this request names the mode. A PATCH that omits it against an
+        # assistant already in cascade is caught by enforce_cascade_constraints() in
+        # routes/assistant.py, which can see the stored row. Both paths are needed.
+        if self.assistant_mode == "cascade":
+            validate_cascade_llm_and_stt(self.assistant_llm_config, self.assistant_stt_model)
         return self
 
 

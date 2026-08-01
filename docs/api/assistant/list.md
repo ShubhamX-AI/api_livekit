@@ -27,7 +27,7 @@ List assistants created by the current user.
 | `data.assistants` | array | Assistant list. |
 | `data.assistants[].assistant_id` | string | Assistant UUID. |
 | `data.assistants[].assistant_name` | string | Assistant name. |
-| `data.assistants[].assistant_llm_mode` | string | Assistant mode: `pipeline` or `realtime`. |
+| `data.assistants[].assistant_mode` | string | Assistant mode: `pipeline`, `realtime` or `cascade`. |
 | `data.assistants[].assistant_tts_model` | string/null | TTS provider for pipeline assistants. |
 | `data.assistants[].assistant_tts_config` | object/null | Masked TTS config. |
 | `data.assistants[].assistant_stt_model` | string/null | STT provider (`sarvam` \| `native`). `null` means the default, `sarvam`. |
@@ -58,7 +58,7 @@ List assistants created by the current user.
       {
         "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
         "assistant_name": "Support Bot",
-        "assistant_llm_mode": "pipeline",
+        "assistant_mode": "pipeline",
         "assistant_tts_model": "cartesia",
         "assistant_tts_config": {
           "voice_id": "a16...275",

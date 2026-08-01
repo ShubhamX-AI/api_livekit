@@ -317,6 +317,8 @@ class LiveKitService:
         usage_record = await UsageRecord.find_one(UsageRecord.room_name == room_name)
         if usage_record:
             filtered_data["usage"] = {
+                "mode": usage_record.mode,
+                "llm_model": usage_record.llm_model,
                 "llm_input_audio_tokens": usage_record.llm_input_audio_tokens,
                 "llm_input_text_tokens": usage_record.llm_input_text_tokens,
                 "llm_output_audio_tokens": usage_record.llm_output_audio_tokens,
@@ -324,6 +326,10 @@ class LiveKitService:
                 "llm_total_tokens": usage_record.llm_total_tokens,
                 "tts_characters_count": usage_record.tts_characters_count,
                 "tts_audio_duration": usage_record.tts_audio_duration,
+                # Populated in cascade mode only — see UsageRecord in db_schemas.py.
+                "stt_provider": usage_record.stt_provider,
+                "stt_model": usage_record.stt_model,
+                "stt_audio_duration": usage_record.stt_audio_duration,
             }
 
         payload = {

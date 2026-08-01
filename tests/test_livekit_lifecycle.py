@@ -203,6 +203,77 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(posted["payload"]["data"]["call_duration_minutes"], 1.25)
         self.assertEqual(posted["payload"]["data"]["billable_duration_minutes"], 2)
 
+    async def test_send_end_call_webhook_reports_per_component_usage(self):
+        """A cascade call meters STT separately, so the webhook must carry the STT fields."""
+        svc = LiveKitService()
+        record = FakeCallRecord(status="completed")
+        record.call_duration_minutes = 1.0
+        record.billable_duration_minutes = 1
+        posted = {}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, url, json):
+                posted["payload"] = json
+                return SimpleNamespace(status_code=200)
+
+        assistant_model = SimpleNamespace(
+            assistant_id=RoomNameField(),
+            assistant_end_call_url=RoomNameField(),
+            find_one=AsyncMock(
+                return_value=SimpleNamespace(
+                    assistant_end_call_url="https://example.com/webhook",
+                    assistant_created_by_email="user@example.com",
+                )
+            ),
+        )
+        usage_record_model = SimpleNamespace(
+            room_name=RoomNameField(),
+            find_one=AsyncMock(
+                return_value=SimpleNamespace(
+                    mode="cascade",
+                    llm_model="gpt-4.1-mini",
+                    llm_input_audio_tokens=0,
+                    llm_input_text_tokens=90,
+                    llm_output_audio_tokens=0,
+                    llm_output_text_tokens=40,
+                    llm_total_tokens=155,
+                    tts_characters_count=250,
+                    tts_audio_duration=12.5,
+                    stt_provider="sarvam",
+                    stt_model="saaras:v3",
+                    stt_audio_duration=31.25,
+                )
+            ),
+        )
+
+        with patch(
+            "src.services.livekit.livekit_svc.CallRecord",
+            SimpleNamespace(room_name=RoomNameField(), find_one=AsyncMock(return_value=record)),
+        ), patch("src.services.livekit.livekit_svc.Assistant", assistant_model), patch(
+            "src.services.livekit.livekit_svc.UsageRecord", usage_record_model
+        ), patch("src.services.livekit.livekit_svc.ActivityLog", FakeActivityLog), patch(
+            "src.services.livekit.livekit_svc.httpx.AsyncClient", FakeAsyncClient
+        ):
+            await svc.send_end_call_webhook(room_name="room-1", assistant_id="assistant-1")
+
+        usage = posted["payload"]["data"]["usage"]
+        self.assertEqual(usage["mode"], "cascade")
+        self.assertEqual(usage["llm_model"], "gpt-4.1-mini")
+        self.assertEqual(usage["stt_provider"], "sarvam")
+        self.assertEqual(usage["stt_model"], "saaras:v3")
+        self.assertEqual(usage["stt_audio_duration"], 31.25)
+        self.assertEqual(usage["tts_characters_count"], 250)
+        self.assertEqual(usage["llm_total_tokens"], 155)
+
 
 if __name__ == "__main__":
     unittest.main()

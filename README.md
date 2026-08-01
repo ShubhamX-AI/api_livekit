@@ -1,6 +1,6 @@
 # LiveKit Agent Service
 
-FastAPI backend plus LiveKit worker for real-time voice assistants with `pipeline` and `realtime` modes.
+FastAPI backend plus LiveKit worker for real-time voice assistants with `pipeline`, `realtime` and `cascade` modes.
 
 ## What This Project Does
 
@@ -9,15 +9,16 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Supports web calls with both text (`lk.chat`) and voice input, plus an opt-in **text-only mode** (`text_only: true`) that disables mic/TTS/STT/recording for pure-chatbot use.
 - Supports outbound calling and Exotel inbound routing.
 - Queues outbound call requests and dispatches them in the background at a controlled rate.
-- Supports assistant runtime modes (mode = output shape, `assistant_llm_config.provider` = vendor, both independent):
-  - `pipeline`: LLM emits text + separate TTS provider. Vendor `openai` (default) or `gemini`.
+- Supports three assistant runtime modes (mode = how many models are in the loop, `assistant_llm_config.provider` = vendor):
+  - `pipeline` (half-cascade): a realtime model emits text + separate TTS provider. Vendor `openai` (default) or `gemini`.
   - `realtime`: LLM speaks its own audio. Vendor `gemini` (default) or `openai`.
-- Supports start greetings in both modes when `assistant_interaction_config.speaks_first=true`.
+  - `cascade`: a true STT → LLM → TTS pipeline — plugin STT, plain OpenAI chat model, plugin TTS, each separately metered and swappable.
+- Supports start greetings in all modes when `assistant_interaction_config.speaks_first=true`.
 - Stores transcripts and call records in MongoDB.
 - Sends post-call webhook notifications.
 - Sends post-call webhook notifications with both actual and billable call duration.
 - Writes activity logs for tool calls, inbound context lookup, and end-call webhook delivery.
-- Tracks per-call LLM token usage and TTS character counts via SDK metrics.
+- Tracks per-call usage via SDK metrics: LLM tokens, TTS characters, and — in `cascade` mode — STT audio duration attributed to its own stage.
 - Provides analytics endpoints for call duration, volume, and usage monitoring.
 - Super-admin endpoints for cross-tenant analytics and token usage visibility.
 - Protects worker capacity by buffering outbound requests and limiting new job intake under higher CPU load.
@@ -291,15 +292,15 @@ Use these pages as the canonical payload contracts:
 - `/inbound`
 - `/inbound_context_strategy`
 - `/logs`
-- `/web_call/get_token` — supports `text_only: true` for chatbot mode (no audio, no recording; pipeline-mode assistants only)
+- `/web_call/get_token` — supports `text_only: true` for chatbot mode (no audio, no recording; `pipeline` and `cascade` assistants, not `realtime`)
 - `/analytics` — per-user call analytics (dashboard, by-assistant, by-phone-number, by-time, by-service)
 - `/admin` — super-admin cross-tenant analytics and token usage (requires `is_super_admin` flag)
 
 ## Assistant Modes
 
-Two independent axes: **mode** (`assistant_llm_mode`) = output shape, **provider** (`assistant_llm_config.provider`) = LLM vendor (`openai` | `gemini`), honored in both modes.
+Two independent axes: **mode** (`assistant_mode`) = how many models are in the loop, **provider** (`assistant_llm_config.provider`) = LLM vendor (`openai` | `gemini`).
 
-- `pipeline` mode (default) — LLM emits text, separate TTS speaks it:
+- `pipeline` mode (default, half-cascade) — a realtime model emits text, separate TTS speaks it:
   - Requires `assistant_tts_model` and `assistant_tts_config`
   - `assistant_llm_config.provider` defaults to `openai`; set `gemini` to use the Gemini realtime model in text mode
   - `assistant_llm_config` optional; `provider`/`model`/`api_key` override defaults (`api_key` → the selected vendor's system key)
@@ -310,12 +311,18 @@ Two independent axes: **mode** (`assistant_llm_mode`) = output shape, **provider
   - `voice`/`model`/`api_key` override defaults (Gemini `Puck`/`gemini-3.1-flash-live-preview`, OpenAI `marin`/`gpt-realtime-1.5`)
   - Ignores `assistant_tts_model` and `assistant_tts_config` at runtime
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
+- `cascade` mode — a true three-stage STT → LLM → TTS pipeline (`docs/architecture/cascade-pipeline.md`):
+  - Requires `assistant_tts_model` and `assistant_tts_config`, same as pipeline
+  - `assistant_stt_model` is the session's own STT stage: `sarvam` (default, multilingual) or `cartesia`. `native` is rejected — there is no realtime model to self-transcribe
+  - `assistant_llm_config.provider` must be `openai` (the default); `model` defaults to `gpt-4.1`, so cheap text models like `gpt-4.1-mini` are available
+  - The only mode reporting **per-component usage**: `stt_provider` / `stt_model` / `stt_audio_duration` land on `UsageRecord` and the end-of-call webhook alongside the LLM and TTS numbers
+  - Does not use the Sarvam parallel tap; turn detection is local (in-process Silero VAD + a bundled audio end-of-utterance model), so nothing here needs LiveKit Cloud
 
-Note: `assistant_start_instruction` is honored in realtime mode whenever `assistant_interaction_config.speaks_first` is enabled.
+Note: `assistant_start_instruction` is honored in all three modes whenever `assistant_interaction_config.speaks_first` is enabled.
 
 ## Audio Library & Prerecorded Greeting
 
-Instead of generating the opening line with the model, an assistant can play a prerecorded greeting. This skips the LLM + TTS (pipeline) or the realtime audio generation (realtime) for the greeting, cutting token cost and latency. It works in both modes.
+Instead of generating the opening line with the model, an assistant can play a prerecorded greeting. This skips the LLM + TTS (pipeline and cascade) or the realtime audio generation (realtime) for the greeting, cutting token cost and latency. It works in all three modes.
 
 The design is modular: audio files live in a reusable **library** (the `audio_assets` collection) and assistants reference one by id. Auth: `Authorization: Bearer <api_key>`.
 
@@ -347,6 +354,7 @@ Each assistant can cap its own call length via `assistant_interaction_config.max
 ```text
 api_livekit/
 ├── README.md
+├── CLAUDE.md
 ├── pyproject.toml
 ├── uv.lock
 ├── Dockerfile
@@ -359,55 +367,90 @@ api_livekit/
 ├── mkdocs.yml
 ├── server_run.py
 ├── sip_dispatcher_run.py
+├── deploy.sh
 ├── .agents/
 │   ├── workflows/
 │   └── skills/
 ├── assets/
 │   └── audio/
-├── docs/
+├── docs/                  # MkDocs source
+├── scripts/               # migration/backfill one-offs
 ├── tests/
 ├── src/
 │   ├── api/
 │   │   ├── dependencies/
+│   │   │   └── auth.py                # Bearer api-key auth (get_current_user / get_super_admin)
 │   │   ├── models/
+│   │   │   ├── api_schemas.py         # Pydantic request/response schemas + validators
+│   │   │   └── response_models.py
 │   │   ├── routes/
+│   │   │   ├── assistant.py
+│   │   │   ├── call.py
+│   │   │   ├── audio.py               # audio library upload/list/get/delete
+│   │   │   ├── auth.py
+│   │   │   ├── health.py
+│   │   │   ├── inbound.py
+│   │   │   ├── inbound_context_strategy.py
+│   │   │   ├── logs.py
+│   │   │   ├── sip.py
+│   │   │   ├── tool.py
+│   │   │   ├── web_call.py
 │   │   │   ├── analytics.py
 │   │   │   └── admin.py
-│   │   └── server.py
+│   │   ├── mcp_docs.py                # serves docs/ markdown as an MCP server
+│   │   └── server.py                  # FastAPI app
 │   ├── core/
 │   │   ├── agents/
-│   │   │   ├── session.py              # entrypoint / orchestrator
-│   │   │   ├── dynamic_assistant.py    # Agent class
-│   │   │   ├── session_lifecycle.py    # CallReadinessGate, RecordingManager
-│   │   │   ├── inbound_context.py      # caller context resolution
-│   │   │   ├── voice_features.py       # SilenceWatchdog / Filler / Hold controllers
-│   │   │   ├── tool_builder.py         # DB-backed function tool loader
-│   │   │   ├── utils.py                # render_prompt
+│   │   │   ├── session.py             # entrypoint / orchestrator
+│   │   │   ├── dynamic_assistant.py   # Agent class
+│   │   │   ├── session_lifecycle.py   # CallReadinessGate, RecordingManager
+│   │   │   ├── inbound_context.py     # caller context resolution
+│   │   │   ├── voice_features.py      # SilenceWatchdog / Filler / Hold controllers
+│   │   │   ├── tool_builder.py        # DB-backed function tool loader
+│   │   │   ├── usage.py               # session.usage → UsageRecord folding
+│   │   │   ├── audio_denoise.py
+│   │   │   ├── utils.py               # render_prompt
+│   │   │   ├── llm/
+│   │   │   │   └── factory.py         # cascade LLM (openai.responses.LLM)
 │   │   │   ├── stt/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── factory.py          # STT resolver (native | sarvam)
-│   │   │   │   ├── native_prompt.py    # transcription prompt + noise-reduction pick (native path)
-│   │   │   │   └── sarvam_parallel.py  # Sarvam Saras v3 parallel STT tap + fragment coalescer
+│   │   │   │   ├── factory.py         # STT resolver (pipeline) + cascade builder (create_stt)
+│   │   │   │   ├── native_prompt.py   # transcription prompt + noise-reduction pick (native path)
+│   │   │   │   └── sarvam_parallel.py # Sarvam Saras v3 parallel STT tap + fragment coalescer
+│   │   │   ├── models/
+│   │   │   │   └── silero_vad.onnx    # local VAD weights (livekit-local-inference)
 │   │   │   └── tts/
-│   │   │       ├── __init__.py
-│   │   │       └── factory.py          # TTS factory + Sarvam WS keepalive
+│   │   │       └── factory.py         # TTS factory + Sarvam WS keepalive
 │   │   ├── providers/
 │   │   │   ├── __init__.py
-│   │   │   └── keys.py                 # provider key registry + masking helpers
+│   │   │   └── keys.py                # provider key registry + masking helpers
+│   │   ├── billing.py                 # actual vs billable duration
 │   │   ├── db/
-│   │   ├── config.py
+│   │   │   ├── database.py
+│   │   │   └── db_schemas.py          # Beanie documents
+│   │   ├── config.py                  # Settings / env config
 │   │   └── logger.py
 │   └── services/
-│       ├── outbound_dispatcher.py
+│       ├── outbound_dispatcher/
+│       │   └── dispatcher.py          # outbound dispatch loop
 │       ├── elevenlabs/
+│       │   └── v3_nonstream.py        # eleven_v3 HTTP-chunked TTS
 │       ├── mistral/
+│       │   └── tts.py
 │       ├── email/
+│       │   └── smtp_service.py
+│       ├── storage/
+│       │   ├── audio_transcode.py     # upload → WAV 48 kHz mono (PyAV/ffmpeg)
+│       │   └── s3_audio.py            # audio-asset S3 access (boto3)
 │       ├── exotel/
 │       │   └── custom_sip_reach/
 │       │       ├── bridge.py
 │       │       ├── rtp_bridge.py
 │       │       ├── sip_client.py
-│       │       └── inbound_listener.py
+│       │       ├── inbound_listener.py
+│       │       ├── inbound_bridge.py
+│       │       ├── digest_auth.py
+│       │       ├── port_pool.py
+│       │       └── config.py
 │       └── livekit/
-└── scripts/ 
+│           └── livekit_svc.py
 ```

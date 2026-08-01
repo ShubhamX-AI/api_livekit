@@ -4,22 +4,27 @@
 
 Assistants define voice agent behavior, prompt/instructions, interaction settings, optional tools, and optional end-call behavior.
 
-Assistant execution supports two LLM modes:
+Assistant execution supports three runtime modes, selected by `assistant_mode` (not to be confused
+with `assistant_llm_config.provider`, the LLM vendor):
 
-Mode = output shape; `assistant_llm_config.provider` = LLM vendor (`openai` | `gemini`), honored in both modes.
+- `pipeline` (default, half-cascade): a realtime model emits text, a separate TTS provider speaks it.
+  Vendor `openai` (default) or `gemini`.
+- `realtime`: one model handles STT + LLM + TTS and speaks its own audio. Vendor `gemini` (default) or
+  `openai`.
+- `cascade`: a true three-stage pipeline — plugin STT, a plain (non-realtime) LLM, plugin TTS, each a
+  separate metered stage. LLM vendor is `openai` only. See [Cascade Pipeline](../../architecture/cascade-pipeline.md).
 
-- `pipeline`: LLM emits text, a separate TTS provider speaks it. Vendor `openai` (default) or `gemini`.
-- `realtime`: LLM speaks its own audio in one model. Vendor `gemini` (default) or `openai`.
-
-Supported TTS providers for `pipeline` mode are `cartesia`, `sarvam`, `elevenlabs`, and `mistral`.
+TTS providers (`pipeline` and `cascade` modes): `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Full model
+IDs, defaults, and per-mode STT/LLM validity live in [Models & Providers](../../reference/models.md).
 
 ## Mode Rules
 
-- `assistant_llm_mode="pipeline"` requires both `assistant_tts_model` and `assistant_tts_config`.
+- `assistant_mode="pipeline"` requires both `assistant_tts_model` and `assistant_tts_config`.
 - In `pipeline` mode, `assistant_llm_config` is optional and defaults to `provider="openai"`. Set `gemini` to switch vendor; `api_key` overrides the selected vendor's system key.
-- `assistant_llm_mode="realtime"` requires `assistant_llm_config`.
+- `assistant_mode="realtime"` requires `assistant_llm_config`.
 - In `realtime` mode, Gemini fields still have defaults: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`. `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
+- `assistant_mode="cascade"` requires `assistant_tts_model` + `assistant_tts_config`; `assistant_stt_model` must be `sarvam` or `cartesia` (`native` rejected); `assistant_llm_config.provider` must be `openai` or unset.
 - `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
 - `assistant_interaction_config.speaks_first` works in both `pipeline` and `realtime` modes.
 - `assistant_interaction_config.background_sound_enabled` and `assistant_interaction_config.thinking_sound_enabled` default to `true`.

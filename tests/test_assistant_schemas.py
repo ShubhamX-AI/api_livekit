@@ -21,7 +21,7 @@ class TestAssistantSchemas(unittest.TestCase):
             assistant_name="Support Bot",
             assistant_description="Test assistant",
             assistant_prompt="You are helpful.",
-            assistant_llm_mode="pipeline",
+            assistant_mode="pipeline",
             assistant_tts_model="cartesia",
             assistant_tts_config={"voice_id": "voice-1"},
             assistant_interaction_config={
@@ -54,7 +54,7 @@ class TestAssistantSchemas(unittest.TestCase):
             assistant_name="Support Bot",
             assistant_description="Test assistant",
             assistant_prompt="You are helpful.",
-            assistant_llm_mode="pipeline",
+            assistant_mode="pipeline",
             assistant_tts_model="cartesia",
             assistant_tts_config={"voice_id": "voice-1"},
         )
@@ -66,7 +66,7 @@ class TestAssistantSchemas(unittest.TestCase):
             assistant_name="Support Bot",
             assistant_description="Test assistant",
             assistant_prompt="You are helpful.",
-            assistant_llm_mode="pipeline",
+            assistant_mode="pipeline",
             assistant_llm_config={"api_key": "sk-test-1234"},
             assistant_tts_model="cartesia",
             assistant_tts_config={"voice_id": "voice-1"},
@@ -87,19 +87,38 @@ class TestAssistantSchemas(unittest.TestCase):
 
     def test_switching_to_realtime_still_requires_llm_config(self):
         with self.assertRaises(ValidationError) as exc:
-            UpdateAssistant(assistant_llm_mode="realtime")
+            UpdateAssistant(assistant_mode="realtime")
 
         self.assertIn(
             "assistant_llm_config is required when switching to realtime mode.",
             str(exc.exception),
         )
 
+    def test_retired_mode_key_rejected_on_create(self):
+        with self.assertRaises(ValidationError) as exc:
+            CreateAssistant(
+                assistant_name="Support Bot",
+                assistant_description="Test assistant",
+                assistant_prompt="You are helpful.",
+                assistant_llm_mode="pipeline",
+                assistant_tts_model="cartesia",
+                assistant_tts_config={"voice_id": "voice-1"},
+            )
+
+        self.assertIn("renamed to `assistant_mode`", str(exc.exception))
+
+    def test_retired_mode_key_rejected_on_update(self):
+        with self.assertRaises(ValidationError) as exc:
+            UpdateAssistant(assistant_llm_mode="cascade")
+
+        self.assertIn("renamed to `assistant_mode`", str(exc.exception))
+
     def test_create_realtime_assistant_accepts_gemini_config(self):
         assistant = CreateAssistant(
             assistant_name="Gemini Bot",
             assistant_description="Realtime assistant",
             assistant_prompt="You are helpful.",
-            assistant_llm_mode="realtime",
+            assistant_mode="realtime",
             assistant_llm_config={
                 "provider": "gemini",
                 "model": "gemini-3.1-flash-live-preview",

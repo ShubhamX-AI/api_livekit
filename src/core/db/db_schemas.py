@@ -84,7 +84,7 @@ class Assistant(Document):
     assistant_id: Indexed(str, unique=True)
     assistant_name: str
     assistant_description: Optional[str] = None
-    assistant_llm_mode: str = "pipeline"  # "pipeline" | "realtime"
+    assistant_mode: str = "pipeline"  # "pipeline" | "realtime" | "cascade"
     assistant_llm_config: Optional[Dict] = None  # shared assistant LLM config; pipeline currently uses only api_key
     assistant_tts_model: Optional[str] = None  # required for pipeline, ignored for realtime
     assistant_tts_config: Optional[Dict] = None  # required for pipeline, ignored for realtime
@@ -314,10 +314,11 @@ class UsageRecord(Document):
     call_service: Optional[str] = None
 
     # LLM pipeline info
-    llm_mode: Optional[str] = None  # "pipeline" | "realtime"
-    llm_realtime_provider: Optional[str] = None  # LLM vendor "gemini" | "openai" (recorded for both modes)
+    mode: Optional[str] = None  # "pipeline" | "realtime" | "cascade"
+    llm_realtime_provider: Optional[str] = None  # LLM vendor "gemini" | "openai" (recorded for all modes)
+    llm_model: Optional[str] = None  # e.g. "gpt-4.1-mini", "gpt-realtime-1.5"
 
-    # LLM tokens (from SDK UsageCollector — exact values)
+    # LLM tokens (from session.usage — exact values)
     llm_input_audio_tokens: int = 0
     llm_input_text_tokens: int = 0
     llm_input_cached_audio_tokens: int = 0
@@ -326,9 +327,15 @@ class UsageRecord(Document):
     llm_output_text_tokens: int = 0
     llm_total_tokens: int = 0
 
-    # TTS usage (from SDK UsageCollector — exact values)
+    # TTS usage (from session.usage — exact values)
     tts_characters_count: int = 0
     tts_audio_duration: float = 0.0  # seconds
+
+    # STT usage. Only a mode with a standalone STT stage (cascade) reports these; in
+    # pipeline/realtime the LLM transcribes internally and the cost is inside its tokens.
+    stt_provider: Optional[str] = None  # "sarvam" | "cartesia" | "native"
+    stt_model: Optional[str] = None  # e.g. "saaras:v3", "ink-whisper"
+    stt_audio_duration: float = 0.0  # seconds of audio transcribed
 
     # Telephony duration (copied from CallRecord for aggregation convenience)
     call_duration_minutes: float = 0.0

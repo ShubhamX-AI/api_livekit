@@ -51,19 +51,29 @@ Critical singleton rule: only one `sip_dispatcher` instance should run across al
 
 Speech generation has **two orthogonal axes**:
 
-1. **Mode** (`assistant_llm_mode`) = output shape:
-   - `pipeline` (half-cascade): the LLM emits **text**, an external TTS plugin speaks it.
-   - `realtime`: the LLM speaks its own **audio** (no external TTS).
-2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Honored in **both** modes. Defaults to `gemini` in `realtime` mode and `openai` in `pipeline` mode when unset.
+1. **Mode** (`assistant_mode`) = how many models are in the loop:
+   - `pipeline` (**half**-cascade, the default): a *realtime* model emits **text**, an external TTS plugin speaks it. User transcription is a side channel — a parallel Sarvam tap, or the realtime model transcribing itself.
+   - `realtime`: one model does STT + LLM + TTS and speaks its own **audio** (no external TTS).
+   - `cascade`: a **true three-stage pipeline** — a plugin STT, a plain (non-realtime) LLM, and a plugin TTS, each a separate stage that is separately metered and independently swappable. See [Cascade Pipeline](cascade-pipeline.md).
+2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Honored in `pipeline` and `realtime`. Defaults to `gemini` in `realtime` mode and `openai` in the other two. **`cascade` supports `openai` only** — it is the only vendor wired up as a non-realtime LLM.
 
-The 2×2 matrix:
+The matrix:
 
 | Mode | provider `openai` | provider `gemini` |
 |---|---|---|
 | `pipeline` (text + external TTS) | OpenAI `gpt-realtime-1.5` (text out) -> external TTS | Gemini realtime (TEXT out) -> external TTS |
 | `realtime` (model speaks audio) | OpenAI realtime (audio out) | Gemini realtime (STT+LLM+TTS) |
+| `cascade` (true pipeline) | plugin STT -> `openai.responses.LLM` -> plugin TTS | not supported |
 
-In both `pipeline` combinations, user transcription runs **in parallel** via Sarvam Saras v3 by default — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below; if Sarvam is disabled the LLM's own transcription tap is used instead.
+Which to pick:
+
+| Want | Mode |
+|---|---|
+| Lowest latency, one vendor, don't need cost breakdown | `realtime` |
+| Realtime understanding but a specific TTS voice | `pipeline` |
+| Per-component cost visibility, cheap text models, swappable STT | `cascade` |
+
+In both `pipeline` combinations, user transcription runs **in parallel** via Sarvam Saras v3 by default — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below; if Sarvam is disabled the LLM's own transcription tap is used instead. `cascade` does not use the tap at all: its STT *is* the session's first stage.
 
 All modes share the same room orchestration, call lifecycle, transcript flow, and tool execution framework.
 All modes also support assistant-first openings when `speaks_first=true`, using `assistant_start_instruction` as the opening response text.
@@ -115,7 +125,7 @@ The function (`src/core/agents/tts/factory.py`):
 
 ## Sarvam Parallel User Transcription
 
-**Problem.** In OpenAI pipeline mode (`assistant_llm_mode="pipeline"`, `provider="openai"`) with `assistant_stt_model="native"`, the `input_audio_transcription` side channel uses an OpenAI transcription model (`gpt-4o-mini-transcribe`). On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
+**Problem.** In OpenAI pipeline mode (`assistant_mode="pipeline"`, `provider="openai"`) with `assistant_stt_model="native"`, the `input_audio_transcription` side channel uses an OpenAI transcription model (`gpt-4o-mini-transcribe`). On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
 
 - Switches scripts mid-utterance (Devanagari → Tamil → Arabic → Spanish)
 - Romanises words instead of using the speaker's native script
@@ -129,8 +139,11 @@ Selected per assistant via `assistant_stt_model`, configured via `assistant_stt_
 
 | Value | Effect |
 |-------|--------|
-| `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). Config: `model`, `language`, `api_key`. |
+| `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). Config: `model`, `language`, `mode`, `api_key`. |
 | `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap, no config fields. |
+| `cartesia` | **`cascade` mode only.** Rejected in `pipeline` mode — there is no Cartesia tap. |
+
+In `cascade` mode the same two fields select the session's own STT **stage** instead of a tap, and are resolved by `create_stt` rather than `resolve_stt`. `native` is rejected there: it means "the realtime model transcribes itself", and cascade has no realtime model. See [Cascade Pipeline](cascade-pipeline.md).
 
 **API key.** The tap authenticates with `assistant_stt_config.api_key`, falling back to the system `SARVAM_API_KEY`. It deliberately does **not** read `assistant_tts_config["api_key"]`: that field is scoped to the selected TTS provider, so on a Cartesia/ElevenLabs/Mistral assistant it holds a foreign key and Sarvam answers `403 Invalid response status`. Because the tap also disables the LLM's own transcription, an auth failure there means the call runs with **no user transcripts at all** — so keep the two keys separate. When neither key is present, `resolve_stt` logs a warning and degrades the call to `native` rather than starting a tap that cannot authenticate.
 
@@ -189,11 +202,12 @@ The upstream cause is documented in [Input Speech Gate](audio-pipeline.md#input-
 | `sarvam` | The tap feeds Sarvam `DRAIN_SILENCE_S` (2 s) of digital silence *before* `end_input()`. Silence is what makes the tail come back: Sarvam only returns a segment once its server VAD endpoints, and the plugin forwards the resulting flush from inside its send loop — i.e. only when the next frame arrives. At hangup the frames stop, so without synthetic silence that flush is never sent and the segment stays stuck server-side. `end_input()` cannot rescue it either: the plugin sends `end_of_stream` and cancels its own reader in the same event-loop turn, discarding the reply. Same technique the SDK uses on its own STT (`agents/voice/audio_recognition.py::commit_user_turn`). |
 | `native`, OpenAI | `session.commit_user_turn(skip_reply=True)` sends `input_audio_buffer.commit`, so the model transcribes its pending audio and fires one more `conversation_item_added`. `skip_reply` stops it answering a caller who has already hung up. The returned future is deliberately **not** awaited — in realtime mode there is no separate STT object, so it resolves immediately and awaiting it yields no grace at all; the 4 s window is the grace. |
 | `native`, Gemini | **Not recoverable.** The plugin logs `commit_audio` as unsupported, and a user transcript is only marked final on `server_content.turn_complete`, which a mid-turn hangup never reaches. No amount of grace time helps; this is an API limitation, not a bug in this repo. |
+| `cascade` | `session.commit_user_turn(skip_reply=True)` again — but here the session owns a real `stt=` stage, so the returned future resolves when that STT actually flushes. It **is** awaited, capped at the same 4 s. A cascade call therefore hangs up as soon as the tail lands instead of always waiting the full window. |
 | text-only | Nothing to drain — no audio, no endpointing. |
 
 **Ordering.** Transcript timestamps are stamped at capture, not at DB-write time, and the coalescer reports the arrival of the *first* fragment in a group. Agent text is produced locally and written almost immediately; user text costs a Sarvam round-trip plus the merge window, so it frequently reaches Mongo after the reply it triggered. `add_transcript` therefore appends with `{"$push": {"transcripts": {"$each": [entry], "$sort": {"timestamp": 1}}}}`, which slots each entry into speaking order on insert. Being an atomic update it also removes a read-modify-`save()` that could clobber transcripts when `update_call_status` / `end_call` / the dispatcher safety net wrote the same document concurrently. No read-side sorting is needed anywhere.
 
-**Scope of fix.** Only the persisted user transcript is corrected. The OpenAI Realtime LLM still consumes raw audio embeddings — if the LLM itself misunderstands Indic input, the assistant reply will reflect that. To fix LLM understanding as well, switch the assistant to `pipeline` mode (Sarvam STT feeds a text LLM) or to `realtime` + `gemini`.
+**Scope of fix.** Only the persisted user transcript is corrected. The OpenAI Realtime LLM still consumes raw audio embeddings — if the LLM itself misunderstands Indic input, the assistant reply will reflect that. To fix LLM *understanding* as well, switch the assistant to [`cascade`](cascade-pipeline.md) mode, where the Sarvam transcript is the only thing the LLM ever sees, or to `realtime` + `gemini`.
 
 ## Native Transcription
 

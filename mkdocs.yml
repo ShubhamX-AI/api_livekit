@@ -86,9 +86,13 @@ nav:
   - Architecture:
     - Overview: architecture/index.md
     - Runtime Modes & Startup: architecture/runtime-modes.md
+    - Cascade Pipeline (STT/LLM/TTS): architecture/cascade-pipeline.md
     - Call Flows & Queueing: architecture/call-flows.md
     - Audio Pipeline: architecture/audio-pipeline.md
     - Inbound Routing: architecture/inbound.md
+
+  - Reference:
+    - Models & Providers: reference/models.md
 
   - API Reference:
     - API Response and Errors: api/errors.md
@@ -98,7 +102,7 @@ nav:
       - Documentation Endpoint: api/documentation.md
       - MCP Documentation Server: api/mcp.md
 
-    - Assistants (Pipeline/Realtime):
+    - Assistants (Pipeline/Realtime/Cascade):
       - Overview: api/assistant/index.md
       - Create Assistant: api/assistant/create.md
       - List Assistants: api/assistant/list.md

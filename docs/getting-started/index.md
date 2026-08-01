@@ -54,7 +54,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_description": "Customer support agent",
     "assistant_prompt": "You are a helpful support agent.",
     "assistant_start_instruction": "Hello, thanks for calling support. How can I help you today?",
-    "assistant_llm_mode": "pipeline",
+    "assistant_mode": "pipeline",
     "assistant_llm_config": {
       "api_key": "sk-..."
     },
@@ -81,7 +81,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_description": "Realtime conversational assistant",
     "assistant_prompt": "You are a helpful voice assistant.",
     "assistant_start_instruction": "Hi, you're connected to Gemini Voice Bot. How can I assist you today?",
-    "assistant_llm_mode": "realtime",
+    "assistant_mode": "realtime",
     "assistant_llm_config": {
       "provider": "gemini",
       "model": "gemini-3.1-flash-live-preview",
@@ -98,7 +98,7 @@ Minimal realtime payload:
 
 ```json
 {
-  "assistant_llm_mode": "realtime",
+  "assistant_mode": "realtime",
   "assistant_llm_config": {}
 }
 ```

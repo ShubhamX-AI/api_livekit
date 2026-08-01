@@ -43,7 +43,7 @@ class TestAssistantRoute(unittest.IsolatedAsyncioTestCase):
         )
         current_user = SimpleNamespace(user_email="user@example.com")
         assistant = SimpleNamespace(
-            assistant_llm_mode="pipeline",
+            assistant_mode="pipeline",
             assistant_interaction_config=AssistantInteractionConfig(
                 speaks_first=True,
                 filler_words=True,
@@ -152,12 +152,15 @@ class TestMaskedKeyGuard(unittest.TestCase):
         with self.assertRaises(ValidationError):
             UpdateAssistant(assistant_llm_config={"provider": "openai", "api_key": "sk-t...5678"})
 
-    def test_masked_stt_key_rejected(self):
-        with self.assertRaises(ValidationError):
-            UpdateAssistant(
-                assistant_stt_model="sarvam",
-                assistant_stt_config={"api_key": SYSTEM_KEY_PLACEHOLDER},
-            )
+    def test_masked_stt_key_rejected_for_every_provider(self):
+        for provider in ("sarvam", "cartesia"):
+            for masked in ("sk-t...5678", "****", SYSTEM_KEY_PLACEHOLDER):
+                with self.subTest(provider=provider, masked=masked):
+                    with self.assertRaises(ValidationError):
+                        UpdateAssistant(
+                            assistant_stt_model=provider,
+                            assistant_stt_config={"api_key": masked},
+                        )
 
     def test_real_keys_accepted(self):
         request = UpdateAssistant(

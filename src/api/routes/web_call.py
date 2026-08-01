@@ -26,7 +26,7 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
 
         # Text-only mode is incompatible with realtime assistants (Gemini/OpenAI realtime
         # bundle STT+LLM+TTS in one model and do not expose a pure-text path).
-        if request.text_only and assistant.assistant_llm_mode == "realtime":
+        if request.text_only and assistant.assistant_mode == "realtime":
             raise HTTPException(
                 status_code=400,
                 detail="text_only is not supported for realtime assistants. Use a pipeline-mode assistant.",

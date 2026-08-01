@@ -22,7 +22,7 @@ Fetch full configuration for one assistant.
 | `data.assistant_name` | string | Assistant name. |
 | `data.assistant_description` | string | Assistant description. |
 | `data.assistant_prompt` | string | System prompt. |
-| `data.assistant_llm_mode` | string | `pipeline` or `realtime`. |
+| `data.assistant_mode` | string | `pipeline`, `realtime` or `cascade`. |
 | `data.assistant_llm_config` | object/null | Shared assistant LLM config. `provider` (`openai`\|`gemini`) selects the vendor in either mode; `model`/`voice`/`api_key` override defaults. API key is masked when present. |
 | `data.assistant_tts_model` | string/null | TTS provider in pipeline mode. |
 | `data.assistant_tts_config` | object/null | TTS config. API key is masked when present. |
@@ -61,7 +61,7 @@ Fetch full configuration for one assistant.
     "assistant_name": "Gemini Assistant",
     "assistant_description": "Realtime voice assistant",
     "assistant_prompt": "You are a helpful assistant.",
-    "assistant_llm_mode": "realtime",
+    "assistant_mode": "realtime",
     "assistant_llm_config": {
       "provider": "gemini",
       "model": "gemini-3.1-flash-live-preview",

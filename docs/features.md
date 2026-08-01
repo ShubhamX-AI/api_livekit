@@ -6,9 +6,10 @@ Complete inventory of what this platform provides.
 
 ## 1. Voice AI Assistants
 
-- **Pipeline mode** — LLM (OpenAI default, or Gemini) emits text; a separate TTS provider synthesises speech output
+- **Pipeline mode** (half-cascade) — a realtime LLM (OpenAI default, or Gemini) emits text; a separate TTS provider synthesises speech output
 - **Realtime mode** — LLM speaks its own audio (Gemini default, or OpenAI); no external TTS required
-- **Provider is independent of mode** — `assistant_llm_config.provider` (`openai` | `gemini`) selects the vendor in either mode
+- **Cascade mode** — a true three-stage STT → LLM → TTS pipeline: plugin STT, a plain OpenAI chat model, plugin TTS. Each stage separately metered and swappable; the only mode with per-component cost visibility. See [Cascade Pipeline](architecture/cascade-pipeline.md)
+- **Provider is independent of mode** — `assistant_llm_config.provider` (`openai` | `gemini`) selects the vendor in pipeline and realtime; cascade is OpenAI-only
 - **Configurable system prompt** — full control over assistant persona, instructions, and behavior
 - **Dynamic prompt placeholders** — embed call metadata (`{{caller_number}}`, `{{assistant_name}}`, etc.) and caller-fetched CRM data (`{{context.*}}`) directly in prompts via Mustache templates
 - **Speaks-first / wait-for-caller** — toggle whether the assistant greets first or waits for the caller to speak
@@ -22,14 +23,15 @@ Complete inventory of what this platform provides.
 
 ## 2. TTS Providers
 
-Four synthesis providers supported in pipeline mode:
+Four synthesis providers, used identically in pipeline and cascade modes. Model IDs are fixed per
+provider (not configurable) — full table in [Models & Providers](reference/models.md#tts).
 
 | Provider | Notes |
 |---|---|
-| **Cartesia** | `sonic-3` model; voice selected by `voice_id` |
-| **Sarvam** | `bulbul:v3`; Indian language support; configurable `target_language_code` and `speaker` |
-| **ElevenLabs** | Non-streaming v3 path; voice and stability configurable |
-| **Mistral** | Mistral TTS integration |
+| **Cartesia** | voice selected by `voice_id` |
+| **Sarvam** | Indian language support; configurable `target_language_code` and `speaker` |
+| **ElevenLabs** | non-streaming (HTTP chunked) |
+| **Mistral** | non-streaming |
 
 - Per-assistant TTS config; API key override per assistant
 - TTS humanization prompting guides for all three major providers (Sarvam, Cartesia, ElevenLabs) included in documentation
@@ -38,11 +40,16 @@ Four synthesis providers supported in pipeline mode:
 
 ## 3. STT / Speech Recognition
 
-- **Sarvam Saras v3 parallel STT** — secondary STT tap running in parallel for enhanced multilingual transcription; per-fragment results are coalesced into whole utterances before storage
+- **Sarvam Saras v3 parallel STT** — in pipeline mode, a secondary STT tap running in parallel for enhanced multilingual transcription; per-fragment results are coalesced into whole utterances before storage
 - **Native LLM transcription** — the conversational LLM transcribes itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own) when `assistant_stt_model="native"`, and always in full realtime mode; same fragment coalescing and end-of-call drain as the Sarvam path
-- Per-assistant STT provider selection, same shape as TTS: `assistant_stt_model` (`sarvam` default, or `native`) + `assistant_stt_config`
-- Per-assistant Sarvam `api_key`, `model` and `language` in `assistant_stt_config`, separate from the TTS provider key
+- **First-class STT stage (cascade mode)** — the same `assistant_stt_model` selects the session's own STT stage instead of a side tap, and the LLM sees only that transcript, so a transcription fix also fixes understanding
+- **Multilingual transcription** — Sarvam `saaras:v3` with `language="unknown"` (auto-detect) and `mode="codemix"` keeps code-switching intact inside a single utterance, across 24 Indic language codes
+- Per-assistant STT provider selection, same shape as TTS: `assistant_stt_model` (`sarvam` default, `native`, or `cartesia` in cascade) + `assistant_stt_config`
+- Per-assistant STT `api_key`, `model`, `language` and `mode` in `assistant_stt_config`, separate from the TTS provider key
 - Phone vs. web noise-reduction branching: `far_field` (G.711/PSTN) vs. `near_field` (browser mic) sent to OpenAI Realtime
+- Local turn detection for cascade calls: in-process Silero VAD (`inference.VAD(model="silero")`) plus a bundled audio end-of-utterance model (`inference.TurnDetector(version="v1-mini")`) — no Cloud dependency on a self-hosted server
+
+Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & Providers](reference/models.md).
 
 ---
 
