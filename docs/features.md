@@ -38,7 +38,7 @@ Four synthesis providers supported in pipeline mode:
 
 ## 3. STT / Speech Recognition
 
-- **Sarvam Saras v3 parallel STT** — secondary STT tap running in parallel for enhanced multilingual transcription
+- **Sarvam Saras v3 parallel STT** — secondary STT tap running in parallel for enhanced multilingual transcription; per-fragment results are coalesced into whole utterances before storage
 - **Native LLM transcription** — the conversational LLM transcribes itself (OpenAI `gpt-4o-transcribe`, or Gemini's own) when `assistant_stt_model="native"`
 - Per-assistant STT provider selection, same shape as TTS: `assistant_stt_model` (`sarvam` default, or `native`) + `assistant_stt_config`
 - Per-assistant Sarvam `api_key`, `model` and `language` in `assistant_stt_config`, separate from the TTS provider key
@@ -185,6 +185,8 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 ## 16. Transcripts & Call Records
 
 - Full conversation transcripts stored in MongoDB per call
+- Entries are timestamped at capture and appended in speaking order — a user utterance always precedes the agent reply it triggered, even though transcribing it costs a round-trip
+- User utterances split by Sarvam's endpointing are rejoined into one entry before storage, and the last utterance before hangup is drained before the call is finalized
 - `CallRecord` documents include: call status, duration, billable duration, recording URL, call end reason, provider, assistant used
 - Queryable via `/call/records` with filters: `call_status`, `to_number`, `start_date`, `end_date`, `limit`, `offset`, `passthrough_only`
 

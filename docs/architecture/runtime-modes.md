@@ -156,21 +156,30 @@ sequenceDiagram
         Note over OAI: input_audio_transcription = None<br/>(no side-channel transcript)
     and Tap B — User transcription
         LK->>Sarvam: rtc.AudioStream @ 16 kHz (push_frame)
-        Sarvam-->>LK: FINAL_TRANSCRIPT (native script)
-        Sarvam->>TQ: _on_sarvam_final(text)<br/>→ _enqueue_transcript("user", text)
+        Sarvam-->>LK: FINAL_TRANSCRIPT × N (native script)
+        Sarvam->>Sarvam: FinalCoalescer joins fragments
+        Sarvam->>TQ: _enqueue_transcript("user", text,<br/>timestamp=first fragment)
     end
-    TQ->>DB: add_transcript(speaker=user)
+    TQ->>DB: add_transcript(speaker=user) — $push with $sort
     Note over OAI,DB: Assistant reply persisted via<br/>conversation_item_added event handler
 ```
 
 **Implementation details:**
 
 - Module: `src/core/agents/stt/sarvam_parallel.py` — `run_sarvam_parallel_stt(...)` coroutine.
-- Spawned once after `wait_for_participant()` returns, scoped to the caller's identity. Late-binds if the audio track was already published.
+- Spawned once after `wait_for_participant()` returns, scoped to the caller's identity. Late-binds if the audio track was already published. The task handle is kept (`_sarvam_task`) so teardown can await its drain.
 - Stop signal: re-uses the existing `_sarvam_stop = asyncio.Event()` that already gates the Sarvam TTS keepalive — both exit on the same teardown.
 - Frame pump: `rtc.AudioStream(track, sample_rate=16000, num_channels=1)` upsamples 8 kHz G.711 phone audio in-process; frames pushed via `stream.push_frame(frame)`.
 - Duplicate-write guard: `conversation_item_added` short-circuits when `event.item.role == "user" and _use_sarvam_stt`, so OpenAI's empty / stale user item never reaches the DB.
-- Shared transcript helper: `_enqueue_transcript(speaker, text)` queues the DB write — used by both the Sarvam callback and the OpenAI assistant-role path. Single source of truth for the `add_transcript` call shape.
-- Silence watchdog: Sarvam's `on_final` callback calls `silence_watchdog.on_user_message()` to reset the reprompt timer, preserving parity with the OpenAI-only path.
+- Shared transcript helper: `_enqueue_transcript(speaker, text, timestamp=None)` queues the DB write — used by both the Sarvam callback and the OpenAI assistant-role path. Single source of truth for the `add_transcript` call shape.
+- Silence watchdog: the coalescer's emit callback calls `silence_watchdog.on_user_message()` to reset the reprompt timer, preserving parity with the OpenAI-only path.
+
+**Fragment coalescing.** `SpeechGate` zeroes non-speech audio after a 600 ms hangover (`_HANGOVER_MS`), so any longer intra-sentence pause reaches Sarvam as digital silence, its server VAD endpoints, and one sentence comes back as several `FINAL_TRANSCRIPT` events. Writing each as its own row produced visibly half-finished transcript lines, and gave `language="unknown"` auto-detect a scrap of audio per decision — which is why the script could flip mid-utterance.
+
+`FinalCoalescer` (same module) buffers fragments and emits one joined utterance after `MERGE_WINDOW_S` (1.0 s) of quiet, or immediately when `flush()` is called. `flush()` is driven from two places: `agent_state_changed → speaking` (the agent talking means the user's turn is over) and teardown. A pause longer than the window still splits — raise `MERGE_WINDOW_S` or add flush triggers if callers report split lines.
+
+**End-of-call drain.** `call_end_triggered` and `_transcripts_closed` are deliberately separate flags. The first flips the instant a hangup is seen and guards against duplicate teardown; the second closes the transcript queue and flips only after Sarvam has handed over the caller's last utterance. On stop the tap calls `stream.end_input()` — which flushes the segment and closes the input channel, so Sarvam finalizes what it still holds — rather than `aclose()`, which would cancel the connection and discard that audio. `_flush_and_end_call` awaits the tap for up to `DRAIN_TIMEOUT_S` (3 s) before closing the queue; on timeout the tap is cancelled but its `finally` still flushes the coalescer, so a slow drain degrades to a partial line rather than to nothing.
+
+**Ordering.** Transcript timestamps are stamped at capture, not at DB-write time, and the coalescer reports the arrival of the *first* fragment in a group. Agent text is produced locally and written almost immediately; user text costs a Sarvam round-trip plus the merge window, so it frequently reaches Mongo after the reply it triggered. `add_transcript` therefore appends with `{"$push": {"transcripts": {"$each": [entry], "$sort": {"timestamp": 1}}}}`, which slots each entry into speaking order on insert. Being an atomic update it also removes a read-modify-`save()` that could clobber transcripts when `update_call_status` / `end_call` / the dispatcher safety net wrote the same document concurrently. No read-side sorting is needed anywhere.
 
 **Scope of fix.** Only the persisted user transcript is corrected. The OpenAI Realtime LLM still consumes raw audio embeddings — if the LLM itself misunderstands Indic input, the assistant reply will reflect that. To fix LLM understanding as well, switch the assistant to `pipeline` mode (Sarvam STT feeds a text LLM) or to `realtime` + `gemini`.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from datetime import datetime, timezone
 from typing import Callable
 
 from livekit import rtc
@@ -11,26 +13,94 @@ from src.core.agents.audio_denoise import SpeechGate
 from src.core.config import settings
 from src.core.logger import logger
 
+# ponytail: debounce, not turn detection. SpeechGate zeroes non-speech after a 600 ms
+# hangover (audio_denoise._HANGOVER_MS), so Sarvam's server VAD endpoints on any longer
+# intra-sentence pause and returns one FINAL_TRANSCRIPT per fragment. Rejoining on a quiet
+# window puts the sentence back together; a pause longer than the window still splits.
+# Raise this, or drive flush() from more turn events, if callers report split lines.
+MERGE_WINDOW_S = 1.0
+
+# Upper bound on how long teardown should wait for Sarvam to finalize its buffered audio.
+DRAIN_TIMEOUT_S = 3.0
+
+
+class FinalCoalescer:
+    """Joins Sarvam's per-fragment finals back into whole utterances.
+
+    Emits ``(text, started_at)`` where ``started_at`` is when the first fragment of the
+    group arrived, not when the group was emitted. The caller stores that as the
+    transcript timestamp, so a user turn that took a network round-trip to transcribe
+    still sorts above the agent reply it triggered.
+    """
+
+    def __init__(
+        self,
+        emit: Callable[[str, datetime], None],
+        window: float = MERGE_WINDOW_S,
+    ) -> None:
+        self._emit = emit
+        self._window = window
+        self._parts: list[str] = []
+        self._started_at: datetime | None = None
+        self._task: asyncio.Task | None = None
+
+    def add(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if self._started_at is None:
+            self._started_at = datetime.now(timezone.utc)
+        self._parts.append(text)
+        if self._task is not None:
+            self._task.cancel()
+        self._task = asyncio.create_task(self._flush_after_window())
+
+    async def _flush_after_window(self) -> None:
+        try:
+            await asyncio.sleep(self._window)
+        except asyncio.CancelledError:
+            return
+        self._task = None
+        self.flush()
+
+    def flush(self) -> None:
+        """Emit whatever is buffered right now — the agent started speaking, or the call is ending."""
+        if self._task is not None:
+            self._task.cancel()
+            self._task = None
+        if not self._parts:
+            return
+        text, started_at = " ".join(self._parts), self._started_at
+        self._parts = []
+        self._started_at = None
+        try:
+            self._emit(text, started_at or datetime.now(timezone.utc))
+        except Exception as e:
+            logger.error(f"[SARVAM-STT] emit callback error: {e}")
+
 
 async def run_sarvam_parallel_stt(
     *,
     room: rtc.Room,
     target_identity: str,
-    on_final: Callable[[str], None],
+    coalescer: FinalCoalescer,
     stop_event: asyncio.Event,
     api_key: str | None = None,
     model: str | None = None,
     language: str | None = None,
 ) -> None:
-    """Stream caller audio into Sarvam Saras v3 and invoke `on_final` for each finalized utterance.
+    """Stream caller audio into Sarvam Saras v3 and feed finalized utterances to `coalescer`.
 
     Runs alongside OpenAI Realtime — does not touch the LLM audio pipeline.
-    Exits when `stop_event` is set.
+    On `stop_event` it asks Sarvam to finalize its buffered audio rather than dropping it,
+    so the caller's last sentence survives a hangup.
     """
     sarvam_stt = sarvam_plugin.STT(
         model=model or "saaras:v3",
         mode="codemix",
-        language=language or "unknown",
+        # An empty string is reachable from the API (SarvamSTTConfig.language has no
+        # min_length) and the plugin silently turns it into en-IN instead of auto-detect.
+        language=(language or "").strip() or "unknown",
         # Never assistant_tts_config["api_key"] — that key belongs to the selected TTS
         # provider (cartesia/elevenlabs/mistral) and Sarvam rejects it with a 403.
         api_key=api_key or settings.SARVAM_API_KEY,
@@ -50,9 +120,9 @@ async def run_sarvam_parallel_stt(
         )
         try:
             async for ev in audio:
-                if stop_event.is_set():
-                    break
                 stream.push_frame(ev.frame)
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             logger.error(f"[SARVAM-STT] Audio pump error: {e}", exc_info=True)
 
@@ -75,24 +145,36 @@ async def run_sarvam_parallel_stt(
 
     room.on("track_subscribed", _on_track)
 
+    async def _stop_watch() -> None:
+        await stop_event.wait()
+        if pump_task and not pump_task.done():
+            pump_task.cancel()
+        # end_input() flushes the segment and closes the input channel, so Sarvam returns
+        # what it still holds and the event iterator then ends on its own. aclose() alone
+        # would cancel the connection and throw that audio away.
+        with contextlib.suppress(Exception):
+            stream.end_input()
+
+    stop_task = asyncio.create_task(_stop_watch())
+
     try:
         async for ev in stream:
-            if stop_event.is_set():
-                break
             if ev.type == stt_pkg.SpeechEventType.FINAL_TRANSCRIPT:
-                text = ev.alternatives[0].text if ev.alternatives else ""
-                if text.strip():
-                    try:
-                        on_final(text)
-                    except Exception as e:
-                        logger.error(f"[SARVAM-STT] on_final callback error: {e}")
+                coalescer.add(ev.alternatives[0].text if ev.alternatives else "")
+    except asyncio.CancelledError:
+        logger.warning("[SARVAM-STT] Drain cancelled — trailing audio may be unfinalized")
     except Exception as e:
         logger.error(f"[SARVAM-STT] Stream error: {e}", exc_info=True)
     finally:
+        # Sync first: this must land even if the task is being cancelled out from under us.
+        coalescer.flush()
         room.off("track_subscribed", _on_track)
+        stop_task.cancel()
         if pump_task:
             pump_task.cancel()
-            await asyncio.gather(pump_task, return_exceptions=True)
+        await asyncio.gather(
+            *(t for t in (pump_task, stop_task) if t), return_exceptions=True
+        )
         try:
             await stream.aclose()
         except Exception as e:

@@ -386,7 +386,7 @@ api_livekit/
 │   │   │   ├── stt/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── factory.py          # STT resolver (native | sarvam)
-│   │   │   │   └── sarvam_parallel.py  # Sarvam Saras v3 parallel STT tap
+│   │   │   │   └── sarvam_parallel.py  # Sarvam Saras v3 parallel STT tap + fragment coalescer
 │   │   │   └── tts/
 │   │   │       ├── __init__.py
 │   │   │       └── factory.py          # TTS factory + Sarvam WS keepalive

@@ -35,7 +35,12 @@ from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
-from src.core.agents.stt import resolve_stt, run_sarvam_parallel_stt
+from src.core.agents.stt import (
+    DRAIN_TIMEOUT_S,
+    FinalCoalescer,
+    resolve_stt,
+    run_sarvam_parallel_stt,
+)
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
@@ -293,15 +298,24 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"Failed to persist usage record: {e}", exc_info=True)
 
     _sarvam_stop = asyncio.Event()
+    _sarvam_task: asyncio.Task | None = None
+    _sarvam_coalescer: FinalCoalescer | None = None
 
     # Watchdog/tools stamp a reason before teardown persists it.
     _end_reason: str = "natural"
     _max_duration_task: asyncio.Task | None = None
     _teardown_started: bool = False
+    # Declared here, not after wait_for_participant: the conversation_item_added handler
+    # closes over it and can fire before a participant has joined.
+    call_end_triggered: bool = False
+    # Separate from call_end_triggered on purpose. That flag guards duplicate teardown and
+    # must be set the instant a hangup is seen; this one closes the transcript path and is
+    # set only once Sarvam has handed over the caller's last utterance.
+    _transcripts_closed: bool = False
 
     # Single teardown path used by both EndCallTool and participant disconnect
     async def _flush_and_end_call(delay: float = 0.0):
-        nonlocal call_end_triggered, _teardown_started
+        nonlocal call_end_triggered, _teardown_started, _transcripts_closed
         if _teardown_started:  # ponytail: idempotency guard, single teardown per call
             return
         _teardown_started = True
@@ -316,8 +330,19 @@ async def entrypoint(ctx: JobContext):
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
         if delay > 0:
             await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
+        # Let Sarvam finalize the caller's last utterance before the transcript path shuts.
+        # _sarvam_stop above already asked it to; this is where we wait for the answer.
+        if _sarvam_task is not None and not _sarvam_task.done():
+            try:
+                # Unshielded: on timeout wait_for cancels the tap, whose finally still
+                # flushes the coalescer — so a slow drain degrades to a partial line
+                # rather than to nothing.
+                await asyncio.wait_for(_sarvam_task, timeout=DRAIN_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out draining Sarvam STT; last utterance may be missing")
+        # No new transcripts past this point, so the queue below can be joined.
+        _transcripts_closed = True
         # Drain transcript queue before ending (max 3s).
-        # call_end_triggered is already True, so no new items will be enqueued.
         try:
             await asyncio.wait_for(_transcript_queue.join(), timeout=3.0)
         except asyncio.TimeoutError:
@@ -641,15 +666,19 @@ async def entrypoint(ctx: JobContext):
         delete_room_on_close=False,
     )
 
-    def _enqueue_transcript(speaker: str, text: str) -> None:
-        if call_end_triggered:
+    def _enqueue_transcript(speaker: str, text: str, timestamp: datetime | None = None) -> None:
+        if _transcripts_closed:
             return
+        # Stamped here, not at DB-write time: the queue and the Mongo round-trip both add
+        # latency, and the Sarvam tap passes the time the caller actually started talking.
+        timestamp = timestamp or datetime.now(timezone.utc)
         try:
             _transcript_queue.put_nowait(
                 lambda: livekit_services.add_transcript(
                     room_name=ctx.room.name,
                     speaker=speaker,
                     text=text,
+                    timestamp=timestamp,
                     assistant_id=assistant_id,
                     assistant_name=assistant.assistant_name,
                     to_number=to_number,
@@ -717,6 +746,10 @@ async def entrypoint(ctx: JobContext):
     def on_agent_state_changed(event):
         if hold_controller.is_on_hold and event.new_state == "speaking":
             session.interrupt()
+        # The agent talking means the user's turn is over — emit the buffered utterance now
+        # instead of waiting out the merge window, so it is written before the reply it caused.
+        if _sarvam_coalescer is not None and event.new_state == "speaking":
+            _sarvam_coalescer.flush()
         if silence_watchdog:
             if event.new_state == "speaking":
                 silence_watchdog.on_agent_started_speaking()
@@ -758,7 +791,6 @@ async def entrypoint(ctx: JobContext):
     logger.info("Waiting for participant...")
     participant = await ctx.wait_for_participant()
     primary_participant_identity = participant.identity
-    call_end_triggered = False
 
     # --- Max call-duration watchdog ---
     # Hard cap on active-call length. Counts from gate-ready (post-answer for Exotel outbound,
@@ -827,15 +859,19 @@ async def entrypoint(ctx: JobContext):
 
     # Sarvam Saras v3 parallel STT — overrides user transcript when half-cascade + sarvam selected.
     if _use_sarvam_stt:
-        def _on_sarvam_final(text: str) -> None:
-            _enqueue_transcript("user", text)
+        def _on_sarvam_utterance(text: str, started_at: datetime) -> None:
+            _enqueue_transcript("user", text, timestamp=started_at)
             if silence_watchdog:
                 silence_watchdog.on_user_message()
 
-        asyncio.create_task(run_sarvam_parallel_stt(
+        _sarvam_coalescer = FinalCoalescer(_on_sarvam_utterance)
+        # Held, not fire-and-forget: teardown awaits this to get the last utterance, and a
+        # crash inside it would otherwise cost every user transcript with only a stray
+        # "exception was never retrieved" warning.
+        _sarvam_task = asyncio.create_task(run_sarvam_parallel_stt(
             room=ctx.room,
             target_identity=primary_participant_identity,
-            on_final=_on_sarvam_final,
+            coalescer=_sarvam_coalescer,
             stop_event=_sarvam_stop,
             api_key=_stt_config.get("api_key"),
             model=_stt_config.get("model"),
