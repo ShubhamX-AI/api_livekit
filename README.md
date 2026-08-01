@@ -386,6 +386,7 @@ api_livekit/
 │   │   │   ├── stt/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── factory.py          # STT resolver (native | sarvam)
+│   │   │   │   ├── native_prompt.py    # transcription prompt + noise-reduction pick (native path)
 │   │   │   │   └── sarvam_parallel.py  # Sarvam Saras v3 parallel STT tap + fragment coalescer
 │   │   │   └── tts/
 │   │   │       ├── __init__.py

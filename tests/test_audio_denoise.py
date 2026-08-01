@@ -22,8 +22,12 @@ def _load_16k(path: str) -> np.ndarray:
     return resample_poly(pcm.astype(np.float32), SAMPLE_RATE, rate).astype(np.int16)
 
 
-def _run(gate: SpeechGate, pcm: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Push pcm through the gate frame by frame; return per-frame input/output RMS."""
+def _run(gate: SpeechGate, pcm: np.ndarray, passes: int = 1) -> tuple[np.ndarray, np.ndarray]:
+    """Push pcm through the gate frame by frame; return per-frame input/output RMS.
+
+    `passes=2` reproduces how RoomIO wires the gate in — the SDK applies the same instance
+    both as the input stream's processor and as the AudioStream's noise_cancellation.
+    """
     rms_in, rms_out = [], []
     for start in range(0, len(pcm) - FRAME, FRAME):
         chunk = pcm[start : start + FRAME].copy()
@@ -34,7 +38,8 @@ def _run(gate: SpeechGate, pcm: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             samples_per_channel=FRAME,
         )
         rms_in.append(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-        gate._process(frame)
+        for _ in range(passes):
+            gate._process(frame)
         out = np.asarray(frame.data).astype(np.float64)
         rms_out.append(np.sqrt(np.mean(out**2)))
     return np.array(rms_in), np.array(rms_out)
@@ -103,6 +108,24 @@ class TestSpeechGate(unittest.TestCase):
         open_frames = int(np.sum(rms_out > 1.0))
         self.assertGreater(open_frames, 8)
         self.assertLess(open_frames, 16)
+
+    def test_hangover_is_unaffected_by_the_sdks_double_application(self):
+        """RoomIO hands the same gate to the SDK twice, so every frame arrives twice.
+
+        Without a guard the second pass scores the already-zeroed samples as silence and
+        decrements the hangover again, halving it — which endpoints the model mid-sentence.
+        """
+        def open_frames(passes: int) -> int:
+            gate = SpeechGate()
+            probs = iter([0.9] + [0.0] * 100)
+            gate._speech_prob = lambda _chunk: next(probs, 0.0)
+            tone = (
+                np.sin(2 * np.pi * 220 * np.arange(SAMPLE_RATE) / SAMPLE_RATE) * 8000
+            ).astype(np.int16)
+            _, rms_out = _run(gate, tone, passes=passes)
+            return int(np.sum(rms_out > 1.0))
+
+        self.assertEqual(open_frames(2), open_frames(1))
 
     def test_frame_geometry_is_preserved(self):
         gate = SpeechGate()

@@ -38,6 +38,8 @@ from src.core.agents.tts import create_tts, maintain_sarvam_connection
 from src.core.agents.stt import (
     DRAIN_TIMEOUT_S,
     FinalCoalescer,
+    build_native_stt_prompt,
+    noise_reduction_for,
     resolve_stt,
     run_sarvam_parallel_stt,
 )
@@ -58,6 +60,20 @@ load_dotenv(override=True)
 
 # Platform default applied when assistant_interaction_config.max_call_duration_minutes is unset.
 DEFAULT_MAX_CALL_DURATION_MINUTES = 30.0
+
+
+def should_record(role: str | None, *, on_hold: bool, gate_active: bool) -> bool:
+    """Whether a conversation item belongs in the stored transcript.
+
+    Hold and the pre-answer readiness gate exist to keep the *agent* quiet and out of the
+    record. They must never suppress the caller: `gate_active` flips on a single
+    `call_answered` SIP packet, so gating user speech on it meant one dropped packet
+    discarded every transcript for the whole call, silently. The Sarvam tap already bypasses
+    both checks, so this also keeps the two STT paths behaving the same.
+    """
+    if role == "user":
+        return True
+    return gate_active and not on_hold
 
 
 # Helper to build background audio player based on interaction config
@@ -299,7 +315,8 @@ async def entrypoint(ctx: JobContext):
 
     _sarvam_stop = asyncio.Event()
     _sarvam_task: asyncio.Task | None = None
-    _sarvam_coalescer: FinalCoalescer | None = None
+    # Assigned below, once _enqueue_transcript exists. Declared here because teardown reads it.
+    _user_coalescer: FinalCoalescer | None = None
 
     # Watchdog/tools stamp a reason before teardown persists it.
     _end_reason: str = "natural"
@@ -330,8 +347,9 @@ async def entrypoint(ctx: JobContext):
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
         if delay > 0:
             await asyncio.sleep(delay)  # Let TTS audio finish streaming to egress
-        # Let Sarvam finalize the caller's last utterance before the transcript path shuts.
-        # _sarvam_stop above already asked it to; this is where we wait for the answer.
+        # Give whichever STT owns user transcripts a chance to finalize the caller's last
+        # utterance before the transcript path shuts. This is the window that the caller's
+        # final sentence lands in — it comes back after their audio has already stopped.
         if _sarvam_task is not None and not _sarvam_task.done():
             try:
                 # Unshielded: on timeout wait_for cancels the tap, whose finally still
@@ -340,6 +358,24 @@ async def entrypoint(ctx: JobContext):
                 await asyncio.wait_for(_sarvam_task, timeout=DRAIN_TIMEOUT_S)
             except asyncio.TimeoutError:
                 logger.warning("Timed out draining Sarvam STT; last utterance may be missing")
+        elif not is_text_only:
+            # Native path: the model is still holding uncommitted audio. commit_user_turn
+            # sends input_audio_buffer.commit, so it transcribes that audio and fires one
+            # more conversation_item_added. skip_reply stops it answering a caller who has
+            # already hung up. No-op on Gemini — its plugin logs commit_audio as unsupported
+            # and only finalizes a transcript on turn_complete, which a mid-turn hangup never
+            # reaches, so a Gemini caller's last line is unrecoverable from here.
+            try:
+                await asyncio.wait_for(
+                    session.commit_user_turn(skip_reply=True), timeout=DRAIN_TIMEOUT_S
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timed out committing final user turn; last utterance may be missing")
+            except Exception as e:
+                logger.warning(f"Could not commit final user turn: {e}")
+        if _user_coalescer is not None:
+            # No-op on the Sarvam path — the tap already flushed in its own teardown.
+            _user_coalescer.flush()
         # No new transcripts past this point, so the queue below can be joined.
         _transcripts_closed = True
         # Drain transcript queue before ending (max 3s).
@@ -443,6 +479,16 @@ async def entrypoint(ctx: JobContext):
     _use_sarvam_stt = False
     _stt_provider, _stt_config = resolve_stt(assistant)
 
+    # Shared by both modes: whenever the LLM does its own transcription it gets the same
+    # prompt and the same phone-tuned noise reduction. Full realtime used to pass neither
+    # and silently fell back to gpt-4o-mini-transcribe with no instructions at all.
+    _is_phone_call = job_metadata.get("call_type") != "web"
+    _noise_reduction = noise_reduction_for(_is_phone_call)
+    _stt_prompt = build_native_stt_prompt(
+        interaction_config.preferred_languages, is_phone_call=_is_phone_call
+    )
+    _native_transcription = AudioTranscription(model="gpt-4o-transcribe", prompt=_stt_prompt)
+
     if is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
         if realtime_provider == "gemini":
@@ -458,6 +504,9 @@ async def entrypoint(ctx: JobContext):
                 model=llm_config.get("model", "gpt-realtime-1.5"),
                 voice=llm_config.get("voice", "marin"),
                 modalities=["audio"],
+                # Sarvam never runs in full realtime mode, so the model always transcribes.
+                input_audio_transcription=_native_transcription,
+                input_audio_noise_reduction=_noise_reduction,
                 turn_detection=TurnDetection(
                     type="semantic_vad",
                     eagerness="high",
@@ -478,44 +527,17 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"Realtime mode | provider={realtime_provider} | model={llm_config.get('model')}")
     else:
         # Half-cascade mode: realtime model emits TEXT, separate TTS speaks the audio.
-        _langs = interaction_config.preferred_languages or []
-        # Phone calls (Exotel SIP) feed lossy G.711 narrowband audio (300-3400 Hz).
-        # OpenAI's `far_field` noise-reduction model is trained on this signature;
-        # `near_field` assumes close-mic/headset and degrades phone transcription.
-        _is_phone_call = job_metadata.get("call_type") != "web"
-        _noise_reduction = "far_field" if _is_phone_call else "near_field"
-        _phone_audio_note = (
-            "Audio is from a live telephone call (G.711 narrowband, ~8 kHz, lossy). "
-            "Expect static, line hum, codec artifacts, and muffled consonants. "
-            "Do NOT treat noise as speech. "
-            if _is_phone_call else ""
-        )
-        _stt_prompt = (
-            f"{'Expected language(s): ' + ', '.join(_langs) + '. ' if _langs else ''}"
-            f"{_phone_audio_note}"
-            "This is a live customer support voice call. The speaker may use any language or mix languages mid-sentence. "
-            "Transcribe ONLY what is actually spoken, in the speaker's natural script for that language. "
-            "If audio is unclear, silent, or unintelligible — output [inaudible]. NEVER guess or fabricate words. "
-            "For mixed speech, transcribe each word in its own correct native script. "
-            "Do NOT romanize. Do NOT translate. Do NOT switch to a different language than what was spoken. "
-            "Use natural punctuation. Skip filler sounds like um, uh, hmm."
-        )
-
         # Sarvam Saras v3 handles user STT in parallel (default, "sarvam"). The alternative
         # ("native") lets the conversational LLM transcribe itself — provider-agnostic. When
         # Sarvam is active we skip the LLM's own transcription to avoid dual writes and save cost.
         # Text-only chats have no audio, so treat as "no parallel STT" — the SDK's own
         # conversation events carry the user text.
         _use_sarvam_stt = not is_text_only and _stt_provider == "sarvam"
-        _openai_transcription = None if _use_sarvam_stt else AudioTranscription(
-            model="gpt-4o-transcribe",
-            prompt=_stt_prompt,
-        )
 
         if realtime_provider == "openai":
             llm = realtime.RealtimeModel(
                 model=llm_config.get("model", "gpt-realtime-1.5"),
-                input_audio_transcription=_openai_transcription,
+                input_audio_transcription=None if _use_sarvam_stt else _native_transcription,
                 input_audio_noise_reduction=_noise_reduction,
                 turn_detection=TurnDetection(
                     type="semantic_vad",
@@ -692,33 +714,48 @@ async def entrypoint(ctx: JobContext):
         except asyncio.QueueFull:
             logger.warning(f"Transcript queue full, dropping | room={room_name}")
 
+    def _on_user_utterance(text: str, started_at: datetime) -> None:
+        _enqueue_transcript("user", text, timestamp=started_at)
+        if silence_watchdog:
+            silence_watchdog.on_user_message()
+
+    # One coalescer for both STT sources. Sarvam's per-endpoint finals and the LLM's own
+    # committed turns are both fragments of a single sentence when the caller pauses
+    # mid-speech, and both are rejoined the same way. Text-only chats skip it: there is no
+    # endpointing to undo, and a debounce would wrongly merge two separately typed messages.
+    _user_coalescer = None if is_text_only else FinalCoalescer(_on_user_utterance)
+
     # --- Transcription Event Handler ---
     @session.on("conversation_item_added")
     def on_conversation_item(event):
-        if not getattr(event.item, "text_content", None):
-            return
-        # Suppress all activity during hold
-        if hold_controller.is_on_hold:
-            if event.item.role == "assistant":
-                session.interrupt()
-            return
-        # Block all activity until the call is ready
-        if not gate.is_active:
-            return
-        # Sarvam parallel STT owns user transcripts when active
-        if event.item.role == "user" and _use_sarvam_stt:
+        role = getattr(event.item, "role", None)
+        text = getattr(event.item, "text_content", None)
+        if not text:
             return
 
-        if filler_words_enabled and event.item.role in ("user", "assistant"):
-            context_turns.append({"role": event.item.role, "text": event.item.text_content})
+        on_hold = hold_controller.is_on_hold
+        if on_hold and role == "assistant":
+            session.interrupt()
+        if not should_record(role, on_hold=on_hold, gate_active=gate.is_active):
+            return
 
-        if silence_watchdog and event.item.role == "user":
-            silence_watchdog.on_user_message()
+        if role == "user":
+            # Sarvam owns user transcripts when active — it feeds the coalescer directly.
+            if _use_sarvam_stt:
+                return
+            if _user_coalescer is not None:
+                _user_coalescer.add(text)
+            else:
+                _on_user_utterance(text, datetime.now(timezone.utc))
+        else:
+            _enqueue_transcript(role, text)
 
-        if silence_watchdog and event.item.role == "assistant" and not user_is_speaking:
-            silence_watchdog.on_assistant_message(event.item.text_content)
-
-        _enqueue_transcript(event.item.role, event.item.text_content)
+        if on_hold:
+            return
+        if filler_words_enabled and role in ("user", "assistant"):
+            context_turns.append({"role": role, "text": text})
+        if silence_watchdog and role == "assistant" and not user_is_speaking:
+            silence_watchdog.on_assistant_message(text)
 
     # --- Start Session ---
     logger.info("Starting AgentSession...")
@@ -748,8 +785,8 @@ async def entrypoint(ctx: JobContext):
             session.interrupt()
         # The agent talking means the user's turn is over — emit the buffered utterance now
         # instead of waiting out the merge window, so it is written before the reply it caused.
-        if _sarvam_coalescer is not None and event.new_state == "speaking":
-            _sarvam_coalescer.flush()
+        if _user_coalescer is not None and event.new_state == "speaking":
+            _user_coalescer.flush()
         if silence_watchdog:
             if event.new_state == "speaking":
                 silence_watchdog.on_agent_started_speaking()
@@ -859,19 +896,13 @@ async def entrypoint(ctx: JobContext):
 
     # Sarvam Saras v3 parallel STT — overrides user transcript when half-cascade + sarvam selected.
     if _use_sarvam_stt:
-        def _on_sarvam_utterance(text: str, started_at: datetime) -> None:
-            _enqueue_transcript("user", text, timestamp=started_at)
-            if silence_watchdog:
-                silence_watchdog.on_user_message()
-
-        _sarvam_coalescer = FinalCoalescer(_on_sarvam_utterance)
         # Held, not fire-and-forget: teardown awaits this to get the last utterance, and a
         # crash inside it would otherwise cost every user transcript with only a stray
         # "exception was never retrieved" warning.
         _sarvam_task = asyncio.create_task(run_sarvam_parallel_stt(
             room=ctx.room,
             target_identity=primary_participant_identity,
-            coalescer=_sarvam_coalescer,
+            coalescer=_user_coalescer,
             stop_event=_sarvam_stop,
             api_key=_stt_config.get("api_key"),
             model=_stt_config.get("model"),
