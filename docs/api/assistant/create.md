@@ -2,6 +2,9 @@
 
 Create a new assistant configuration.
 
+For the full model/provider inventory (model IDs, defaults, per-mode validity) see
+[Models & Providers](../../reference/models.md).
+
 - **URL**: `/assistant/create`
 - **Method**: `POST`
 - **Headers**: `Authorization: Bearer <your_api_key>`
@@ -14,7 +17,7 @@ Create a new assistant configuration.
 | `assistant_name` | string | Yes | Assistant name (1-100 chars). |
 | `assistant_description` | string | Yes | Assistant description. |
 | `assistant_prompt` | string | Yes | System prompt. |
-| `assistant_llm_mode` | string | No | LLM mode: `pipeline` or `realtime`. Default: `pipeline`. |
+| `assistant_mode` | string | No | Runtime mode: `pipeline`, `realtime` or `cascade`. Default: `pipeline`. |
 | `assistant_start_instruction` | string | No | Opening response text. Used when `assistant_interaction_config.speaks_first=true` (max 500 chars). |
 | `assistant_interaction_config` | object | No | Interaction settings (see below). |
 | `assistant_greeting_audio` | object | No | Prerecorded greeting reference: `{ "enabled": bool, "audio_id": string }`. `audio_id` must reference one of your active [audio assets](../../api/audio/index.md). When `enabled` and `speaks_first=true`, the clip plays instead of a model-generated greeting. |
@@ -51,7 +54,7 @@ Create a new assistant configuration.
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. |
+    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. `cartesia` is cascade-only. |
     | `assistant_stt_config` | object | No | Config for the selected STT provider (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
 
     === "Sarvam"
@@ -62,11 +65,16 @@ Create a new assistant configuration.
         | :--- | :--- | :--- | :--- |
         | `model` | string | No | Sarvam STT model. Default: `saaras:v3`. |
         | `language` | string | No | BCP-47 code, or `unknown` to auto-detect. Default: `unknown`. |
+        | `mode` | string | No | Transcription mode. Default: `codemix` (keeps code-switching intact). `saaras:v3` only. |
         | `api_key` | string | No | Optional Sarvam API key. Falls back to system `SARVAM_API_KEY`. **Distinct from `assistant_tts_config.api_key`**, which belongs to whichever TTS provider you selected — Sarvam STT rejects a Cartesia/ElevenLabs/Mistral key with `403`. Masked in `GET /assistant/details` and `GET /assistant/list`. |
+
+        Allowed `model` and `mode` values: [Models & Providers](../../reference/models.md#stt).
 
     === "Native"
 
         The conversational LLM transcribes itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own on a Gemini pipeline). No configuration fields — send `{}` or omit `assistant_stt_config`.
+
+        Not valid in `cascade` mode — there is no realtime model to transcribe itself.
 
     Ignored in `realtime` (audio-out) mode, where the model always transcribes.
 
@@ -111,7 +119,7 @@ Create a new assistant configuration.
         "assistant_name": "Support Bot",
         "assistant_description": "First line support",
         "assistant_prompt": "You are a helpful customer support agent.",
-        "assistant_llm_mode": "pipeline",
+        "assistant_mode": "pipeline",
         "assistant_llm_config": {
           "api_key": "sk-..."
         },
@@ -164,7 +172,7 @@ Create a new assistant configuration.
 
     ```json
     {
-      "assistant_llm_mode": "realtime",
+      "assistant_mode": "realtime",
       "assistant_llm_config": {}
     }
     ```
@@ -179,11 +187,91 @@ Create a new assistant configuration.
         "assistant_name": "Gemini Assistant",
         "assistant_description": "Realtime voice assistant",
         "assistant_prompt": "You are a helpful assistant.",
-        "assistant_llm_mode": "realtime",
+        "assistant_mode": "realtime",
         "assistant_llm_config": {
           "provider": "gemini",
           "model": "gemini-3.1-flash-live-preview",
           "voice": "Puck"
+        }
+      }'
+    ```
+
+=== "Cascade Mode"
+
+    A true three-stage pipeline: plugin STT → plain OpenAI chat model → plugin TTS. Each stage is
+    separately metered, so this is the only mode that reports STT cost on its own. Full detail in
+    [Cascade Pipeline](../../architecture/cascade-pipeline.md).
+
+    **Required fields**
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `assistant_tts_model` | string | Yes | One of `cartesia`, `sarvam`, `elevenlabs`, `mistral`. |
+    | `assistant_tts_config` | object | Yes | TTS config for the selected provider (same tabs as the Pipeline tab). |
+
+    **STT stage** (optional — defaults to Sarvam with the system key)
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `assistant_stt_model` | string | No | `sarvam` (default when unset) or `cartesia`. **`native` is rejected** — there is no realtime model to transcribe itself. |
+    | `assistant_stt_config` | object | No | Config for the selected STT provider. |
+
+    === "Sarvam (multilingual)"
+
+        | Field | Type | Required | Description |
+        | :--- | :--- | :--- | :--- |
+        | `model` | string | No | Sarvam STT model. Default: `saaras:v3`. |
+        | `language` | string | No | `unknown` (default) auto-detects; or a fixed BCP-47 code. |
+        | `mode` | string | No | Transcription mode. Default: `codemix`. |
+        | `api_key` | string | No | Falls back to system `SARVAM_API_KEY`. |
+
+        The default `saaras:v3` + `unknown` + `codemix` combination is the multilingual one: it
+        auto-detects the language and keeps code-switching intact inside a single utterance.
+
+    === "Cartesia (single language)"
+
+        | Field | Type | Required | Description |
+        | :--- | :--- | :--- | :--- |
+        | `model` | string | No | Cartesia STT model. Default: `ink-whisper` (multilingual). |
+        | `language` | string | No | Fixed BCP-47 code. Default: `en`. **No auto-detect** — use Sarvam if the caller may switch languages. |
+        | `api_key` | string | No | Falls back to system `CARTESIA_API_KEY`. |
+
+        Allowed `model`, `language` and `mode` values for both providers: [Models & Providers](../../reference/models.md#stt).
+
+    **LLM stage** (`assistant_llm_config`)
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `provider` | string | No | Must be `openai` (the default when unset). Any other value is rejected. |
+    | `model` | string | No | OpenAI chat model. Default: `gpt-4.1`. Free-form — any OpenAI chat model name works. Known-good list: [Models & Providers](../../reference/models.md#cascade-llm-cascade-mode-only). |
+    | `api_key` | string | No | Falls back to system `OPENAI_API_KEY`. |
+
+    `voice` is ignored — the TTS provider owns the voice in this mode.
+
+    **Example request**
+
+    ```bash
+    curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_name": "Cascade Assistant",
+        "assistant_description": "True STT -> LLM -> TTS pipeline",
+        "assistant_prompt": "You are a helpful assistant.",
+        "assistant_mode": "cascade",
+        "assistant_stt_model": "sarvam",
+        "assistant_stt_config": {
+          "model": "saaras:v3",
+          "language": "unknown",
+          "mode": "codemix"
+        },
+        "assistant_llm_config": {
+          "provider": "openai",
+          "model": "gpt-4.1-mini"
+        },
+        "assistant_tts_model": "cartesia",
+        "assistant_tts_config": {
+          "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
         }
       }'
     ```
@@ -197,8 +285,8 @@ Create a new assistant configuration.
 
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `speaks_first` | boolean | No | If `true` (default), assistant sends an opening response first in both `pipeline` and `realtime` modes. |
-| `filler_words` | boolean | No | Enables filler words while user is speaking. Pipeline mode only. |
+| `speaks_first` | boolean | No | If `true` (default), assistant sends an opening response first in all three modes. |
+| `filler_words` | boolean | No | Enables filler words while user is speaking. Requires an external TTS — available in `pipeline` and `cascade`, not `realtime`. |
 | `silence_reprompts` | boolean | No | Enables reprompts during prolonged user silence. |
 | `silence_reprompt_interval` | number | No | Reprompt interval in seconds (1.0-60.0). Default: `10.0`. |
 | `silence_max_reprompts` | number | No | Maximum reprompts before ending session (0-5). Default: `2`. |

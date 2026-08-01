@@ -53,13 +53,18 @@ Content-Type: application/json
     "call_service": "exotel",
     "platform_number": "08044319240",
     "usage": {
-      "llm_input_audio_tokens": 12450,
+      "mode": "cascade",
+      "llm_model": "gpt-4.1-mini",
+      "llm_input_audio_tokens": 0,
       "llm_input_text_tokens": 850,
       "llm_output_audio_tokens": 0,
       "llm_output_text_tokens": 1230,
-      "llm_total_tokens": 14530,
+      "llm_total_tokens": 2080,
       "tts_characters_count": 485,
-      "tts_audio_duration": 32.5
+      "tts_audio_duration": 32.5,
+      "stt_provider": "sarvam",
+      "stt_model": "saaras:v3",
+      "stt_audio_duration": 41.75
     }
   }
 }
@@ -97,14 +102,30 @@ Content-Type: application/json
 | `data.call_type`               | string  | Call direction: `outbound`, `inbound`, or `web`. |
 | `data.call_service`            | string  | Telephony provider: `exotel`, `twilio`, or `web`. |
 | `data.platform_number`         | string  | Platform's own phone number used for this call. |
-| `data.usage`                   | object  | Token and TTS usage metrics (if available). |
-| `data.usage.llm_input_audio_tokens` | number | OpenAI Realtime audio input tokens.   |
-| `data.usage.llm_input_text_tokens`  | number | OpenAI Realtime text input tokens.    |
-| `data.usage.llm_output_audio_tokens`| number | OpenAI Realtime audio output tokens.  |
-| `data.usage.llm_output_text_tokens` | number | OpenAI Realtime text output tokens.   |
+| `data.usage`                   | object  | Per-component usage metrics (if available). Raw counts, not costs. |
+| `data.usage.mode`                   | string | Runtime mode for this call: `pipeline`, `realtime` or `cascade`. See [Models & Providers](../../reference/models.md). |
+| `data.usage.llm_model`              | string | LLM model(s) used, comma-separated if more than one. |
+| `data.usage.llm_input_audio_tokens` | number | LLM audio input tokens (`0` in cascade — the LLM receives text). |
+| `data.usage.llm_input_text_tokens`  | number | LLM text input tokens.                |
+| `data.usage.llm_output_audio_tokens`| number | LLM audio output tokens (`0` outside realtime). |
+| `data.usage.llm_output_text_tokens` | number | LLM text output tokens.               |
 | `data.usage.llm_total_tokens`       | number | Total LLM tokens for this call.       |
 | `data.usage.tts_characters_count`   | number | Characters sent to TTS provider.      |
 | `data.usage.tts_audio_duration`     | number | TTS audio duration in seconds.        |
+| `data.usage.stt_provider`           | string | STT provider. **`cascade` mode only**, `null` otherwise. |
+| `data.usage.stt_model`              | string | STT model. **`cascade` mode only**, `null` otherwise. |
+| `data.usage.stt_audio_duration`     | number | Seconds of audio transcribed. **`cascade` mode only**, `0` otherwise. |
+
+!!! note "Why STT fields are empty outside cascade mode"
+    In `pipeline` and `realtime` modes the LLM transcribes internally, so that spend is already
+    counted inside its token totals — there is nothing separate to attribute. Only
+    [`cascade`](../../architecture/cascade-pipeline.md) has a standalone STT stage.
+
+!!! warning "Breaking change: `usage.llm_mode` → `usage.mode`"
+    The old `usage.llm_mode` key was renamed to `usage.mode` (the field never selected an LLM — it
+    records which runtime mode the call ran in). Consumers reading `data.usage.llm_mode` will now see
+    `undefined`; read `data.usage.mode` instead. This is a hard break: the old key is not emitted.
+    See [Models & Providers](../../reference/models.md) for what each mode value means.
 
 ### Call Status Glossary (Authoritative)
 
@@ -149,7 +170,7 @@ The webhook payload is generated from the stored call record and currently inclu
 - `call_type`
 - `call_service`
 - `platform_number`
-- `usage` (object with LLM token counts and TTS usage, included when available)
+- `usage` (object with per-component LLM / TTS / STT metrics, included when available)
 
 ### Quick Test with curl
 

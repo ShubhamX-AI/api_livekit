@@ -276,6 +276,8 @@ async def admin_tokens_summary(
                     "total_llm_tokens": {"$sum": "$llm_total_tokens"},
                     "total_tts_characters": {"$sum": "$tts_characters_count"},
                     "total_tts_audio_duration": {"$sum": "$tts_audio_duration"},
+                    # Cascade mode only; zero for pipeline/realtime rows.
+                    "total_stt_audio_duration": {"$sum": "$stt_audio_duration"},
                     "total_call_duration_minutes": {"$sum": "$call_duration_minutes"},
                 }
             },
@@ -320,6 +322,7 @@ async def admin_tokens_by_user(
                     "total_llm_output_text_tokens": {"$sum": "$llm_output_text_tokens"},
                     "total_tts_characters": {"$sum": "$tts_characters_count"},
                     "total_tts_audio_duration": {"$sum": "$tts_audio_duration"},
+                    "total_stt_audio_duration": {"$sum": "$stt_audio_duration"},
                     "total_call_duration_minutes": {"$sum": "$call_duration_minutes"},
                 }
             },
@@ -334,6 +337,7 @@ async def admin_tokens_by_user(
                     "total_llm_output_text_tokens": 1,
                     "total_tts_characters": 1,
                     "total_tts_audio_duration": {"$round": ["$total_tts_audio_duration", 2]},
+                    "total_stt_audio_duration": {"$round": ["$total_stt_audio_duration", 2]},
                     "total_call_duration_minutes": {"$round": ["$total_call_duration_minutes", 2]},
                     "total_call_duration_hours": {"$round": [{"$divide": ["$total_call_duration_minutes", 60]}, 2]},
                 }
@@ -383,6 +387,7 @@ async def admin_tokens_by_assistant(
                     "total_llm_output_text_tokens": {"$sum": "$llm_output_text_tokens"},
                     "total_tts_characters": {"$sum": "$tts_characters_count"},
                     "total_tts_audio_duration": {"$sum": "$tts_audio_duration"},
+                    "total_stt_audio_duration": {"$sum": "$stt_audio_duration"},
                     "total_call_duration_minutes": {"$sum": "$call_duration_minutes"},
                 }
             },
@@ -397,6 +402,7 @@ async def admin_tokens_by_assistant(
                     "total_llm_output_text_tokens": 1,
                     "total_tts_characters": 1,
                     "total_tts_audio_duration": {"$round": ["$total_tts_audio_duration", 2]},
+                    "total_stt_audio_duration": {"$round": ["$total_stt_audio_duration", 2]},
                     "total_call_duration_minutes": {"$round": ["$total_call_duration_minutes", 2]},
                     "total_call_duration_hours": {"$round": [{"$divide": ["$total_call_duration_minutes", 60]}, 2]},
                 }

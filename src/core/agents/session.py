@@ -6,6 +6,7 @@ from livekit.agents import (
     JobContext,
     WorkerOptions,
     cli,
+    inference,
     room_io,
     BackgroundAudioPlayer,
     AudioConfig,
@@ -34,14 +35,17 @@ from src.core.agents.audio_denoise import SpeechGate
 from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
+from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL, create_llm
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
 from src.core.agents.stt import (
     FinalCoalescer,
+    create_stt,
     build_native_stt_prompt,
     noise_reduction_for,
     resolve_stt,
     run_sarvam_parallel_stt,
 )
+from src.core.agents.usage import summarize_usage
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
@@ -51,7 +55,6 @@ from src.core.db.db_schemas import Assistant, AudioAsset, InboundContextStrategy
 from src.services.livekit.livekit_svc import LiveKitService
 from src.services.storage import s3_audio
 from livekit.agents.utils.audio import audio_frames_from_file
-from livekit.agents.metrics import UsageCollector
 
 
 setup_logging()
@@ -156,7 +159,14 @@ async def entrypoint(ctx: JobContext):
         return
 
     logger.info(f"Loaded assistant config: {assistant.assistant_name} (ID: {assistant.assistant_id})")
-    is_realtime = assistant.assistant_llm_mode == "realtime"
+    # Three modes, one discriminator each. "pipeline" (half-cascade) is the implicit
+    # third case: a realtime model emitting text, spoken by an external TTS.
+    #   realtime — one model does STT + LLM + TTS (audio out)
+    #   cascade  — a true pipeline: plugin STT -> plain LLM -> plugin TTS
+    #   pipeline — realtime model emits text, external TTS speaks it
+    _mode = assistant.assistant_mode
+    is_realtime = _mode == "realtime"
+    is_cascade = _mode == "cascade"
 
     # Extract metadata from job metadata
     to_number = "Web Call"
@@ -227,7 +237,7 @@ async def entrypoint(ctx: JobContext):
         f"silence_reprompts={silence_reprompts_enabled} | "
         f"background_sound={background_sound_enabled} | "
         f"thinking_sound={thinking_sound_enabled} | "
-        f"realtime={is_realtime}"
+        f"mode={_mode}"
     )
 
     # --- Call Readiness & Recording ---
@@ -273,7 +283,7 @@ async def entrypoint(ctx: JobContext):
     # Persist usage metrics at call end
     async def _persist_usage():
         try:
-            summary = usage_collector.get_summary()
+            metered = summarize_usage(session)
             telephony_provider = job_metadata.get("call_service") or job_metadata.get("service")
             if job_metadata.get("call_type") == "web":
                 telephony_provider = None
@@ -286,33 +296,29 @@ async def entrypoint(ctx: JobContext):
                 duration_start = call_record.answered_at or call_record.started_at
                 call_duration = (ended_at - duration_start).total_seconds() / 60
 
-            # LLM vendor, recorded for both modes. Resolved once at model build (see below).
+            # LLM vendor, recorded for all modes. Resolved once at model build (see below).
             llm_realtime_provider = realtime_provider
 
             usage = UsageRecord(
                 room_name=room_name,
                 assistant_id=assistant_id,
                 user_email=assistant.assistant_created_by_email,
-                llm_mode=assistant.assistant_llm_mode,
+                mode=assistant.assistant_mode,
                 llm_realtime_provider=llm_realtime_provider,
                 tts_provider=assistant.assistant_tts_model if not is_realtime else None,
+                # Only cascade has a standalone STT stage worth attributing cost to; the
+                # other modes transcribe inside the LLM, so the spend is in its tokens.
+                stt_provider=(assistant.assistant_stt_model or "sarvam") if is_cascade else None,
                 call_service=telephony_provider,
-                llm_input_audio_tokens=summary.llm_input_audio_tokens,
-                llm_input_text_tokens=summary.llm_input_text_tokens,
-                llm_input_cached_audio_tokens=summary.llm_input_cached_audio_tokens,
-                llm_input_cached_text_tokens=summary.llm_input_cached_text_tokens,
-                llm_output_audio_tokens=summary.llm_output_audio_tokens,
-                llm_output_text_tokens=summary.llm_output_text_tokens,
-                llm_total_tokens=summary.llm_prompt_tokens + summary.llm_completion_tokens,
-                tts_characters_count=summary.tts_characters_count,
-                tts_audio_duration=summary.tts_audio_duration,
                 call_duration_minutes=call_duration,
+                **metered,
             )
             await usage.insert()
             logger.info(
-                f"Usage persisted | room={room_name} | "
+                f"Usage persisted | room={room_name} | mode={usage.mode} | "
                 f"llm_tokens={usage.llm_total_tokens} | "
-                f"tts_chars={usage.tts_characters_count}"
+                f"tts_chars={usage.tts_characters_count} | "
+                f"stt_audio={usage.stt_audio_duration:.1f}s"
             )
         except Exception as e:
             logger.error(f"Failed to persist usage record: {e}", exc_info=True)
@@ -375,11 +381,21 @@ async def entrypoint(ctx: JobContext):
                 # gives no grace at all; the sleep below is the grace. No-op on Gemini, whose
                 # plugin logs commit_audio as unsupported and only finalizes on turn_complete,
                 # which a mid-turn hangup never reaches.
+                # In cascade the session owns a real STT stage, so this future resolves
+                # when that STT actually flushes instead of immediately — await it and
+                # stop waiting the moment the tail lands, capped by the same window.
                 try:
-                    session.commit_user_turn(skip_reply=True)
+                    _commit = session.commit_user_turn(skip_reply=True)
+                    if is_cascade:
+                        await asyncio.wait_for(
+                            asyncio.shield(_commit), timeout=END_OF_CALL_GRACE_S
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning("Final user turn did not finalize before the grace window")
                 except Exception as e:
                     logger.warning(f"Could not commit final user turn: {e}")
-            await asyncio.sleep(END_OF_CALL_GRACE_S)
+            if not is_cascade:
+                await asyncio.sleep(END_OF_CALL_GRACE_S)
         if _user_coalescer is not None:
             _user_coalescer.flush()
         # No new transcripts past this point, so the queue below can be joined.
@@ -427,25 +443,36 @@ async def entrypoint(ctx: JobContext):
         async def end_call(_ctx: RunContext):
             """Wait for the LLM's goodbye reply to actually finish playing, then end the call."""
             async def _end_after_goodbye():
+                # Two different shapes, so two paths:
+                #
                 # Realtime models emit the goodbye as a NEW speech handle after the tool
-                # returns; catch it via speech_created, then wait for real playout.
-                # Mirrors livekit.agents.beta EndCallTool._delayed_session_shutdown.
-                fut: asyncio.Future = asyncio.Future()
+                # returns, so this callback fires *before* it is spoken — catch that handle
+                # via speech_created, then wait for real playout. Mirrors
+                # livekit.agents.beta EndCallTool._delayed_session_shutdown.
+                #
+                # A cascade (non-realtime) LLM continues in the SAME speech handle across
+                # tool steps (agent_activity._pipeline_reply_task_impl passes
+                # speech_handle=speech_handle back in), and a handle is only marked done
+                # once all its tasks finish. So by the time this callback runs the goodbye
+                # has already played, and waiting for a second speech_created would just
+                # burn the full timeout as dead air before hangup.
+                if not is_cascade:
+                    fut: asyncio.Future = asyncio.Future()
 
-                @session.once("speech_created")
-                def _on_created(ev):
-                    if not fut.done():
-                        fut.set_result(ev.speech_handle)
+                    @session.once("speech_created")
+                    def _on_created(ev):
+                        if not fut.done():
+                            fut.set_result(ev.speech_handle)
 
-                try:
-                    handle = await asyncio.wait_for(fut, timeout=5.0)
-                    await handle.wait_for_playout()
-                except asyncio.TimeoutError:
-                    logger.warning("end_call goodbye reply timed out; ending anyway")
-                finally:
-                    session.off("speech_created", _on_created)
+                    try:
+                        handle = await asyncio.wait_for(fut, timeout=5.0)
+                        await handle.wait_for_playout()
+                    except asyncio.TimeoutError:
+                        logger.warning("end_call goodbye reply timed out; ending anyway")
+                    finally:
+                        session.off("speech_created", _on_created)
                 # small buffer for egress to finalize the tail, then teardown
-                await _flush_and_end_call(delay=0.5)
+                await _flush_and_end_call(delay=1.0)
 
             _ctx.speech_handle.add_done_callback(
                 lambda _: asyncio.create_task(_end_after_goodbye())
@@ -498,7 +525,29 @@ async def entrypoint(ctx: JobContext):
     )
     _native_transcription = AudioTranscription(model="gpt-4o-mini-transcribe", prompt=_stt_prompt)
 
-    if is_realtime:
+    # Set in the cascade branch only: the plugin STT that becomes the session's own
+    # first stage. The other two modes leave it None (their LLM owns transcription).
+    cascade_stt = None
+
+    if is_cascade:
+        # True pipeline: three independent stages, each separately metered and swappable.
+        # Nothing here is a RealtimeModel, so there is no server-side VAD and no
+        # self-transcription — turn detection and STT are the session's own job.
+        llm = create_llm(assistant)
+        if llm is None:
+            return
+        if not is_text_only:
+            cascade_stt = create_stt(assistant)
+            if cascade_stt is None:
+                return
+        logger.info(
+            "Cascade mode | stt=%s | llm=%s/%s | tts=%s",
+            assistant.assistant_stt_model or "sarvam",
+            realtime_provider,
+            llm_config.get("model") or DEFAULT_CASCADE_LLM_MODEL,
+            assistant.assistant_tts_model,
+        )
+    elif is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
         if realtime_provider == "gemini":
             llm = google_realtime.RealtimeModel(
@@ -596,6 +645,41 @@ async def entrypoint(ctx: JobContext):
     # Text-only chats reuse the realtime branch shape (no TTS, no audio knobs).
     if is_realtime or is_text_only:
         session = AgentSession(llm=llm)
+    elif is_cascade:
+        session = AgentSession(
+            stt=cascade_stt,
+            llm=llm,
+            tts=tts,
+            # Local Silero via livekit-local-inference (a core SDK dependency): in-process,
+            # no API key, no Cloud call, nothing to prewarm. min_silence_duration is raised
+            # from the 0.25 default to clear the turn detector's 0.25 floor with margin.
+            vad=inference.VAD(model="silero", min_silence_duration=0.4),
+            use_tts_aligned_transcript=True,
+            aec_warmup_duration=1.0,  # seconds
+            turn_handling=TurnHandlingOptions(
+                # Audio end-of-utterance model, pinned to v1-mini: that version runs
+                # fully local (weights ship inside the wheel). Left unpinned it would
+                # try the Cloud-only "v1" first whenever LIVEKIT_DEV_MODE is set and
+                # fall back with a warning — this platform is self-hosted, so ask for
+                # the local one directly. 14 languages incl. hi.
+                turn_detection=inference.TurnDetector(version="v1-mini"),
+                endpointing={
+                    "mode": "dynamic",
+                    "min_delay": 0.3,
+                    "max_delay": 1.0,
+                },
+                # "adaptive" is Cloud-only — _resolve_interruption_detection disables it
+                # in production and there is no local fallback. "vad" is the real choice
+                # here, and unlike the half-cascade branch below these knobs are live:
+                # a plain LLM has no server-side VAD to short-circuit them.
+                interruption={
+                    "mode": "vad",
+                    "min_duration": 0.5,
+                    "false_interruption_timeout": 2.0,
+                    "resume_false_interruption": True,
+                },
+            ),
+        )
     else:
         session = AgentSession(
             llm=llm,
@@ -623,11 +707,10 @@ async def entrypoint(ctx: JobContext):
         )
 
     # --- Usage Tracking ---
-    usage_collector = UsageCollector()
-
-    @session.on("metrics_collected")
-    def on_metrics(event):
-        usage_collector.collect(event.metrics)
+    # No collector to wire: the session aggregates plugin metrics itself and exposes them
+    # on `session.usage`, read once at teardown by summarize_usage(). The old
+    # UsageCollector + "metrics_collected" subscription did the same job by hand and is
+    # deprecated in the SDK.
 
     context_turns = deque(maxlen=4)
     user_is_speaking = False
@@ -861,7 +944,7 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"Call end already triggered for room: {ctx.room.name}")
             return
         call_end_triggered = True  # Immediate guard before task creation
-        asyncio.create_task(_flush_and_end_call(delay=0.0))  # No delay — user already gone
+        asyncio.create_task(_flush_and_end_call(delay=1.0))  # No delay — user already gone
         logger.info(f"Agent session ended for room: {ctx.room.name}")
 
     # --- Max call-duration watchdog ---
@@ -951,6 +1034,7 @@ async def entrypoint(ctx: JobContext):
         if start_instruction:
             allow_int = getattr(interaction_config, "allow_interruptions", False)
             _saved_td = None
+            _gate_muted_for_answer = False
             should_send_instruction = True
             try:
                 # Disable server-side VAD before the Exotel gate wait, not just before generate_reply.
@@ -960,6 +1044,13 @@ async def entrypoint(ctx: JobContext):
                 if is_exotel_bridge and not allow_int and isinstance(llm, realtime.RealtimeModel):
                     _saved_td = llm._opts.turn_detection
                     llm.update_options(turn_detection=None)
+                # Cascade has no realtime model whose VAD can be switched off, and its own
+                # VAD + turn detector are live — so the same pre-answer ring tone would
+                # create a spurious user turn. Blank the input at the gate instead, the
+                # same lever InputGuardController uses. Unmuted in the finally below.
+                elif is_exotel_bridge and not allow_int and is_cascade and speech_gate is not None:
+                    speech_gate.muted = True
+                    _gate_muted_for_answer = True
 
                 if is_exotel_bridge:
                     logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
@@ -1016,7 +1107,12 @@ async def entrypoint(ctx: JobContext):
                                 finally:
                                     agent_instance._allow_interruptions = NOT_GIVEN
                         else:
-                            logger.info("Start instruction strategy | mode=pipeline_speaks_first_via_instructions")
+                            # Shared by pipeline and cascade: both speak through an
+                            # external TTS, so a generated reply is the opening.
+                            logger.info(
+                                "Start instruction strategy | mode=%s_speaks_first_via_instructions",
+                                _mode,
+                            )
                             try:
                                 if not allow_int:
                                     agent_instance._allow_interruptions = False
@@ -1032,6 +1128,10 @@ async def entrypoint(ctx: JobContext):
             finally:
                 if _saved_td is not None:
                     llm.update_options(turn_detection=_saved_td)
+                # Must run even if the greeting raised, or the caller stays muted for the
+                # whole call. InputGuardController owns `muted` from here on.
+                if _gate_muted_for_answer and speech_gate is not None:
+                    speech_gate.muted = False
     else:
         logger.info(
             "assistant_speaks_first=False — skipping start instruction; "

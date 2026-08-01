@@ -20,7 +20,7 @@ Update an existing assistant. Only send fields you want to change.
 | `assistant_name` | string | New assistant name. |
 | `assistant_description` | string | New assistant description. |
 | `assistant_prompt` | string | New system prompt. |
-| `assistant_llm_mode` | string | Target mode: `pipeline` or `realtime`. |
+| `assistant_mode` | string | Target mode: `pipeline`, `realtime` or `cascade`. |
 | `assistant_start_instruction` | string | New opening response text used when `assistant_interaction_config.speaks_first=true`. |
 | `assistant_interaction_config` | object | Partial interaction-config update. |
 | `assistant_greeting_audio` | object | Partial greeting-audio update: `{ "enabled": bool, "audio_id": string }`. Toggle the recorded greeting on/off with `enabled`; attach a different [audio asset](../../api/audio/index.md) with `audio_id` (or `null` to detach). Merged with existing values. A non-null `audio_id` must reference one of your active assets. |
@@ -35,7 +35,7 @@ Update an existing assistant. Only send fields you want to change.
 
 - In `pipeline` mode, `assistant_llm_config` is optional and defaults to `provider="openai"`. Send it to pick `gemini`, override `model`, or set `api_key`; `voice` is ignored (external TTS handles audio).
 - `assistant_llm_config.api_key` overrides the system key for the selected provider (`OPENAI_API_KEY` or `GOOGLE_API_KEY`). Omit `assistant_llm_config` to use system keys + mode default provider.
-- You can update `assistant_llm_config` alone (without re-sending `assistant_llm_mode` or TTS fields) and the existing TTS config is preserved.
+- You can update `assistant_llm_config` alone (without re-sending `assistant_mode` or TTS fields) and the existing TTS config is preserved.
 - In `realtime` mode, `assistant_llm_config` is required only when switching into realtime; it defaults to `provider="gemini"`.
 - Defaults when fields are omitted — Gemini: `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`.
 
@@ -51,10 +51,10 @@ Update an existing assistant. Only send fields you want to change.
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_llm_mode` | string | Yes | Set to `pipeline`. |
+    | `assistant_mode` | string | Yes | Set to `pipeline`. |
     | `assistant_tts_model` | string | Conditional | Required only if no TTS config exists in DB. |
     | `assistant_tts_config` | object | Conditional | Required if `assistant_tts_model` is provided. Must be sent together. |
-    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. |
+    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. `cartesia` is cascade-only. |
     | `assistant_stt_config` | object | No | Config for the selected STT provider. Requires `assistant_stt_model`; omit it to reset that provider's defaults. |
 
     !!! note "Stale realtime LLM config is cleared automatically"
@@ -67,7 +67,7 @@ Update an existing assistant. Only send fields you want to change.
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer <your_api_key>" \
       -d '{
-        "assistant_llm_mode": "pipeline"
+        "assistant_mode": "pipeline"
       }'
     ```
 
@@ -78,7 +78,7 @@ Update an existing assistant. Only send fields you want to change.
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer <your_api_key>" \
       -d '{
-        "assistant_llm_mode": "pipeline",
+        "assistant_mode": "pipeline",
         "assistant_tts_model": "elevenlabs",
         "assistant_tts_config": {
           "voice_id": "JBFqnCBv7z4s9ByuOnH"
@@ -94,7 +94,7 @@ Update an existing assistant. Only send fields you want to change.
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_llm_mode` | string | Yes | Set to `realtime`. |
+    | `assistant_mode` | string | Yes | Set to `realtime`. |
     | `assistant_llm_config` | object | Yes | Realtime provider config. The object is required, but `provider`, `model`, and `voice` may be omitted to use defaults. |
 
     **Example request**
@@ -104,8 +104,43 @@ Update an existing assistant. Only send fields you want to change.
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer <your_api_key>" \
       -d '{
-        "assistant_llm_mode": "realtime",
+        "assistant_mode": "realtime",
         "assistant_llm_config": {}
+      }'
+    ```
+
+=== "Switch to Cascade"
+
+    Moves the assistant to the true STT → LLM → TTS pipeline. See
+    [Cascade Pipeline](../../architecture/cascade-pipeline.md).
+
+    **Required fields**
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `assistant_mode` | string | Yes | Set to `cascade`. |
+    | `assistant_tts_model` + `assistant_tts_config` | | Conditional | Required only if no TTS config is already stored on the assistant. |
+    | `assistant_stt_model` | string | Conditional | Required in this same request if the stored value is `native`, which cascade rejects. `sarvam` or `cartesia`. |
+    | `assistant_llm_config` | object | No | If sent, `provider` must be `openai`. Any stored Gemini config is cleared automatically when leaving realtime mode. |
+
+    !!! warning "A stored `native` STT blocks the switch"
+        `native` means "the realtime model transcribes itself", which cascade has no model for.
+        If the assistant currently has `assistant_stt_model: "native"`, send a replacement in the
+        same request or the update fails with `400`.
+
+    **Example request**
+
+    ```bash
+    curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_mode": "cascade",
+        "assistant_stt_model": "sarvam",
+        "assistant_llm_config": {
+          "provider": "openai",
+          "model": "gpt-4.1-mini"
+        }
       }'
     ```
 
@@ -118,7 +153,8 @@ Update an existing assistant. Only send fields you want to change.
 - In `pipeline` mode, `assistant_llm_config` may be omitted entirely.
 - In `pipeline` mode, only `assistant_llm_config.api_key` affects runtime behavior.
 - Switching to `realtime` requires `assistant_llm_config`.
-- Switching to `pipeline` requires TTS fields **only if no TTS config exists in DB**. If the assistant previously had a TTS config, it is preserved and reused — you do not need to re-send it.
+- Switching to `pipeline` or `cascade` requires TTS fields **only if no TTS config exists in DB**. If the assistant previously had a TTS config, it is preserved and reused — you do not need to re-send it.
+- In `cascade` mode, `assistant_stt_model` must be `sarvam` or `cartesia` (`native` returns `400`/`422`), and `assistant_llm_config.provider` must be `openai` or omitted.
 - When switching to `pipeline`, any stored realtime `assistant_llm_config` (e.g. Gemini keys) is automatically cleared unless you explicitly provide a new one.
 
 ## Runtime Behavior Notes

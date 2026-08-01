@@ -22,7 +22,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create
     "assistant_name": "Order Support",
     "assistant_description": "Helps customers check order status",
     "assistant_prompt": "You are a support agent for Acme Corp. Help the customer with their order. The customer name is {{name}}.",
-    "assistant_llm_mode": "pipeline",
+    "assistant_mode": "pipeline",
     "assistant_tts_model": "cartesia",
     "assistant_tts_config": {"voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"},
     "assistant_interaction_config": {"speaks_first": true, "silence_reprompts": true},

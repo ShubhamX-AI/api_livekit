@@ -259,7 +259,7 @@ input_guard = None if (speech_gate is None or _guard_window <= 0) else InputGuar
 )
 ```
 
-Realtime mode is no longer excluded. The exclusion existed because Gemini full-realtime (`assistant_llm_mode="realtime"`, `provider="gemini"`) owns its own audio pipeline and internal VAD, and detaching the input source cut the feed it relies on. Muting through `SpeechGate` keeps the feed continuous, so the hazard is gone and realtime calls get the same filler-word protection. Text-only chats have no audio input, so `speech_gate` is `None` and no guard is built.
+Realtime mode is no longer excluded. The exclusion existed because Gemini full-realtime (`assistant_mode="realtime"`, `provider="gemini"`) owns its own audio pipeline and internal VAD, and detaching the input source cut the feed it relies on. Muting through `SpeechGate` keeps the feed continuous, so the hazard is gone and realtime calls get the same filler-word protection. Text-only chats have no audio input, so `speech_gate` is `None` and no guard is built.
 
 !!! note "Verify on a Gemini realtime call"
     Muting is safe in principle — frames keep arriving at the same rate, carrying silence — but the original exclusion was written against observed Gemini behaviour. Worth one realtime-mode call to confirm Gemini Live tolerates a 3 s silent stretch mid-session before relying on it in production.

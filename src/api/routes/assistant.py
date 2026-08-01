@@ -31,6 +31,37 @@ async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
         raise HTTPException(status_code=404, detail="Audio asset not found")
 
 
+def enforce_cascade_constraints(assistant, update_data: dict, new_mode: str | None) -> None:
+    """Apply the cascade STT/provider rules against the *stored* assistant.
+
+    The schema validator can only see the request, and its cascade rules fire only when
+    the request names the mode — but most PATCHes touch a field or two without resending
+    it. So an assistant that is already in cascade needs the same two rules re-checked
+    here. Without this the update is accepted and the assistant then fails to start with
+    no signal at update time (create_llm/create_stt return None and the job just ends).
+    """
+    is_cascade = new_mode == "cascade" or (new_mode is None and assistant.assistant_mode == "cascade")
+    if not is_cascade:
+        return
+
+    # "native" means "the realtime model transcribes itself", and cascade has no realtime
+    # model. A stored 'native' must therefore be replaced in the same request.
+    effective_stt = update_data.get("assistant_stt_model") or assistant.assistant_stt_model
+    if effective_stt == "native":
+        raise HTTPException(
+            status_code=400,
+            detail="assistant_stt_model 'native' is not valid in cascade mode. Send assistant_stt_model 'sarvam' or 'cartesia' in the same request.",
+        )
+
+    llm_config = update_data.get("assistant_llm_config")
+    provider = (llm_config or {}).get("provider")
+    if provider and provider != "openai":
+        raise HTTPException(
+            status_code=400,
+            detail=f"assistant_llm_config.provider '{provider}' is not supported in cascade mode — cascade supports 'openai' only.",
+        )
+
+
 # Create new assistant
 @router.post("/create")
 async def create_assistant(
@@ -112,17 +143,19 @@ async def update_assistant(
         update_data["assistant_greeting_audio"] = merged_greeting
 
     # Mode-switch guards (need DB state for full validation)
-    new_mode = update_data.get("assistant_llm_mode")
-    if new_mode == "pipeline":
-        # Switching to pipeline: ensure TTS exists (in request or already in DB)
+    new_mode = update_data.get("assistant_mode")
+    if new_mode in ("pipeline", "cascade"):
+        # Both speak through an external TTS: ensure one exists (in request or already in DB)
         if not update_data.get("assistant_tts_model") and not assistant.assistant_tts_model:
             raise HTTPException(
                 status_code=400,
-                detail="assistant_tts_model and assistant_tts_config are required when switching to pipeline mode (none found in DB).",
+                detail=f"assistant_tts_model and assistant_tts_config are required when switching to {new_mode} mode (none found in DB).",
             )
         # Clear stale realtime llm_config only when actually leaving realtime mode
-        if assistant.assistant_llm_mode == "realtime" and "assistant_llm_config" not in update_data:
+        if assistant.assistant_mode == "realtime" and "assistant_llm_config" not in update_data:
             update_data["assistant_llm_config"] = None
+
+    enforce_cascade_constraints(assistant, update_data, new_mode)
 
     logger.info(f"Updating assistant {assistant_id}")
     update_data.update(
@@ -197,7 +230,7 @@ async def list_assistants(
             {
                 "assistant_id": assistant.assistant_id,
                 "assistant_name": assistant.assistant_name,
-                "assistant_llm_mode": assistant.assistant_llm_mode,
+                "assistant_mode": assistant.assistant_mode,
                 "assistant_tts_model": assistant.assistant_tts_model,
                 "assistant_tts_config": assistant.assistant_tts_config,
                 "assistant_stt_model": assistant.assistant_stt_model,
