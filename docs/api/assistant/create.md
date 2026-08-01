@@ -66,7 +66,7 @@ Create a new assistant configuration.
 
     === "Native"
 
-        The conversational LLM transcribes itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No configuration fields — send `{}` or omit `assistant_stt_config`.
+        The conversational LLM transcribes itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own on a Gemini pipeline). No configuration fields — send `{}` or omit `assistant_stt_config`.
 
     Ignored in `realtime` (audio-out) mode, where the model always transcribes.
 

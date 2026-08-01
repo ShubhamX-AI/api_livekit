@@ -20,8 +20,20 @@ from src.core.logger import logger
 # Raise this, or drive flush() from more turn events, if callers report split lines.
 MERGE_WINDOW_S = 1.0
 
-# Upper bound on how long teardown should wait for Sarvam to finalize its buffered audio.
-DRAIN_TIMEOUT_S = 3.0
+# Silence fed to Sarvam once the caller's audio stops, so the last utterance comes back.
+# Sarvam only returns a segment after its server VAD endpoints, and the plugin forwards the
+# resulting flush from inside its send loop — i.e. only when the *next* frame arrives
+# (plugins/sarvam/stt.py:1074). At hangup the frames stop, so that flush is never sent and the
+# segment stays stuck server-side. end_input() cannot rescue it either: the plugin sends
+# end_of_stream and cancels its own reader in the same event-loop turn (stt.py:1064, 957-973),
+# discarding the reply. Silence endpoints the segment, carries the pending flush, and pushes
+# the sub-chunk tail over the plugin's 50 ms boundary. Same trick the SDK uses on its own STT
+# (agents/voice/audio_recognition.py::commit_user_turn).
+DRAIN_SILENCE_S = 2.0
+# 20 ms of digital silence at 16 kHz mono int16. Reused — the plugin only reads it.
+_SILENCE_FRAME = rtc.AudioFrame(
+    b"\x00" * 640, sample_rate=16000, num_channels=1, samples_per_channel=320
+)
 
 
 class FinalCoalescer:
@@ -92,8 +104,8 @@ async def run_sarvam_parallel_stt(
     """Stream caller audio into Sarvam Saras v3 and feed finalized utterances to `coalescer`.
 
     Runs alongside OpenAI Realtime — does not touch the LLM audio pipeline.
-    On `stop_event` it asks Sarvam to finalize its buffered audio rather than dropping it,
-    so the caller's last sentence survives a hangup.
+    On `stop_event` it feeds Sarvam silence so it finalizes its buffered audio rather than
+    dropping it, so the caller's last sentence survives a hangup.
     """
     sarvam_stt = sarvam_plugin.STT(
         model=model or "saaras:v3",
@@ -149,9 +161,17 @@ async def run_sarvam_parallel_stt(
         await stop_event.wait()
         if pump_task and not pump_task.done():
             pump_task.cancel()
-        # end_input() flushes the segment and closes the input channel, so Sarvam returns
-        # what it still holds and the event iterator then ends on its own. aclose() alone
-        # would cancel the connection and throw that audio away.
+            # Awaited, so no real frame can land after the silence below.
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump_task
+        # Feed silence so Sarvam endpoints and returns the caller's last utterance — see
+        # DRAIN_SILENCE_S. It arrives through the normal event path, which the teardown
+        # grace in session.py is still open for.
+        with contextlib.suppress(Exception):
+            for _ in range(int(DRAIN_SILENCE_S / _SILENCE_FRAME.duration)):
+                stream.push_frame(_SILENCE_FRAME)
+        # Only now close the input: this makes the plugin tear the connection down, so
+        # anything Sarvam has not already sent back is lost.
         with contextlib.suppress(Exception):
             stream.end_input()
 
@@ -162,7 +182,10 @@ async def run_sarvam_parallel_stt(
             if ev.type == stt_pkg.SpeechEventType.FINAL_TRANSCRIPT:
                 coalescer.add(ev.alternatives[0].text if ev.alternatives else "")
     except asyncio.CancelledError:
-        logger.warning("[SARVAM-STT] Drain cancelled — trailing audio may be unfinalized")
+        # By the time anything cancels us the silence drain has already run, so this only
+        # means the plugin's WebSocket close handshake outlived the call. The finally below
+        # still flushes whatever came back.
+        logger.info("[SARVAM-STT] Cancelled while closing the stream")
     except Exception as e:
         logger.error(f"[SARVAM-STT] Stream error: {e}", exc_info=True)
     finally:

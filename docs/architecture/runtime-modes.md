@@ -115,7 +115,7 @@ The function (`src/core/agents/tts/factory.py`):
 
 ## Sarvam Parallel User Transcription
 
-**Problem.** In OpenAI pipeline mode (`assistant_llm_mode="pipeline"`, `provider="openai"`) with `assistant_stt_model="native"`, the `input_audio_transcription` side channel uses `gpt-4o-transcribe`. On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
+**Problem.** In OpenAI pipeline mode (`assistant_llm_mode="pipeline"`, `provider="openai"`) with `assistant_stt_model="native"`, the `input_audio_transcription` side channel uses an OpenAI transcription model (`gpt-4o-mini-transcribe`). On Indic mixed / code-switched speech (Hindi-English-Tamil-Urdu in one call) this model:
 
 - Switches scripts mid-utterance (Devanagari → Tamil → Arabic → Spanish)
 - Romanises words instead of using the speaker's native script
@@ -130,7 +130,7 @@ Selected per assistant via `assistant_stt_model`, configured via `assistant_stt_
 | Value | Effect |
 |-------|--------|
 | `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). Config: `model`, `language`, `api_key`. |
-| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap, no config fields. |
+| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap, no config fields. |
 
 **API key.** The tap authenticates with `assistant_stt_config.api_key`, falling back to the system `SARVAM_API_KEY`. It deliberately does **not** read `assistant_tts_config["api_key"]`: that field is scoped to the selected TTS provider, so on a Cartesia/ElevenLabs/Mistral assistant it holds a foreign key and Sarvam answers `403 Invalid response status`. Because the tap also disables the LLM's own transcription, an auth failure there means the call runs with **no user transcripts at all** — so keep the two keys separate. When neither key is present, `resolve_stt` logs a warning and degrades the call to `native` rather than starting a tap that cannot authenticate.
 
@@ -167,7 +167,7 @@ sequenceDiagram
 **Implementation details:**
 
 - Module: `src/core/agents/stt/sarvam_parallel.py` — `run_sarvam_parallel_stt(...)` coroutine.
-- Spawned once after `wait_for_participant()` returns, scoped to the caller's identity. Late-binds if the audio track was already published. The task handle is kept (`_sarvam_task`) so teardown can await its drain.
+- Spawned once after `wait_for_participant()` returns, scoped to the caller's identity. Late-binds if the audio track was already published. The task handle is kept (`_sarvam_task`) so teardown can tell the two STT paths apart, and so a crash inside the tap is not swallowed.
 - Stop signal: re-uses the existing `_sarvam_stop = asyncio.Event()` that already gates the Sarvam TTS keepalive — both exit on the same teardown.
 - Frame pump: `rtc.AudioStream(track, sample_rate=16000, num_channels=1)` upsamples 8 kHz G.711 phone audio in-process; frames pushed via `stream.push_frame(frame)`.
 - Duplicate-write guard: `conversation_item_added` short-circuits when `event.item.role == "user" and _use_sarvam_stt`, so OpenAI's empty / stale user item never reaches the DB.
@@ -182,12 +182,12 @@ sequenceDiagram
 
 The upstream cause is documented in [Input Speech Gate](audio-pipeline.md#input-speech-gate): `SpeechGate` used to be applied twice per frame on the session's audio input, halving the effective hangover to 300 ms, so *both* the Sarvam server VAD and the LLM's own VAD endpointed sooner than intended. That is fixed at the source; the coalescer remains as the backstop for genuine long pauses.
 
-**End-of-call drain.** `call_end_triggered` and `_transcripts_closed` are deliberately separate flags. The first flips the instant a hangup is seen and guards against duplicate teardown; the second closes the transcript queue and flips only after the active STT has handed over the caller's last utterance. `_flush_and_end_call` branches on which STT owns user transcripts, waits up to `DRAIN_TIMEOUT_S` (3 s), then flushes the coalescer and closes the queue:
+**End-of-call drain.** `call_end_triggered` and `_transcripts_closed` are deliberately separate flags. The first flips the instant a hangup is seen and guards against duplicate teardown; the second closes the transcript queue and flips only after the active STT has handed over the caller's last utterance. On any voice call `_flush_and_end_call` asks the active STT to finalize, then holds the transcript path open for one fixed `END_OF_CALL_GRACE_S` (4 s) window before flushing the coalescer and closing the queue. Both paths feed the same `_user_coalescer`, so that single flush covers whichever produced text — and the usage record and end-of-call webhook are delayed by the same 4 s.
 
 | Path | How the tail is recovered |
 |---|---|
-| `sarvam` | The tap calls `stream.end_input()`, which flushes the segment and closes the input channel so Sarvam finalizes what it still holds — rather than `aclose()`, which would cancel the connection and discard that audio. On timeout the tap is cancelled but its `finally` still flushes the coalescer, so a slow drain degrades to a partial line rather than to nothing. |
-| `native`, OpenAI | `session.commit_user_turn(skip_reply=True)` sends `input_audio_buffer.commit`, so the model transcribes its pending audio and fires one more `conversation_item_added`. `skip_reply` stops it answering a caller who has already hung up. |
+| `sarvam` | The tap feeds Sarvam `DRAIN_SILENCE_S` (2 s) of digital silence *before* `end_input()`. Silence is what makes the tail come back: Sarvam only returns a segment once its server VAD endpoints, and the plugin forwards the resulting flush from inside its send loop — i.e. only when the next frame arrives. At hangup the frames stop, so without synthetic silence that flush is never sent and the segment stays stuck server-side. `end_input()` cannot rescue it either: the plugin sends `end_of_stream` and cancels its own reader in the same event-loop turn, discarding the reply. Same technique the SDK uses on its own STT (`agents/voice/audio_recognition.py::commit_user_turn`). |
+| `native`, OpenAI | `session.commit_user_turn(skip_reply=True)` sends `input_audio_buffer.commit`, so the model transcribes its pending audio and fires one more `conversation_item_added`. `skip_reply` stops it answering a caller who has already hung up. The returned future is deliberately **not** awaited — in realtime mode there is no separate STT object, so it resolves immediately and awaiting it yields no grace at all; the 4 s window is the grace. |
 | `native`, Gemini | **Not recoverable.** The plugin logs `commit_audio` as unsupported, and a user transcript is only marked final on `server_content.turn_complete`, which a mid-turn hangup never reaches. No amount of grace time helps; this is an API limitation, not a bug in this repo. |
 | text-only | Nothing to drain — no audio, no endpointing. |
 
@@ -199,7 +199,9 @@ The upstream cause is documented in [Input Speech Gate](audio-pipeline.md#input-
 
 When `assistant_stt_model="native"` — and always in full realtime mode, where the Sarvam tap never runs — the conversational LLM transcribes the caller itself and the text arrives through `conversation_item_added`.
 
-**Prompt and noise reduction.** `src/core/agents/stt/native_prompt.py` builds the transcription prompt (`build_native_stt_prompt`) and picks the noise-reduction model (`noise_reduction_for`: `far_field` on phone calls, whose model is trained on lossy G.711; `near_field` on web). The prompt carries `interaction_config.preferred_languages` as a hint plus the literal-transcription rules — native script, no romanization, no translation, `[inaudible]` rather than a guess. Both feed every OpenAI branch, half-cascade and full realtime alike. Full realtime previously passed neither and silently fell back to `gpt-4o-mini-transcribe` with no instructions and no phone tuning.
+**Prompt and noise reduction.** `src/core/agents/stt/native_prompt.py` builds the transcription prompt (`build_native_stt_prompt`) and picks the noise-reduction model (`noise_reduction_for`: `far_field` on phone calls, whose model is trained on lossy G.711; `near_field` on web). The prompt carries `interaction_config.preferred_languages` as a hint plus the literal-transcription rules — native script, no romanization, no translation, `[inaudible]` rather than a guess. Both feed every OpenAI branch, half-cascade and full realtime alike. Full realtime previously passed neither and ran on the `gpt-4o-mini-transcribe` default with no instructions and no phone tuning.
+
+**Model choice.** Both branches use `gpt-4o-mini-transcribe`. The Indic failures above came from an unprompted, un-tuned side channel, not from model size, and mini accepts the prompt and `far_field` just as `gpt-4o-transcribe` does — so the fix carries no per-minute cost increase. Upgrading the model is a one-word change in `session.py`, worth making only against a measured accuracy comparison.
 
 **Language is never pinned.** `AudioTranscription.language` is deliberately left unset so a caller who switches language mid-call is still transcribed correctly — matching the Sarvam tap's `language="unknown"` default. `preferred_languages` steers the model; it does not constrain it.
 

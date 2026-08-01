@@ -1,8 +1,16 @@
 import asyncio
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest import mock
 
-from src.core.agents.stt.sarvam_parallel import FinalCoalescer
+from livekit.agents import stt as stt_pkg
+
+from src.core.agents.stt.sarvam_parallel import (
+    DRAIN_SILENCE_S,
+    FinalCoalescer,
+    run_sarvam_parallel_stt,
+)
 
 
 class TestFinalCoalescer(unittest.IsolatedAsyncioTestCase):
@@ -82,6 +90,93 @@ class TestFinalCoalescer(unittest.IsolatedAsyncioTestCase):
         c.add("kept")
         c.flush()
         self.assertEqual([t for t, _ in self.emitted], ["kept"])
+
+
+class _FakeStream:
+    """Stands in for the Sarvam plugin stream, with its endpointing behaviour.
+
+    It answers only once enough audio has arrived to endpoint the segment, and goes deaf the
+    moment `end_input()` is called — which is what the real plugin does, since it cancels its
+    own reader in the same turn it sends `end_of_stream`.
+    """
+
+    def __init__(self, frames_needed: int) -> None:
+        self.frames = 0
+        self.frames_needed = frames_needed
+        self.frames_at_end_input: int | None = None
+        self._answered = False
+        self._closed = asyncio.Event()
+
+    def push_frame(self, frame) -> None:
+        self.frames += 1
+
+    def end_input(self) -> None:
+        self.frames_at_end_input = self.frames
+        self._closed.set()
+
+    async def aclose(self) -> None:
+        pass
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        # end_input() is the last step of the drain, so by the time it fires the tap has
+        # pushed everything it is going to push.
+        await self._closed.wait()
+        if not self._answered and self.frames >= self.frames_needed:
+            self._answered = True
+            return stt_pkg.SpeechEvent(
+                type=stt_pkg.SpeechEventType.FINAL_TRANSCRIPT,
+                alternatives=[stt_pkg.SpeechData(language="", text="the last thing I said")],
+            )
+        raise StopAsyncIteration
+
+
+class _FakeRoom:
+    def __init__(self) -> None:
+        self.remote_participants: dict = {}
+
+    def on(self, *args) -> None:
+        pass
+
+    def off(self, *args) -> None:
+        pass
+
+
+class TestSarvamDrain(unittest.IsolatedAsyncioTestCase):
+    """A caller who hangs up mid-sentence leaves no trailing audio, so Sarvam never endpoints
+    and never returns the last utterance. The tap feeds it silence on stop to force it out.
+    """
+
+    async def test_stop_feeds_silence_and_gets_the_last_utterance(self):
+        emitted: list[str] = []
+        coalescer = FinalCoalescer(lambda text, ts: emitted.append(text), window=0.01)
+        stop = asyncio.Event()
+        # One frame short of the silence burst, so only the drain can satisfy it.
+        stream = _FakeStream(frames_needed=int(DRAIN_SILENCE_S / 0.02))
+
+        with mock.patch(
+            "src.core.agents.stt.sarvam_parallel.sarvam_plugin.STT",
+            return_value=SimpleNamespace(stream=lambda: stream),
+        ):
+            task = asyncio.create_task(
+                run_sarvam_parallel_stt(
+                    room=_FakeRoom(),
+                    target_identity="caller",
+                    coalescer=coalescer,
+                    stop_event=stop,
+                    api_key="test",
+                )
+            )
+            await asyncio.sleep(0)
+            stop.set()
+            await asyncio.wait_for(task, timeout=2.0)
+
+        self.assertEqual(emitted, ["the last thing I said"])
+        # Silence must go in *before* the input closes — reversed, the real plugin discards
+        # the reply and the utterance is lost.
+        self.assertEqual(stream.frames_at_end_input, stream.frames_needed)
 
 
 if __name__ == "__main__":
