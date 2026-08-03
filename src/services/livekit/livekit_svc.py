@@ -304,11 +304,19 @@ class LiveKitService:
                 Assistant.assistant_end_call_url != None,
                 Assistant.assistant_end_call_url != "",
             )
-            logger.info(f"Assistant found with assistant_id: {assistant_id}")
             if assistant and assistant.assistant_end_call_url:
                 end_call_url = assistant.assistant_end_call_url
+                logger.info(f"Resolved end call url from assistant_id: {assistant_id}")
+            else:
+                # The query filters on a non-empty URL, so None here means
+                # "no end-call URL configured", not "assistant does not exist".
+                logger.info(f"No assistant_end_call_url configured for assistant_id: {assistant_id}")
 
         if not end_call_url:
+            logger.info(
+                f"No end call webhook url resolved; skipping webhook | room={room_name} "
+                f"| assistant_id={assistant_id} | webhook_url_arg={'set' if webhook_url else 'unset'}"
+            )
             return
         full_data = json.loads(call_record.model_dump_json())
         filtered_data = {key: value for key, value in full_data.items() if key not in ["id"]}
@@ -340,40 +348,54 @@ class LiveKitService:
 
         log_owner = (assistant.assistant_created_by_email if assistant else None) or call_record.created_by_email or "unknown"
         start_ms = time.monotonic()
+        status = "error"
+        response_data: Optional[dict] = None
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                _ = await client.post(end_call_url, json=payload)
+                response = await client.post(end_call_url, json=payload)
                 latency = int((time.monotonic() - start_ms) * 1000)
-                logger.info(f"Call details sent to end call url: {end_call_url}")
-                try:
-                    await ActivityLog(
-                        user_email=log_owner,
-                        log_type="end_call_webhook",
-                        assistant_id=assistant_id,
-                        room_name=room_name,
-                        status="success",
-                        request_data={"url": end_call_url},
-                        latency_ms=latency,
-                        message=f"Post-call data sent to {end_call_url}",
-                    ).insert()
-                except Exception as log_err:
-                    logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
+                # ponytail: body truncated to 500 chars — enough to identify a
+                # rejecting endpoint without storing arbitrary payloads in Mongo.
+                body = (response.text or "")[:500]
+                response_data = {"status_code": response.status_code, "body": body}
+                if 200 <= response.status_code < 300:
+                    status = "success"
+                    message = f"Post-call data sent to {end_call_url} (HTTP {response.status_code})"
+                    logger.info(
+                        f"Call details sent to end call url: {end_call_url} "
+                        f"| room={room_name} | HTTP {response.status_code}"
+                    )
+                else:
+                    message = (
+                        f"Webhook rejected post-call data: {end_call_url} "
+                        f"returned HTTP {response.status_code}: {body}"
+                    )
+                    logger.error(
+                        f"End call webhook returned non-2xx | room={room_name} "
+                        f"| url={end_call_url} | HTTP {response.status_code} | body={body}"
+                    )
         except Exception as e:
             latency = int((time.monotonic() - start_ms) * 1000)
-            logger.error(f"Failed to send call details to webhook: {e}")
-            try:
-                await ActivityLog(
-                    user_email=log_owner,
-                    log_type="end_call_webhook",
-                    assistant_id=assistant_id,
-                    room_name=room_name,
-                    status="error",
-                    request_data={"url": end_call_url},
-                    latency_ms=latency,
-                    message=f"Failed to send post-call data to {end_call_url}: {str(e)}",
-                ).insert()
-            except Exception as log_err:
-                logger.warning(f"Failed to write activity log: {log_err}")
+            message = f"Failed to send post-call data to {end_call_url}: {str(e)}"
+            logger.error(
+                f"Failed to send call details to webhook | room={room_name} | url={end_call_url}: {e}",
+                exc_info=True,
+            )
+
+        try:
+            await ActivityLog(
+                user_email=log_owner,
+                log_type="end_call_webhook",
+                assistant_id=assistant_id,
+                room_name=room_name,
+                status=status,
+                request_data={"url": end_call_url},
+                response_data=response_data,
+                latency_ms=latency,
+                message=message,
+            ).insert()
+        except Exception as log_err:
+            logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
 
     # Update And send Details at the end of the call
     async def end_call(self, room_name: str, assistant_id: Optional[str] = None):

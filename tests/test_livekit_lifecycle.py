@@ -171,7 +171,7 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
             async def post(self, url, json):
                 posted["url"] = url
                 posted["payload"] = json
-                return SimpleNamespace(status_code=200)
+                return SimpleNamespace(status_code=200, text="{\"received\": true}")
 
         assistant_model = SimpleNamespace(
             assistant_id=RoomNameField(),
@@ -223,7 +223,7 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
 
             async def post(self, url, json):
                 posted["payload"] = json
-                return SimpleNamespace(status_code=200)
+                return SimpleNamespace(status_code=200, text="{\"received\": true}")
 
         assistant_model = SimpleNamespace(
             assistant_id=RoomNameField(),
@@ -273,6 +273,89 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["stt_audio_duration"], 31.25)
         self.assertEqual(usage["tts_characters_count"], 250)
         self.assertEqual(usage["llm_total_tokens"], 155)
+
+    async def test_send_end_call_webhook_logs_non_2xx_as_error(self):
+        """A rejecting customer endpoint must not be recorded as a successful delivery."""
+        svc = LiveKitService()
+        record = FakeCallRecord(status="completed")
+        record.call_duration_minutes = 1.0
+        record.billable_duration_minutes = 1
+        logged = []
+
+        class CapturingActivityLog(FakeActivityLog):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                logged.append(kwargs)
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, url, json):
+                return SimpleNamespace(status_code=500, text="boom")
+
+        assistant_model = SimpleNamespace(
+            assistant_id=RoomNameField(),
+            assistant_end_call_url=RoomNameField(),
+            find_one=AsyncMock(
+                return_value=SimpleNamespace(
+                    assistant_end_call_url="https://example.com/webhook",
+                    assistant_created_by_email="user@example.com",
+                )
+            ),
+        )
+
+        with patch(
+            "src.services.livekit.livekit_svc.CallRecord",
+            SimpleNamespace(room_name=RoomNameField(), find_one=AsyncMock(return_value=record)),
+        ), patch("src.services.livekit.livekit_svc.Assistant", assistant_model), patch(
+            "src.services.livekit.livekit_svc.UsageRecord",
+            SimpleNamespace(room_name=RoomNameField(), find_one=AsyncMock(return_value=None)),
+        ), patch("src.services.livekit.livekit_svc.ActivityLog", CapturingActivityLog), patch(
+            "src.services.livekit.livekit_svc.httpx.AsyncClient", FakeAsyncClient
+        ):
+            await svc.send_end_call_webhook(room_name="room-1", assistant_id="assistant-1")
+
+        self.assertEqual(len(logged), 1)
+        self.assertEqual(logged[0]["status"], "error")
+        self.assertEqual(logged[0]["response_data"], {"status_code": 500, "body": "boom"})
+
+    async def test_send_end_call_webhook_skips_when_no_url_configured(self):
+        """No configured URL is the most common 'webhook not hit' cause — must not POST."""
+        svc = LiveKitService()
+        record = FakeCallRecord(status="completed")
+        logged = []
+
+        class ExplodingAsyncClient:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("must not attempt a POST without a resolved url")
+
+        class CapturingActivityLog(FakeActivityLog):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                logged.append(kwargs)
+
+        assistant_model = SimpleNamespace(
+            assistant_id=RoomNameField(),
+            assistant_end_call_url=RoomNameField(),
+            find_one=AsyncMock(return_value=None),
+        )
+
+        with patch(
+            "src.services.livekit.livekit_svc.CallRecord",
+            SimpleNamespace(room_name=RoomNameField(), find_one=AsyncMock(return_value=record)),
+        ), patch("src.services.livekit.livekit_svc.Assistant", assistant_model), patch(
+            "src.services.livekit.livekit_svc.ActivityLog", CapturingActivityLog
+        ), patch("src.services.livekit.livekit_svc.httpx.AsyncClient", ExplodingAsyncClient):
+            await svc.send_end_call_webhook(room_name="room-1", assistant_id="assistant-1")
+
+        self.assertEqual(logged, [])
 
 
 if __name__ == "__main__":

@@ -182,8 +182,12 @@ async def _monitor_exotel_result(
                 assistant_id=assistant_id,
                 webhook_url=passthrough_webhook_url,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            # Best-effort finalizer — keep swallowing, but never silently.
+            logger.error(
+                f"Failed to finalize call | room={room_name} | reason={reason}: {e}",
+                exc_info=True,
+            )
 
     from src.services.exotel.custom_sip_reach.port_pool import get_port_pool
     from src.services.exotel.custom_sip_reach.inbound_listener import unregister_call_id

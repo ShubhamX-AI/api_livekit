@@ -225,7 +225,8 @@ Content-Type: application/json
     - Webhooks are sent when call status becomes terminal (for example `completed`, `busy`, `no_answer`, `failed`)
     - Current runtime sends a single webhook request with a 10s timeout
     - Current runtime treats non-2xx HTTP status as failed delivery in runtime logging
-    - Current runtime does not parse webhook response body
+    - Current runtime does not parse webhook response body, but records the status code and the first 500 characters of the body in the `end_call_webhook` activity log (`GET /logs?log_type=end_call_webhook&room_name=<room_name>`) for troubleshooting
+    - A single request only — non-2xx is logged, not retried
     - `recording_path` can be empty/null when recording fails after runtime retries
     - Empty `recording_path` does not block terminal webhook delivery
     - Ensure your webhook endpoint responds quickly (< 10 seconds)
