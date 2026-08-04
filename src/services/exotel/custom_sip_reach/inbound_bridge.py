@@ -32,7 +32,7 @@ from .rtp_bridge import RTPMediaBridge
 from .sip_client import format_exotel_number
 from src.core.db.db_schemas import Assistant, InboundSIP
 from src.services.livekit.livekit_svc import LiveKitService
-from src.services.outbound_dispatcher.dispatcher import try_reserve_slot, release_slot
+from src.services.outbound_dispatcher.dispatcher import try_reserve_slot, release_slot, _watch_agent_join
 from src.core.logger import logger, set_room_context, clear_room_context
 
 
@@ -161,11 +161,23 @@ async def handle_inbound_call(
     Phase 1 (main loop): SIP validation, DB lookups, send SIP response, acquire port.
     Phase 2 (bridge thread): LiveKit + RTP audio lifecycle via _run_inbound_bridge.
     """
-    if not validate_config():
-        logger.error("[INBOUND] Config validation failed")
+    # Register for cancellation *before* any DB/LiveKit work starts. Exotel sends CANCEL
+    # (not BYE) when the caller hangs up before we answer, and inbound_listener.py can only
+    # signal us via this registry — if registration happened later (as it used to, right
+    # before the 200 OK), a CANCEL arriving during setup found nothing to signal and the
+    # call got answered/dispatched anyway. The same event is reused after answer for BYE.
+    cancel_event = register_call_id(call_id)
+
+    async def _reject(status_line: str, *, release: bool = False) -> None:
+        """Send a SIP error/final response on the INVITE's own connection and clean up.
+
+        Replaces the repeated build-response/drain/return blocks that used to appear at
+        every early-exit point in this function (one of the "hard to follow" spots flagged
+        for simplification) — one place to get the cleanup right.
+        """
         writer.write(
             _build_sip_response(
-                status_line="SIP/2.0 503 Service Unavailable",
+                status_line=status_line,
                 call_id=call_id,
                 cseq=cseq,
                 from_header=from_header,
@@ -173,7 +185,17 @@ async def handle_inbound_call(
                 via_headers=via_headers,
             )
         )
-        await writer.drain()
+        try:
+            await writer.drain()
+        except Exception as drain_err:
+            logger.debug(f"[INBOUND] writer.drain() during reject failed: {drain_err}")
+        if release:
+            release_slot()
+        unregister_call_id(call_id)
+
+    if not validate_config():
+        logger.error("[INBOUND] Config validation failed")
+        await _reject("SIP/2.0 503 Service Unavailable")
         return
 
     livekit_service = LiveKitService()
@@ -198,17 +220,12 @@ async def handle_inbound_call(
         logger.error(
             f"[INBOUND] Failed to extract RTP info from SDP. call-id={call_id}"
         )
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 400 Bad Request",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        await writer.drain()
+        await _reject("SIP/2.0 400 Bad Request")
+        return
+
+    if cancel_event.is_set():
+        logger.info(f"[INBOUND] Caller cancelled before setup — call-id={call_id}")
+        await _reject("SIP/2.0 487 Request Terminated")
         return
 
     dialed_number = _extract_sip_number(to_header)
@@ -226,17 +243,7 @@ async def handle_inbound_call(
         logger.warning(
             f"[INBOUND] No active assistant mapping found for number '{normalized_number}' (call-id={call_id}, caller={caller_number})"
         )
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 480 Temporarily Unavailable",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        await writer.drain()
+        await _reject("SIP/2.0 480 Temporarily Unavailable")
         return
 
     assistant = await Assistant.find_one(
@@ -247,17 +254,12 @@ async def handle_inbound_call(
         logger.warning(
             f"[INBOUND] No active assistant found for mapping {inbound_mapping.inbound_id}"
         )
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 480 Temporarily Unavailable",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        await writer.drain()
+        await _reject("SIP/2.0 480 Temporarily Unavailable")
+        return
+
+    if cancel_event.is_set():
+        logger.info(f"[INBOUND] Caller cancelled before setup — call-id={call_id}")
+        await _reject("SIP/2.0 487 Request Terminated")
         return
 
     if not await try_reserve_slot():
@@ -265,17 +267,7 @@ async def handle_inbound_call(
             f"[INBOUND] Slot cap reached — rejecting call-id={call_id} "
             f"caller={caller_number} dialed={normalized_number}"
         )
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 486 Busy Here",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        await writer.drain()
+        await _reject("SIP/2.0 486 Busy Here")
         return
 
     try:
@@ -284,18 +276,12 @@ async def handle_inbound_call(
         logger.info(f"[INBOUND] SIP call_id={call_id} mapped to room={room_name}")
     except Exception as e:
         logger.error(f"[INBOUND] Failed to create room: {e}")
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 500 Internal Server Error",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        await writer.drain()
-        release_slot()
+        await _reject("SIP/2.0 500 Internal Server Error", release=True)
+        return
+
+    if cancel_event.is_set():
+        logger.info(f"[INBOUND] Caller cancelled before setup — call-id={call_id}")
+        await _reject("SIP/2.0 487 Request Terminated", release=True)
         return
 
     try:
@@ -312,22 +298,16 @@ async def handle_inbound_call(
         )
     except Exception as e:
         logger.error(f"[INBOUND] Failed to initialize call record: {e}")
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 500 Internal Server Error",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        await writer.drain()
-        release_slot()
+        await _reject("SIP/2.0 500 Internal Server Error", release=True)
         return
 
     # Release in-memory reservation; CallRecord (status="initiated") now tracked via DB.
     release_slot()
+
+    if cancel_event.is_set():
+        logger.info(f"[INBOUND] Caller cancelled before setup — call-id={call_id}")
+        await _reject("SIP/2.0 487 Request Terminated")
+        return
 
     pool = get_port_pool()
     port = pool.acquire()
@@ -352,25 +332,28 @@ async def handle_inbound_call(
         await livekit_service.create_agent_dispatch(room_name, dispatch_metadata)
     except Exception as e:
         logger.error(f"[INBOUND] Failed to create room/dispatch: {e}")
-        writer.write(
-            _build_sip_response(
-                status_line="SIP/2.0 500 Internal Server Error",
-                call_id=call_id,
-                cseq=cseq,
-                from_header=from_header,
-                to_header=to_header,
-                via_headers=via_headers,
-            )
-        )
-        try:
-            await writer.drain()
-        except Exception as drain_err:
-            logger.debug(f"[INBOUND] writer.drain() after 500 failed: {drain_err}")
+        await _reject("SIP/2.0 500 Internal Server Error")
         pool.release(port)
         return
 
-    # Register call for inbound BYE detection (threading.Event, safe across loops).
-    inbound_bye = register_call_id(call_id)
+    if cancel_event.is_set():
+        logger.info(f"[INBOUND] Caller cancelled before setup — call-id={call_id}")
+        await _reject("SIP/2.0 487 Request Terminated")
+        pool.release(port)
+        return
+
+    # Nothing here confirms the dispatched agent ever actually joins and runs — this
+    # watches the CallRecord and force-ends the call if it doesn't, instead of leaving it
+    # silently occupying the line under load. Same watchdog used for outbound calls.
+    # already_answered=True: inbound calls never write call_status="answered" (the 200 OK
+    # about to be sent below *is* the answer, tracked only on the SIP side).
+    asyncio.create_task(
+        _watch_agent_join(room_name, assistant.assistant_id, already_answered=True)
+    )
+
+    # Reuse the event registered at the top of this function — it now also carries
+    # inbound BYE detection (post-answer) for _run_inbound_bridge.
+    inbound_bye = cancel_event
 
     # Bind RTP socket now so the port is in the 200 OK SDP before the bridge thread starts.
     rtp_bridge = RTPMediaBridge(public_ip=EXOTEL_MEDIA_IP, bind_port=port)

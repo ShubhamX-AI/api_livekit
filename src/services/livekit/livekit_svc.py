@@ -290,6 +290,17 @@ class LiveKitService:
         await call_record.save()
         return call_record
 
+    async def mark_agent_ready(self, room_name: str) -> None:
+        """Record that the agent actually joined and started running in this room.
+
+        Deliberately separate from update_call_status: this only ever sets one timestamp
+        and must never touch call_status/call_status_reason.
+        """
+        call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if call_record and call_record.agent_ready_at is None:
+            call_record.agent_ready_at = datetime.now(timezone.utc)
+            await call_record.save()
+
     async def send_end_call_webhook(self, room_name: str, assistant_id: Optional[str] = None, webhook_url: Optional[str] = None):
         """Send post-call details to a webhook URL.
 

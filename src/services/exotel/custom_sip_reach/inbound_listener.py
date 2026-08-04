@@ -147,6 +147,22 @@ async def _handle_inbound_sip(
                     writer.write(ExotelSipClient._response_200_ok(hdrs, via_headers=via_headers))
                     await writer.drain()
                     logger.info("[SIP-IN] → 200 OK (BYE)")
+                elif start.startswith("CANCEL "):
+                    # Caller hung up before we answered. Exotel sends CANCEL (not BYE) for
+                    # this — it was previously unhandled here, so the in-flight INVITE kept
+                    # running, answered anyway, and dispatched an agent for an abandoned
+                    # call. Setting the event lets handle_inbound_call (which holds the
+                    # INVITE's own writer) notice and reply 487 on its own connection —
+                    # same cross-connection signal already used for BYE.
+                    call_id = hdrs.get("call-id")
+                    logger.info(f"[SIP-IN] ← CANCEL from {peer} call-id={call_id}")
+                    with _registry_lock:
+                        evt = _call_registry.get(call_id)
+                    if evt:
+                        evt.set()
+                    writer.write(ExotelSipClient._response_200_ok(hdrs, via_headers=via_headers))
+                    await writer.drain()
+                    logger.info("[SIP-IN] → 200 OK (CANCEL)")
                 elif start.startswith("OPTIONS "):
                     writer.write(ExotelSipClient._response_200_ok(hdrs, via_headers=via_headers))
                     await writer.drain()
