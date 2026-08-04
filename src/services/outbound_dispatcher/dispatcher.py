@@ -10,7 +10,7 @@ from src.core.config import settings
 from src.core.db.database import Database
 from src.core.db.db_schemas import CallRecord, OutboundCallQueue, OutboundSIP
 from src.core.logger import logger
-from src.services.livekit.livekit_svc import LiveKitService
+from src.services.livekit.livekit_svc import LiveKitService, TERMINAL_CALL_STATUSES
 
 # Queue items stuck in 'dispatching' longer than this indicate a worker crash
 # mid-dispatch. Reset them back to 'pending' (or 'failed' past MAX_RETRIES).
@@ -19,6 +19,11 @@ STUCK_DISPATCHING_MINUTES = 5
 MAX_RETRIES = 3           # permanent failure after this many attempts
 
 ORPHAN_REAPER_INTERVAL_SECONDS = 30 * 60  # how often the orphan reaper sweeps
+
+# How long the monitor waits for session.py to finalize a call after the bridge exits,
+# before assuming the agent died and finalizing itself. Must exceed session.py's teardown
+# (~8s worst case: 1s + END_OF_CALL_GRACE_S + 3s transcript join).
+FINALIZE_WAIT_SECONDS = 15
 
 livekit_services = LiveKitService()
 
@@ -148,6 +153,34 @@ def _reap_bridge(process: multiprocessing.Process) -> None:
         pass
 
 
+async def _finalize_if_agent_failed(room_name: str, assistant_id: str | None) -> None:
+    """Safety net for a dead or stuck agent, run after the SIP bridge exits.
+
+    session.py owns finalization — status, duration, and the end-call webhook — so wait
+    for it before touching anything. Its teardown takes ~8s worst case (1s disconnect
+    delay + 4s END_OF_CALL_GRACE_S + 3s transcript join), while this monitor notices the
+    bridge exit within 2s. Force-writing "completed" straight away (the old behaviour)
+    made session.py's end_call() hit its terminal-status guard and skip the webhook — so
+    a caller-side hangup sent no webhook at all, while an agent-initiated end (no SIP
+    BYE, bridge alive until delete_room) did.
+    """
+    # ponytail: poll the record, no lock or IPC event — one reader, and this is the rare path.
+    for _ in range(FINALIZE_WAIT_SECONDS):
+        record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if record and record.call_status in TERMINAL_CALL_STATUSES:
+            return  # session.py finalized it; webhook already sent
+        await asyncio.sleep(1.0)
+
+    # Never finalized — the agent really did fail. end_call(), not update_call_status(),
+    # because it also writes duration/billable and sends the webhook; status is still
+    # "answered" here so its dedupe guard does not fire.
+    logger.warning(f"Agent never finalized call — finalizing from dispatcher | room={room_name}")
+    try:
+        await livekit_services.end_call(room_name=room_name, assistant_id=assistant_id)
+    except Exception as e:
+        logger.error(f"Failed to finalize completed call | room={room_name}: {e}")
+
+
 async def _monitor_exotel_result(
     room_name: str,
     assistant_id: str | None,
@@ -168,6 +201,16 @@ async def _monitor_exotel_result(
     """
     async def _safe_finalize(reason: str) -> None:
         try:
+            # The call may already be finalized — shutdown can land while we are waiting
+            # out FINALIZE_WAIT_SECONDS below. Overwriting "completed" with "failed" would
+            # corrupt the duration and send a second, contradictory webhook.
+            existing = await CallRecord.find_one(CallRecord.room_name == room_name)
+            if existing and existing.call_status in TERMINAL_CALL_STATUSES:
+                logger.info(
+                    f"Call already finalized with status={existing.call_status}; "
+                    f"skipping finalize | room={room_name} | reason={reason}"
+                )
+                return
             await livekit_services.update_call_status(
                 room_name=room_name,
                 call_status="failed",
@@ -286,17 +329,7 @@ async def _monitor_exotel_result(
             await livekit_services.delete_room(room_name=room_name)
             return
 
-        # Safety net: if session.py's end_call failed (DB error, task crash),
-        # the record stays "answered" and blocks new calls. Force it to "completed"
-        # so the dispatcher slot frees. Webhook is session.py's responsibility — not sent here.
-        try:
-            await livekit_services.update_call_status(
-                room_name=room_name,
-                call_status="completed",
-                ended_at=datetime.now(timezone.utc),
-            )
-        except Exception as e:
-            logger.error(f"Failed to finalize completed call | room={room_name}: {e}")
+        await _finalize_if_agent_failed(room_name, assistant_id)
 
     except asyncio.CancelledError:
         # Server shutting down — task cancelled. Write terminal status before re-raising

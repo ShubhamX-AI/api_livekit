@@ -21,6 +21,11 @@ from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog, UsageReco
 
 PASSTHROUGH_ROOM_PREFIX = "passthrough"
 
+# A call that reached any of these is finalized: duration written and end-call webhook
+# already sent. Both end_call()'s dedupe guard and the dispatcher's safety net read this,
+# so the two can't drift apart on what "already ended" means.
+TERMINAL_CALL_STATUSES = NON_BILLABLE_FINAL_STATUSES | {"completed"}
+
 
 class LiveKitService:
     # Shared client reused across all operations to avoid per-call connection overhead
@@ -402,16 +407,7 @@ class LiveKitService:
         """Mark a call as completed, store duration, and trigger end-call webhook."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
-            if call_record.call_status in {
-                "completed",
-                "busy",
-                "no_answer",
-                "rejected",
-                "cancelled",
-                "unreachable",
-                "timeout",
-                "failed",
-            }:
+            if call_record.call_status in TERMINAL_CALL_STATUSES:
                 # Dispatcher safety net may have set status="completed" before session.py ran
                 # end_call(), skipping duration. Patch it here without re-sending the webhook.
                 if call_record.call_duration_minutes is None:
