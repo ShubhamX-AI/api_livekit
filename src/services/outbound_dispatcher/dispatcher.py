@@ -25,6 +25,13 @@ ORPHAN_REAPER_INTERVAL_SECONDS = 30 * 60  # how often the orphan reaper sweeps
 # (~8s worst case: 1s + END_OF_CALL_GRACE_S + 3s transcript join).
 FINALIZE_WAIT_SECONDS = 15
 
+# _watch_agent_join: how long a call may ring before being answered (matches session.py's
+# own gate.wait_until_ready(timeout=60.0) for the Exotel path) ...
+AGENT_ANSWER_WAIT_SECONDS = 60
+# ... and how long the agent gets to reach session.start() *after* the phone was answered,
+# before the call is treated as silently dead and force-ended.
+AGENT_JOIN_GRACE_SECONDS = 15
+
 livekit_services = LiveKitService()
 
 _new_call_event = asyncio.Event()
@@ -179,6 +186,52 @@ async def _finalize_if_agent_failed(room_name: str, assistant_id: str | None) ->
         await livekit_services.end_call(room_name=room_name, assistant_id=assistant_id)
     except Exception as e:
         logger.error(f"Failed to finalize completed call | room={room_name}: {e}")
+
+
+async def _watch_agent_join(
+    room_name: str, assistant_id: str | None, *, already_answered: bool = False
+) -> None:
+    """Force-end a call whose agent never joined, even though the phone was answered.
+
+    call_status="answered" is written from the SIP/telephony side alone (see
+    _monitor_exotel_result and session.py's own "call_answered" handler) — it says nothing
+    about whether session.py's entrypoint ever ran session.start() successfully. A crashed
+    entrypoint, a bad provider key, or an overloaded worker can all leave a call answered
+    with no agent behind it; without this watchdog that call sits in dead air, occupying a
+    concurrency slot, until the caller eventually gives up and hangs up.
+
+    Applies uniformly to Twilio outbound, Exotel outbound, and Exotel inbound — all three
+    just need "was this call ever answered, and if so did the agent show up after." Inbound
+    Exotel calls never write call_status="answered" at all (the 200 OK response *is* the
+    answer, tracked only on the SIP side) — pass already_answered=True there to start the
+    grace countdown immediately instead of waiting for a status transition that never comes.
+    """
+    loop = asyncio.get_running_loop()
+    ring_deadline = loop.time() + AGENT_ANSWER_WAIT_SECONDS
+    answered_since = loop.time() if already_answered else None
+
+    while True:
+        record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if not record or record.call_status in TERMINAL_CALL_STATUSES or record.agent_ready_at is not None:
+            return  # call ended on its own, or the agent showed up — nothing to do
+
+        now = loop.time()
+        if answered_since is None and record.call_status == "answered":
+            answered_since = now
+
+        if answered_since is not None:
+            if now - answered_since >= AGENT_JOIN_GRACE_SECONDS:
+                break  # answered long enough ago with still no agent — give up on it
+        elif now > ring_deadline:
+            return  # never got answered within the normal ring window — not our problem
+
+        await asyncio.sleep(1.0)
+
+    logger.warning(f"Agent never joined after answer — ending silent call | room={room_name}")
+    try:
+        await livekit_services.end_call(room_name=room_name, assistant_id=assistant_id)
+    except Exception as e:
+        logger.error(f"Failed to end silent call | room={room_name}: {e}")
 
 
 async def _monitor_exotel_result(
@@ -407,6 +460,10 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                     await livekit_services.start_room_recording(room_name)
                 except Exception as e:
                     logger.error(f"Twilio passthrough recording start failed | room={room_name}: {e}")
+            else:
+                # No equivalent of the Exotel monitor exists for Twilio — this is the only
+                # thing that notices a Twilio call answered with no agent behind it.
+                asyncio.create_task(_watch_agent_join(room_name, item.assistant_id))
 
         elif item.call_service == "exotel":
             from src.services.exotel.custom_sip_reach.bridge import _bridge_subprocess_entry
@@ -454,6 +511,11 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
                     passthrough_webhook_url=trunk.passthrough_webhook_url,
                 )
             )
+            if not is_passthrough:
+                # _monitor_exotel_result only reconciles status *after* the bridge process
+                # exits (i.e. after the call is already over) — it doesn't catch a call
+                # that's answered and silently agent-less while still ongoing. This does.
+                asyncio.create_task(_watch_agent_join(room_name, item.assistant_id))
 
         item.status = "dispatched"
         item.dispatched_at = datetime.now(timezone.utc)

@@ -26,7 +26,14 @@ class Database:
 
     @classmethod
     async def connect_db(cls):
-        """Initialize database connection and Beanie ODM"""
+        """Initialize database connection and Beanie ODM.
+
+        No-op if already connected — every LiveKit job calls this at the top of
+        entrypoint(), and re-doing the ping + init_beanie() (11 document models) on an
+        already-live client just adds latency for no benefit.
+        """
+        if cls.client is not None:
+            return
         try:
             cls.client = AsyncMongoClient(settings.MONGODB_URL, tz_aware=True)
 
@@ -54,6 +61,7 @@ class Database:
             logger.info(f"Beanie initialized with database: {settings.DATABASE_NAME}")
 
         except Exception as e:
+            cls.client = None  # don't leave a broken client behind — next call must retry, not no-op
             logger.error(f"Failed to connect to MongoDB: {e}")
             raise
 
@@ -62,6 +70,7 @@ class Database:
         """Close database connection"""
         if cls.client:
             await cls.client.close()
+            cls.client = None  # let a later connect_db() reconnect instead of no-op'ing
             logger.info("MongoDB connection closed")
 
 

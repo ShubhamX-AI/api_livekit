@@ -68,6 +68,13 @@ DEFAULT_MAX_CALL_DURATION_MINUTES = 30.0
 # join, the usage record and the end-of-call webhook — is delayed by this much.
 END_OF_CALL_GRACE_S = 4.0
 
+# Fixed pause after call_answered before the greeting is sent, to let the RTP mixer and
+# egress recording finish settling. Was 2.0s (unconditional, on every Exotel call — a
+# real chunk of the reported 5-6s first-speech latency). Lowered as a starting point;
+# NOT verified against a live call — listen to the first ~2s of a real Exotel greeting
+# after this change and put it back up if the opening word sounds clipped or garbled.
+EXOTEL_RTP_WARMUP_SLEEP_SEC = 1.0
+
 
 def should_record(role: str | None, *, on_hold: bool, gate_active: bool) -> bool:
     """Whether a conversation item belongs in the stored transcript.
@@ -104,9 +111,11 @@ def build_background_audio(interaction_config) -> BackgroundAudioPlayer | None:
     )
 
 
-# Play a referenced audio asset as the greeting instead of generating it with the model.
-# Returns the spoken transcript on success, or None so the caller falls back to the model greeting.
-async def play_prerecorded_greeting(session, audio_id, allow_interruptions) -> str | None:
+# Looks up the audio asset and downloads it from S3 — the two slow, network-bound steps of
+# playing a prerecorded greeting. Split out so entrypoint() can start this the moment the
+# assistant loads, well before the greeting is actually needed, instead of paying for it
+# cold at greeting time.
+async def _prefetch_greeting_audio(audio_id: str) -> tuple[str, str] | None:
     asset = await AudioAsset.find_one(
         AudioAsset.audio_id == audio_id,
         AudioAsset.is_active == True,
@@ -114,12 +123,27 @@ async def play_prerecorded_greeting(session, audio_id, allow_interruptions) -> s
     if not asset:
         logger.warning("Greeting audio_id %s not found or inactive; using model greeting", audio_id)
         return None
-
-    # transcript goes to the chat context so the model knows it already greeted
-    transcript = asset.transcript or ""
-    tmp_path = None
     try:
         tmp_path = await asyncio.to_thread(s3_audio.download_to_tempfile, asset.s3_key)
+    except Exception as e:
+        logger.error(f"Greeting audio download failed, falling back to model greeting: {e}", exc_info=True)
+        return None
+    # transcript goes to the chat context so the model knows it already greeted
+    return asset.transcript or "", tmp_path
+
+
+# Play a referenced audio asset as the greeting instead of generating it with the model.
+# Returns the spoken transcript on success, or None so the caller falls back to the model greeting.
+async def play_prerecorded_greeting(
+    session, audio_id, allow_interruptions, prefetch: asyncio.Task | None = None,
+) -> str | None:
+    # Use the in-flight prefetch task if entrypoint() started one; otherwise fetch cold
+    # (keeps this function usable on its own).
+    result = await prefetch if prefetch is not None else await _prefetch_greeting_audio(audio_id)
+    if result is None:
+        return None
+    transcript, tmp_path = result
+    try:
         handle = session.say(
             transcript,
             audio=audio_frames_from_file(tmp_path, sample_rate=48000, num_channels=1),
@@ -157,6 +181,15 @@ async def entrypoint(ctx: JobContext):
     if not assistant:
         logger.error(f"No assistant found for identifier: {assistant_id}")
         return
+
+    # Kick off the prerecorded-greeting lookup + S3 download now, in parallel with the rest
+    # of session setup below, instead of starting it cold once we're actually about to speak
+    # (previously the single biggest avoidable chunk of first-speech latency for assistants
+    # using a greeting audio asset). Harmless if the greeting path below never uses it.
+    _greeting_prefetch_task = None
+    _greeting_cfg = assistant.assistant_greeting_audio
+    if _greeting_cfg and _greeting_cfg.enabled and _greeting_cfg.audio_id:
+        _greeting_prefetch_task = asyncio.create_task(_prefetch_greeting_audio(_greeting_cfg.audio_id))
 
     logger.info(f"Loaded assistant config: {assistant.assistant_name} (ID: {assistant.assistant_id})")
     # Three modes, one discriminator each. "pipeline" (half-cascade) is the implicit
@@ -360,6 +393,10 @@ async def entrypoint(ctx: JobContext):
             _max_duration_task.cancel()
         if input_guard is not None:
             await input_guard.aclose()
+        # Started at assistant-load time; harmless if it finished, but cancel if the call
+        # ended before the greeting path ever awaited it (e.g. speaks_first=False).
+        if _greeting_prefetch_task is not None and not _greeting_prefetch_task.done():
+            _greeting_prefetch_task.cancel()
         # Mute all room audio inputs immediately — prevents STT from
         # processing any new speech during the TTS playout delay window
         # await livekit_services.mute_room_audio_inputs(ctx.room.name)
@@ -853,6 +890,10 @@ async def entrypoint(ctx: JobContext):
     logger.info("Starting AgentSession...")
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
     logger.info("AgentSession started successfully")
+    # Tell the dispatcher's silent-agent watchdog we actually made it into the room —
+    # SIP can mark a call "answered" with no agent behind it (crash, provider outage,
+    # worker overload); this timestamp is the thing that tells the difference.
+    await livekit_services.mark_agent_ready(room_name)
 
     @session.on("user_state_changed")
     def on_user_state_changed(event):
@@ -1061,8 +1102,10 @@ async def entrypoint(ctx: JobContext):
                             logger.warning(
                                 "[EXOTEL] Recording did not become ready before first reply; proceeding"
                             )
-                        logger.info("[EXOTEL] call_answered confirmed — sleeping 2s for RTP + egress warmup")
-                        await asyncio.sleep(2.0)
+                        logger.info(
+                            f"[EXOTEL] call_answered confirmed — sleeping {EXOTEL_RTP_WARMUP_SLEEP_SEC}s for RTP + egress warmup"
+                        )
+                        await asyncio.sleep(EXOTEL_RTP_WARMUP_SLEEP_SEC)
                     else:
                         logger.warning("[EXOTEL] Timed out waiting for call_answered — skipping start instruction")
                         should_send_instruction = False
@@ -1082,7 +1125,9 @@ async def entrypoint(ctx: JobContext):
                     greeting_cfg = assistant.assistant_greeting_audio
                     played_prerecorded = False
                     if greeting_cfg.enabled and greeting_cfg.audio_id:
-                        transcript = await play_prerecorded_greeting(session, greeting_cfg.audio_id, allow_int)
+                        transcript = await play_prerecorded_greeting(
+                            session, greeting_cfg.audio_id, allow_int, prefetch=_greeting_prefetch_task,
+                        )
                         if transcript is not None:
                             played_prerecorded = True
                             spoken_text = transcript

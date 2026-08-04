@@ -205,6 +205,13 @@ class CallRecord(Document):
     sip_status_code: Optional[int] = None
     sip_status_text: Optional[str] = None
     answered_at: Optional[datetime] = None
+    # Set once session.py's entrypoint actually reaches session.start() successfully — the
+    # earliest reliable "the agent is really running in this room" signal. SIP/telephony can
+    # mark a call "answered" with no agent ever having joined (crashed entrypoint, provider
+    # connect failure, dispatcher/worker overload); a dispatcher watchdog polls this to force
+    # -end calls that never get here instead of quietly occupying a slot for their full
+    # duration with dead air. See outbound_dispatcher/dispatcher.py's _watch_agent_join.
+    agent_ready_at: Optional[datetime] = None
     call_end_reason: Optional[str] = None  # natural | max_duration_exceeded | sip_bye | rtp_silence | no_rtp | livekit_disconnected | error
     recording_path: Optional[str] = None
     recording_egress_id: Optional[str] = None

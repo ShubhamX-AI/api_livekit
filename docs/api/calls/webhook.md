@@ -25,6 +25,7 @@ Content-Type: application/json
     "sip_status_code": null,
     "sip_status_text": null,
     "answered_at": "2024-01-15T10:00:02.000Z",
+    "agent_ready_at": "2024-01-15T10:00:03.500Z",
     "call_end_reason": "natural",
     "recording_path": "https://your-bucket.s3.us-east-1.amazonaws.com/recordings/call_abc123.ogg",
     "transcripts": [
@@ -88,6 +89,7 @@ Content-Type: application/json
 | `data.sip_status_code`         | number  | SIP response code when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
 | `data.sip_status_text`         | string  | SIP reason text when available for SIP-driven setup outcomes. May be `null` for generic failures/timeouts. |
 | `data.answered_at`             | string  | Timestamp when the user answered (if answered). |
+| `data.agent_ready_at`          | string  | Timestamp when the AI agent actually joined the room and started running (`session.start()` succeeded). Internal diagnostic signal — used by the dispatcher to detect a call that was answered but never got a live agent (crash, provider outage, worker overload) and end it instead of leaving it silent. `null` if the agent never became ready, or for passthrough/legacy calls (no AI agent). Not part of the stable contract — do not build required logic on it. |
 | `data.call_end_reason`         | string  | Reason the call ended. `natural` for normal user/agent hang-up, `max_duration_exceeded` when the assistant's `max_call_duration_minutes` ceiling was hit. May be `null` for legacy records created before this field existed. |
 | `data.recording_path`          | string  | S3 URL of the call recording (if enabled). |
 | `data.transcripts`             | array   | List of conversation messages, ordered by `timestamp` (speaking order). Always `[]` for passthrough calls (no STT). |
@@ -159,6 +161,7 @@ The webhook payload is generated from the stored call record and currently inclu
 - `sip_status_code`
 - `sip_status_text`
 - `answered_at`
+- `agent_ready_at` (internal diagnostic — see schema note above)
 - `call_end_reason`
 - `recording_path`
 - `transcripts`
@@ -249,3 +252,5 @@ Content-Type: application/json
 ### Public Payload vs Internal Tracking
 
 Internal delivery-tracking fields (for example webhook claim/inflight timestamps) are runtime internals and are not part of the public webhook payload contract.
+
+`agent_ready_at` does appear in the payload (it's a plain field on the stored call record, not filtered out), but it exists for the dispatcher's own silent-agent detection, not as a feature for webhook consumers. Treat it as informational only.
