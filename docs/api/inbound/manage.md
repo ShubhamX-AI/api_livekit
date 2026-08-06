@@ -11,7 +11,7 @@ Create and maintain inbound number mappings for assistants.
 - `phone_number` stores the original value you submitted.
 - `phone_number_normalized` stores the normalized value used for routing and uniqueness checks.
 - `assistant_id` is nullable after detach/update.
-- `inbound_context_strategy_id` is optional and nullable.
+- `inbound_context_strategy_id` is optional and nullable. Leaving it unset is a fully supported configuration — the number routes normally with no caller-context lookup and no added call latency. See [Inbound Context Strategies](../inbound-context-strategy/index.md).
 - Active uniqueness is enforced on the normalized phone number across the full system.
 - A mapping can route calls without a strategy, but cannot route calls without a valid attached assistant.
 
@@ -25,7 +25,7 @@ Create and maintain inbound number mappings for assistants.
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `assistant_id` | string | Yes | Active assistant owned by the authenticated user. |
-| `inbound_context_strategy_id` | string | No | Optional strategy ID for caller-context lookup before prompt rendering. |
+| `inbound_context_strategy_id` | string | No | Optional strategy ID for caller-context lookup before prompt rendering. The strategy attaches to this number, not to the assistant — see [Inbound Context Strategies](../inbound-context-strategy/index.md). Omit it to route without any lookup. |
 | `service` | string | Yes | Must be `exotel`. |
 | `inbound_config` | object | Yes | Provider-specific inbound config. |
 | `inbound_config.type` | string | Yes | Must match `service`. If omitted, the API injects it from `service`. |
@@ -249,5 +249,6 @@ It also clears `inbound_context_strategy_id`.
 ## Operational Notes
 
 - If `assistant_id` is null, inbound calls to that number do not route to an agent.
-- If `inbound_context_strategy_id` is null, inbound calls still route and run without caller-context lookup.
+- If `inbound_context_strategy_id` is null, inbound calls still route and run without caller-context lookup. This is the default and requires no configuration.
 - If a referenced strategy is deleted, active mappings are automatically detached from that strategy and continue routing without context lookup.
+- A failing strategy never fails the call. Timeout, HTTP error, bad JSON, or a deactivated strategy all fall back to the assistant's default prompt with `{{context.*}}` rendered empty — see [Without a Strategy the Call Is Unaffected](../inbound-context-strategy/index.md#without-a-strategy-the-call-is-unaffected).

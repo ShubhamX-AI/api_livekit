@@ -37,6 +37,32 @@ async def _log_lookup(
         logger.warning(f"Failed to write inbound context lookup log: {log_err}")
 
 
+async def log_missing_strategy(
+    *,
+    user_email: str,
+    assistant_id: str,
+    room_name: str,
+    strategy_id: str,
+) -> None:
+    """Record an inbound call whose configured strategy was missing or inactive.
+
+    Same activity-log stream as a failed lookup, so a strategy that was deleted
+    out from under a live inbound number is visible rather than silent.
+    """
+    await _log_lookup(
+        user_email=user_email,
+        assistant_id=assistant_id,
+        room_name=room_name,
+        request_data={"strategy_id": strategy_id},
+        status="error",
+        latency_ms=0,
+        message=(
+            f"Inbound context strategy '{strategy_id}' not found or inactive; "
+            "continuing with default prompt"
+        ),
+    )
+
+
 async def resolve_inbound_context(
     *,
     strategy: InboundContextStrategy,
@@ -66,30 +92,61 @@ async def resolve_inbound_context(
         "inbound_number": job_metadata.get("inbound_number"),
     }
     config = strategy.strategy_config or {}
-    if strategy.strategy_type != "webhook":
-        logger.warning(
-            f"Unsupported inbound context strategy type '{strategy.strategy_type}' for strategy {strategy.strategy_id}"
-        )
-        return None
-
     url = config.get("url")
-    timeout_seconds = config.get("timeout_seconds", 2.0)
-    headers = {"Content-Type": "application/json", **config.get("headers", {})}
     request_data = {
         "strategy_id": strategy.strategy_id,
         "strategy_type": strategy.strategy_type,
         "url": url,
         "payload": payload,
     }
-    if not url:
-        logger.warning(
-            f"Inbound context strategy {strategy.strategy_id} is missing a webhook URL"
-        )
-        return None
     start_ms = time.monotonic()
 
+    if strategy.strategy_type != "webhook":
+        message = (
+            f"Unsupported inbound context strategy type '{strategy.strategy_type}'; "
+            "continuing with default prompt"
+        )
+        logger.warning(f"{message} (strategy {strategy.strategy_id})")
+        await _log_lookup(
+            user_email=user_email,
+            assistant_id=assistant_id,
+            room_name=room_name,
+            request_data=request_data,
+            status="error",
+            latency_ms=0,
+            message=message,
+        )
+        return None
+
+    if not url:
+        message = (
+            f"Inbound context strategy {strategy.strategy_id} is missing a webhook URL; "
+            "continuing with default prompt"
+        )
+        logger.warning(message)
+        await _log_lookup(
+            user_email=user_email,
+            assistant_id=assistant_id,
+            room_name=room_name,
+            request_data=request_data,
+            status="error",
+            latency_ms=0,
+            message=message,
+        )
+        return None
+
+    # Config comes straight from Mongo, so it can hold anything a legacy or
+    # hand-edited document left behind — a null headers map used to TypeError
+    # here and take the whole call down with it.
+    raw_timeout = config.get("timeout_seconds") or 2.0
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        timeout_seconds = min(max(float(raw_timeout), 0.5), 10.0)
+    except (TypeError, ValueError):
+        timeout_seconds = 2.0
+    headers = {"Content-Type": "application/json", **(config.get("headers") or {})}
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()

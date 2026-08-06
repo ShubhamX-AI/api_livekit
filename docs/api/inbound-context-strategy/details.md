@@ -46,5 +46,11 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/inbound_context_s
 
 ## Notes
 
-- Sensitive header values are masked in response payloads.
+- Sensitive header values are masked in response payloads. Keys containing `authorization`, `token`, `secret`, `api-key`, `apikey`, `api_key`, or `password` come back as `****`.
 - Inactive or foreign-user strategies return `404`.
+
+!!! danger "Do not send the masked value back"
+
+    The `****` above is a mask, not the stored value. Echoing it back on [Update Strategy](update.md) is rejected with `400` — otherwise a fetch-edit-save round trip would replace your real token with the literal string `****` and every lookup would then fail.
+
+    Headers merge on update, so you never need to resend a header you did not change. To rotate one, send only that header with its new value; to delete one, send it with `null`.

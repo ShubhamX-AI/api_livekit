@@ -24,6 +24,49 @@ With a strategy:
 
 - The worker can fetch extra context and expose it to prompt templates as `{{context.*}}`.
 
+## How a Strategy Gets Triggered
+
+**A strategy attaches to an inbound phone number, not to an assistant.** The link lives on the inbound number mapping (`InboundSIP.inbound_context_strategy_id`), set through `POST /inbound/assign` or `PATCH /inbound/update/{inbound_id}` — see [Manage Inbound Numbers](../inbound/manage.md).
+
+That means the same assistant can be reached on three different numbers with three different strategies, or with none at all. The assistant document has no strategy field.
+
+The chain on a live call:
+
+```
+Caller dials your inbound number
+  │
+  ├─ SIP INVITE arrives at the inbound listener
+  ├─ The bridge looks up the InboundSIP mapping by normalized number
+  ├─ inbound_context_strategy_id is copied into the agent dispatch metadata
+  │
+  ├─ The agent worker starts and resolves the strategy (must be active,
+  │  and owned by the same account as the assistant)
+  ├─ The worker POSTs to your webhook and reads the `context` object
+  ├─ {{context.*}} placeholders render into the prompt
+  │
+  └─ The session starts and the assistant greets the caller
+```
+
+The webhook fires from the **agent worker**, not from the SIP listener, and it happens once per call just before the prompt is rendered.
+
+### Without a Strategy the Call Is Unaffected
+
+An inbound number with no strategy attached works exactly as it always has. There is nothing to configure and nothing to turn on.
+
+| Situation | What happens to the call |
+| :--- | :--- |
+| No `inbound_context_strategy_id` on the mapping | Connects normally. The lookup is skipped entirely — no webhook, no added latency. |
+| Strategy id set, but the strategy was deleted or deactivated | Connects normally. Logged as `inbound_context_lookup`. |
+| Strategy active, but the webhook times out, errors, or returns bad JSON | Connects normally. Logged as `inbound_context_lookup`. |
+
+In every one of those cases the assistant still starts and still greets. The only difference is that `{{context.*}}` placeholders render as empty strings.
+
+What *does* stop an inbound call is unrelated to strategies:
+
+- No active mapping for the dialed number, or no assistant on it → SIP `480 Temporarily Unavailable`
+- The assistant is inactive → SIP `480 Temporarily Unavailable`
+- Concurrency cap reached → SIP `486 Busy Here`
+
 ## Current Strategy Types
 
 Only one strategy type is supported:
@@ -32,11 +75,19 @@ Only one strategy type is supported:
 
 ## Runtime Behavior
 
-The lookup is optional and non-blocking.
+The lookup is optional, and it never fails the call — but it **does block session start**.
 
+- The context has to be in the prompt before the assistant speaks, so the worker waits for your webhook before starting the session. The caller hears silence for that window.
+- Keep `timeout_seconds` low. Default is `2.0`, allowed range is `0.5`–`10.0`. A 10-second timeout means up to 10 seconds of dead air on a failing lookup.
 - If lookup succeeds, the returned `context` object is available to prompt templates.
 - If lookup fails (timeout, HTTP error, invalid JSON, invalid shape), the call continues with default prompt behavior.
 - Failures are visible in activity logs as `inbound_context_lookup`.
+
+Request mechanics:
+
+- **No retries.** One attempt per call.
+- **Redirects are followed.** The whole chain must finish inside `timeout_seconds`.
+- The timeout is a total budget covering connect, write, and read — not a per-read timeout.
 
 ## Webhook Request Payload
 
@@ -120,7 +171,7 @@ curl -X POST "https://your-webhook-url" \
 
 ## Failure and Fallback Contract
 
-Lookup is non-blocking by design.
+Lookup is best-effort by design: no failure mode drops the call.
 
 - Timeout, HTTP error, invalid JSON, invalid payload shape, missing URL, or inactive strategy does not fail the call.
 - The assistant still starts.
@@ -133,11 +184,63 @@ Lookup is non-blocking by design.
     New keys may be added in a backward-compatible way.
     Existing keys are expected to remain stable.
 
+## URL Requirements
+
+`strategy_config.url` is validated when you create or update a strategy. A URL that fails any of these is rejected with `400`.
+
+| Rule | Accepted | Rejected |
+| :--- | :--- | :--- |
+| Scheme must be `http` or `https` | `https://crm.example.com/ctx`<br>`http://crm.example.com/ctx` | `ftp://crm.example.com/ctx` |
+| Host must not be a private, loopback, link-local, or reserved IP | `https://203.0.113.10/ctx` | `https://127.0.0.1/ctx`<br>`https://10.0.0.5/ctx`<br>`https://192.168.1.10/ctx`<br>`https://169.254.169.254/…` |
+| Host must not be an internal name | `https://internal.example.com/ctx` | `https://localhost/ctx`<br>`https://metadata.google.internal/ctx` |
+
+Rejection looks like this:
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "strategy_config", "url"],
+      "msg": "Value error, url host '169.254.169.254' resolves to a non-public address"
+    }
+  ]
+}
+```
+
+!!! warning "Prefer https"
+
+    Plain `http` is accepted so existing integrations keep working, but the request carries the caller's phone number and any `Authorization` header you configured — in cleartext. Use `https` unless you have a specific reason not to.
+
+The check runs on the URL you send, at write time. DNS is not re-resolved when the call actually fires.
+
 ## Security and Response Masking
 
 When strategies are returned from list/details endpoints:
 
 - Sensitive header values (for keys like `authorization`, `token`, `secret`, `api-key`) are masked as `****`.
+- Sending a masked `****` value back on create/update is rejected with `400`. Send the real value, or omit `strategy_config` to leave the stored one untouched — otherwise a GET-edit-PATCH round trip would silently overwrite your real token with the mask.
+
+## Updating Headers
+
+`strategy_config.headers` is **merged key by key**, so you can change one header without resending the rest. Send a header with a `null` value to delete just that header.
+
+Starting from stored headers `{"Authorization": "Bearer old", "X-Tenant-Id": "acme"}`:
+
+| PATCH `headers` | Resulting stored headers |
+| :--- | :--- |
+| `{"X-Region": "in"}` | `Authorization: Bearer old`, `X-Tenant-Id: acme`, `X-Region: in` |
+| `{"Authorization": "Bearer new"}` | `Authorization: Bearer new`, `X-Tenant-Id: acme` |
+| `{"X-Tenant-Id": null}` | `Authorization: Bearer old` |
+| omitted entirely | unchanged |
+
+Other `strategy_config` keys (`url`, `timeout_seconds`) replace outright — sending `timeout_seconds` alone leaves `url` and `headers` untouched.
+
+Two rules apply to every update:
+
+- `strategy_type` and `strategy_config` must be sent together, or neither.
+- `strategy_name`, `strategy_type`, and `strategy_config` may not be `null`. Omit a field to leave it unchanged.
+
+See [Update Strategy](update.md) for runnable examples.
 
 ## Endpoints
 

@@ -178,7 +178,9 @@ class InboundContextStrategy(Document):
         indexes = [
             IndexModel(
                 [("strategy_name", 1)], collation=Collation(locale="en", strength=2)
-            )
+            ),
+            # /list: filter by owner + active, sort by newest first.
+            IndexModel([("strategy_created_by_email", 1), ("strategy_created_at", -1)]),
         ]
 
 

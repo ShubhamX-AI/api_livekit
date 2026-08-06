@@ -33,7 +33,7 @@ from src.core.config import settings
 from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.audio_denoise import SpeechGate
 from src.core.agents.dynamic_assistant import DynamicAssistant
-from src.core.agents.inbound_context import resolve_inbound_context
+from src.core.agents.inbound_context import log_missing_strategy, resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL, create_llm
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
@@ -230,20 +230,38 @@ async def entrypoint(ctx: JobContext):
                 InboundContextStrategy.strategy_is_active == True,
             )
             if strategy:
-                context = await resolve_inbound_context(
-                    strategy=strategy,
-                    assistant_id=assistant.assistant_id,
-                    assistant_name=assistant.assistant_name,
-                    user_email=assistant.assistant_created_by_email,
-                    room_name=room_name,
-                    job_metadata=job_metadata,
-                )
+                # Best-effort by contract: nothing this lookup can do — a bad stored
+                # config, a Mongo hiccup — may be allowed to abort the entrypoint and
+                # drop the call.
+                try:
+                    context = await resolve_inbound_context(
+                        strategy=strategy,
+                        assistant_id=assistant.assistant_id,
+                        assistant_name=assistant.assistant_name,
+                        user_email=assistant.assistant_created_by_email,
+                        room_name=room_name,
+                        job_metadata=job_metadata,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Inbound context lookup raised for strategy '{strategy_id}': {e}; continuing with default prompt"
+                    )
+                    context = None
                 if context is not None:
                     render_data = {**render_data, "context": context}
             else:
                 logger.warning(
                     f"Inbound context strategy '{strategy_id}' not found or inactive; continuing with default prompt"
                 )
+                try:
+                    await log_missing_strategy(
+                        user_email=assistant.assistant_created_by_email,
+                        assistant_id=assistant.assistant_id,
+                        room_name=room_name,
+                        strategy_id=strategy_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to log missing inbound context strategy: {e}")
 
     # Render metadata placeholders in prompts
     if assistant.assistant_prompt:

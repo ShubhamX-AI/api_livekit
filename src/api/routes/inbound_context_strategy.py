@@ -20,6 +20,28 @@ from src.core.providers.keys import mask_secret_values
 router = APIRouter()
 
 
+def merge_strategy_config(stored: dict, incoming: dict) -> dict:
+    """Merge a PATCH config onto the stored one.
+
+    Top-level keys replace, but `headers` merges key-by-key — replacing the whole
+    map meant a PATCH adding one header silently deleted the stored
+    Authorization. A header sent with a null value is removed.
+    """
+    header_patch = incoming.pop("headers", None)
+    merged = {**(stored or {}), **incoming}
+
+    if header_patch is not None:
+        headers = {**((stored or {}).get("headers") or {})}
+        for key, value in header_patch.items():
+            if value is None:
+                headers.pop(key, None)
+            else:
+                headers[key] = value
+        merged["headers"] = headers
+
+    return merged
+
+
 @router.post("/create")
 async def create_inbound_context_strategy(
     request: CreateInboundContextStrategy,
@@ -78,11 +100,10 @@ async def update_inbound_context_strategy(
         raise HTTPException(status_code=400, detail="No fields provided for update")
 
     if "strategy_config" in update_data and request.strategy_config is not None:
-        merged_config = {
-            **strategy.strategy_config,
-            **request.strategy_config.model_dump(exclude_unset=True),
-        }
-        update_data["strategy_config"] = merged_config
+        update_data["strategy_config"] = merge_strategy_config(
+            strategy.strategy_config,
+            request.strategy_config.model_dump(exclude_unset=True),
+        )
 
     update_data.update(
         {
@@ -91,7 +112,7 @@ async def update_inbound_context_strategy(
         }
     )
 
-    result = await InboundContextStrategy.find_one(
+    await InboundContextStrategy.find_one(
         InboundContextStrategy.strategy_id == strategy_id,
         InboundContextStrategy.strategy_created_by_email == current_user.user_email,
         InboundContextStrategy.strategy_is_active == True,

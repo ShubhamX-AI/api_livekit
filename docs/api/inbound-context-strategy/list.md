@@ -67,3 +67,4 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/inbound_context_s
 
 - The endpoint returns only active strategies in descending creation order.
 - Header masking is for response safety only; stored values are not overwritten by masking.
+- The `****` values are masks, not real values. Sending one back on [Update Strategy](update.md) is rejected with `400`, so a fetch-edit-save loop cannot overwrite your real token with the mask. Headers merge on update — send only what you are changing.
