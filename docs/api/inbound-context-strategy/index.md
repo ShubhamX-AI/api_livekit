@@ -22,7 +22,7 @@ Without a strategy:
 
 With a strategy:
 
-- The worker can fetch extra context and expose it to prompt templates as `{{context.*}}`.
+- The worker can fetch extra context and expose it to prompt templates as placeholders.
 
 ## How a Strategy Gets Triggered
 
@@ -41,8 +41,8 @@ Caller dials your inbound number
   │
   ├─ The agent worker starts and resolves the strategy (must be active,
   │  and owned by the same account as the assistant)
-  ├─ The worker POSTs to your webhook and reads the `context` object
-  ├─ {{context.*}} placeholders render into the prompt
+  ├─ The worker POSTs to your webhook and reads the JSON response
+  ├─ The returned values render into the prompt's placeholders
   │
   └─ The session starts and the assistant greets the caller
 ```
@@ -59,7 +59,7 @@ An inbound number with no strategy attached works exactly as it always has. Ther
 | Strategy id set, but the strategy was deleted or deactivated | Connects normally. Logged as `inbound_context_lookup`. |
 | Strategy active, but the webhook times out, errors, or returns bad JSON | Connects normally. Logged as `inbound_context_lookup`. |
 
-In every one of those cases the assistant still starts and still greets. The only difference is that `{{context.*}}` placeholders render as empty strings.
+In every one of those cases the assistant still starts and still greets. The only difference is that the placeholders expecting fetched values render as empty strings.
 
 What *does* stop an inbound call is unrelated to strategies:
 
@@ -71,7 +71,7 @@ What *does* stop an inbound call is unrelated to strategies:
 
 Only one strategy type is supported:
 
-- `webhook`: sends a POST request to your endpoint and expects a JSON response with a top-level `context` object.
+- `webhook`: sends a POST request to your endpoint and expects a JSON object in response.
 
 ## Runtime Behavior
 
@@ -79,7 +79,7 @@ The lookup is optional, and it never fails the call — but it **does block sess
 
 - The context has to be in the prompt before the assistant speaks, so the worker waits for your webhook before starting the session. The caller hears silence for that window.
 - Keep `timeout_seconds` low. Default is `2.0`, allowed range is `0.5`–`10.0`. A 10-second timeout means up to 10 seconds of dead air on a failing lookup.
-- If lookup succeeds, the returned `context` object is available to prompt templates.
+- If lookup succeeds, the returned JSON object is available to prompt templates.
 - If lookup fails (timeout, HTTP error, invalid JSON, invalid shape), the call continues with default prompt behavior.
 - Failures are visible in activity logs as `inbound_context_lookup`.
 
@@ -132,19 +132,82 @@ Headers sent to your webhook:
 
 ## Expected Webhook Response
 
-Your webhook must return JSON with a top-level `context` object.
+Return **any JSON object**. The response body *is* the placeholder payload, and its shape is the placeholder path — the same rule outbound `metadata` follows. There is no wrapper key to add.
 
 ```json
 {
-  "context": {
-    "customer_name": "John Doe",
-    "ticket_id": "TCK-1234",
-    "plan": "Enterprise"
-  }
+  "customer_name": "John Doe",
+  "ticket_id": "TCK-1234",
+  "plan": "Enterprise"
 }
 ```
 
-If valid, these values are available in templates as `{{context.customer_name}}`, `{{context.ticket_id}}`, and so on.
+These become `{{customer_name}}`, `{{ticket_id}}`, and `{{plan}}`.
+
+Nest values if you prefer, and the placeholders nest with them:
+
+```json
+{
+  "customer": { "name": "John Doe", "plan": "Enterprise" },
+  "ticket": { "id": "TCK-1234", "status": "open" }
+}
+```
+
+These become `{{customer.name}}`, `{{customer.plan}}`, `{{ticket.id}}`, and `{{ticket.status}}`.
+
+The only requirement is that the top level be a JSON object. A list, string, or number is rejected and the call falls back to the default prompt.
+
+!!! note "Already returning a `context` wrapper?"
+
+    Nothing to change. `context` is read as an ordinary key rather than an envelope, so a response shaped like this:
+
+    ```json
+    { "context": { "customer_name": "John Doe" } }
+    ```
+
+    puts the values one level down, exactly where `{{context.customer_name}}` already looks for them. Existing webhooks and existing prompts keep working untouched.
+
+    Drop the wrapper only if you would rather write `{{customer_name}}`. Changing the response shape changes the placeholders, so update both together.
+
+See [Using Placeholders](../assistant/placeholders.md) for the full reference, including array indexing, missing values, and optional-text sections.
+
+## End-to-End Example
+
+**1. Your webhook receives** the request payload documented above, including `caller_number: "+919876543210"`.
+
+**2. Your webhook looks that number up in your CRM and answers:**
+
+```json
+{
+  "customer_name": "John Doe",
+  "plan": "Enterprise",
+  "open_ticket": "TCK-1234",
+  "last_contact": "2026-07-28"
+}
+```
+
+**3. Your assistant prompt is configured as:**
+
+```json
+{
+  "assistant_prompt": "You are a support agent. The caller is {{customer_name}} on the {{plan}} plan. They last contacted us on {{last_contact}}{{#open_ticket}} and have open ticket {{open_ticket}}{{/open_ticket}}. Their number is {{call.caller_number}}.",
+  "assistant_start_instruction": "Welcome back {{customer_name}}. How can I help?"
+}
+```
+
+**4. The assistant runs with:**
+
+```
+You are a support agent. The caller is John Doe on the Enterprise plan. They
+last contacted us on 2026-07-28 and have open ticket TCK-1234. Their number
+is +919876543210.
+```
+
+and greets with `Welcome back John Doe. How can I help?`
+
+If the same webhook had returned `{"customer_name": "John Doe", "plan": "Enterprise", "last_contact": "2026-07-28"}` with no `open_ticket`, the section would collapse and the prompt would read `...on 2026-07-28. Their number is...` — no dangling text.
+
+If the lookup had failed entirely, the prompt would render as `The caller is  on the  plan...` and the call would still connect. Write prompts that degrade acceptably, or keep the fetched values inside `{{#key}}` sections.
 
 ### Quick Test with curl
 
@@ -173,9 +236,9 @@ curl -X POST "https://your-webhook-url" \
 
 Lookup is best-effort by design: no failure mode drops the call.
 
-- Timeout, HTTP error, invalid JSON, invalid payload shape, missing URL, or inactive strategy does not fail the call.
+- Timeout, HTTP error, invalid JSON, a response that is not a JSON object, missing URL, or inactive strategy does not fail the call.
 - The assistant still starts.
-- Prompt rendering continues without `context.*`.
+- Prompt rendering continues without the fetched values.
 - The lookup outcome is written to activity logs as `inbound_context_lookup`.
 
 !!! note "Contract stability"

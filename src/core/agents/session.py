@@ -234,7 +234,7 @@ async def entrypoint(ctx: JobContext):
                 # config, a Mongo hiccup — may be allowed to abort the entrypoint and
                 # drop the call.
                 try:
-                    context = await resolve_inbound_context(
+                    context_data = await resolve_inbound_context(
                         strategy=strategy,
                         assistant_id=assistant.assistant_id,
                         assistant_name=assistant.assistant_name,
@@ -246,9 +246,13 @@ async def entrypoint(ctx: JobContext):
                     logger.warning(
                         f"Inbound context lookup raised for strategy '{strategy_id}': {e}; continuing with default prompt"
                     )
-                    context = None
-                if context is not None:
-                    render_data = {**render_data, "context": context}
+                    context_data = None
+                if context_data is not None:
+                    # Spread flat, exactly like job_metadata above: the webhook's own
+                    # response shape is the placeholder path. Merged last, so a webhook
+                    # key wins a bare-name collision; {{call.*}} still holds the
+                    # platform value.
+                    render_data = {**render_data, **context_data}
             else:
                 logger.warning(
                     f"Inbound context strategy '{strategy_id}' not found or inactive; continuing with default prompt"
