@@ -15,7 +15,7 @@ Queue an outbound call from an assistant to a phone number.
 | `trunk_id`     | string | Yes      | The ID of the SIP trunk to use (format: `ST_...`).                                          |
 | `to_number`    | string | Yes      | The phone number to call in E.164 format (e.g., `+15550100000`).                            |
 | `call_service` | string | Yes      | The telephony provider. One of: `twilio`, `exotel`. Must match the selected trunk type.     |
-| `metadata`     | object | No       | Optional metadata to pass to the call session. Used for placeholder replacement in prompts. |
+| `metadata`     | object | No       | Optional metadata to pass to the call session. Any JSON object; its shape is the placeholder path in prompts. |
 
 ### Metadata and Placeholders
 
@@ -43,6 +43,29 @@ Then your metadata should be:
   }
 }
 ```
+
+The rule is that **your payload's shape is the placeholder path.** Send a value flat and reference it flat; nest it and reference it with a dot. The word `metadata` is never part of a placeholder — it is only the field the values travel in.
+
+**Nested example:**
+
+```json
+{
+  "metadata": {
+    "customer": { "name": "John Doe", "plan": "Enterprise" },
+    "agent": { "name": "Sarah" }
+  }
+}
+```
+
+```json
+{
+  "assistant_prompt": "You are {{agent.name}}. The customer is {{customer.name}} on {{customer.plan}}."
+}
+```
+
+Missing keys render as empty strings. Alongside your own keys, `{{call.to_number}}` and `{{call.call_service}}` are always available.
+
+See [Using Placeholders](../assistant/placeholders.md) for the full reference — nesting, arrays, optional-text sections, and how the identical rule applies to inbound calls.
 
 ### Response Schema
 

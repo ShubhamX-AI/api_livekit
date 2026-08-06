@@ -75,7 +75,12 @@ async def resolve_inbound_context(
     """
     Fetch caller-specific inbound context from a customer webhook.
 
-    Returns a context dictionary on success, or None when the lookup should
+    The whole JSON response object is the context payload — its own shape is the
+    placeholder path, the same rule outbound `metadata` already follows. A flat
+    ``{"name": "x"}`` renders ``{{name}}``; a nested ``{"context": {"name": "x"}}``
+    renders ``{{context.name}}``. No key is treated as an envelope.
+
+    Returns the response dictionary on success, or None when the lookup should
     gracefully fall back to the assistant's default prompt behavior.
     """
     payload = {
@@ -151,12 +156,12 @@ async def resolve_inbound_context(
             response.raise_for_status()
             data = response.json()
 
-        context = data.get("context") if isinstance(data, dict) else None
         latency_ms = int((time.monotonic() - start_ms) * 1000)
 
-        if not isinstance(context, dict):
+        # A list, string, or number cannot be merged into the render data.
+        if not isinstance(data, dict):
             message = (
-                "Inbound context lookup returned an invalid payload; "
+                "Inbound context lookup did not return a JSON object; "
                 "continuing with default prompt"
             )
             await _log_lookup(
@@ -181,11 +186,11 @@ async def resolve_inbound_context(
             latency_ms=latency_ms,
             message="Inbound context lookup completed successfully",
             response_data={
-                "context_keys": sorted(context.keys()),
-                "context_size": len(context),
+                "context_keys": sorted(data.keys()),
+                "context_size": len(data),
             },
         )
-        return context
+        return data
 
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - start_ms) * 1000)

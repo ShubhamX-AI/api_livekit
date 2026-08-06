@@ -92,6 +92,54 @@ class TestResolveInboundContextConfigHandling(unittest.IsolatedAsyncioTestCase):
         self.mock_log.assert_awaited_once()
 
 
+class TestResolveInboundContextResponseShape(unittest.IsolatedAsyncioTestCase):
+    """The webhook's response shape is the placeholder path; no key is an envelope."""
+
+    async def asyncSetUp(self):
+        self._log_patch = patch(
+            "src.core.agents.inbound_context._log_lookup", new_callable=AsyncMock
+        )
+        self.mock_log = self._log_patch.start()
+        self.addCleanup(self._log_patch.stop)
+
+    async def _resolve_returning(self, body):
+        response = SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: body,
+        )
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
+                return_value=response
+            )
+            return await _resolve({"url": "https://example.com/x"})
+
+    async def test_flat_response_is_returned_as_is(self):
+        # The case that used to be discarded outright: {{name}} is now reachable.
+        result = await self._resolve_returning({"name": "John"})
+        self.assertEqual(result, {"name": "John"})
+
+    async def test_legacy_context_wrapper_is_kept_as_an_ordinary_key(self):
+        # Existing webhooks keep working, and {{context.name}} still resolves,
+        # because "context" is no longer unwrapped — it just nests naturally.
+        body = {"context": {"name": "John"}}
+        result = await self._resolve_returning(body)
+        self.assertEqual(result, body)
+
+    async def test_nested_response_is_returned_as_is(self):
+        body = {"customer": {"name": "John", "plan": "Enterprise"}}
+        result = await self._resolve_returning(body)
+        self.assertEqual(result, body)
+
+    async def test_empty_object_is_accepted(self):
+        result = await self._resolve_returning({})
+        self.assertEqual(result, {})
+
+    async def test_non_object_responses_are_rejected(self):
+        for body in ([{"name": "John"}], "John", 42, None):
+            with self.subTest(body=body):
+                self.assertIsNone(await self._resolve_returning(body))
+
+
 class TestWebhookConfigValidation(unittest.TestCase):
     def test_masked_header_is_rejected(self):
         with self.assertRaises(ValidationError):
