@@ -1,15 +1,15 @@
+import json
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from multiprocessing import current_process
-import sys
-import json
-from typing import Optional
+
 from src.core.config import settings
 
 # Module-level global — safe because each agent subprocess handles exactly one call.
 # ContextVar was unreliable here: livekit TTS plugin spawns its own asyncio tasks
 # that don't inherit the caller's context, so _room_context.get() returned None there.
-_current_room: Optional[str] = None
+_current_room: str | None = None
 
 # LiveKit names agent worker subprocesses with this value.
 # See: livekit-agents ipc/job_proc_executor.py _create_process()
@@ -65,8 +65,19 @@ class ColoredFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+_STANDARD_RECORD_FIELDS = frozenset(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+
+
 class JsonFormatter(logging.Formatter):
-    """JSON formatter for structured logging in production"""
+    """JSON formatter for structured logging in production.
+
+    Anything passed via `extra={...}` lands as plain attributes on the record, not under
+    a literal `.extra` — so callers like the Sarvam STT plugin (extra={"session_id":,
+    "chunks_sent":, "connection_state":, ...}) need every non-standard attribute promoted
+    into the JSON, not just the ones under a key that never actually exists. That structured
+    context is what makes a call traceable: filter by call_room + session_id and every
+    DEBUG line for one STT connection lines up, chunk counts included.
+    """
     def format(self, record):
         log_entry = {
             "timestamp": self.formatTime(record, self.datefmt),
@@ -82,10 +93,11 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
 
-        if hasattr(record, "extra"):
-            log_entry.update(record.extra)
+        for key, value in record.__dict__.items():
+            if key not in _STANDARD_RECORD_FIELDS and key not in log_entry:
+                log_entry[key] = value
 
-        return json.dumps(log_entry)
+        return json.dumps(log_entry, default=str)
 
 
 _logging_configured = False
@@ -104,6 +116,10 @@ def setup_logging() -> None:
     _orig_record_factory = logging.getLogRecordFactory()
     logging.setLogRecordFactory(_make_log_record)
     _logging_configured = True
+
+    # Before the job_proc early-return below — the agent worker IS the job_proc, and that
+    # is the only process where the Sarvam STT plugin runs.
+    _enable_sarvam_stt_debug()
 
     # LiveKit agent subprocesses are named "job_proc". Every log record they
     # emit is forwarded to the parent via LogQueueHandler and re-emitted there.
@@ -131,6 +147,22 @@ def setup_logging() -> None:
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
     logging.getLogger("pymongo").setLevel(logging.WARNING)
+
+
+def _enable_sarvam_stt_debug() -> None:
+    """Keep the Sarvam STT plugin at DEBUG in every environment.
+
+    The plugin already logs the three lines that diagnose a dead socket, and only at
+    DEBUG: "Starting audio processing" (the send loop ran), "Sent N audio chunks" every
+    ~5s (audio is still going *into* the socket), and "Received empty transcript"
+    (the server answered, just with nothing). Without them, a Sarvam session that stops
+    answering is indistinguishable from a caller who went quiet — see the stall watchdog
+    in src/core/agents/dynamic_assistant.py.
+
+    Costs roughly one line per 5s per call. Deliberate: one silent-death incident costs
+    far more than the log volume.
+    """
+    logging.getLogger("livekit.plugins.sarvam").setLevel(logging.DEBUG)
 
 
 def get_logger(name: str):
