@@ -10,7 +10,7 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Supports outbound calling and Exotel inbound routing.
 - Queues outbound call requests and dispatches them in the background at a controlled rate.
 - Supports three assistant runtime modes (mode = how many models are in the loop, `assistant_llm_config.provider` = vendor):
-  - `pipeline` (half-cascade): a realtime model emits text + separate TTS provider. Vendor `openai` (default) or `gemini`.
+  - `pipeline` (half-cascade): a realtime model emits text + separate TTS provider. Vendor `openai` only.
   - `realtime`: LLM speaks its own audio. Vendor `gemini` (default) or `openai`.
   - `cascade`: a true STT → LLM → TTS pipeline — plugin STT, plain OpenAI chat model, plugin TTS, each separately metered and swappable.
 - Supports start greetings in all modes when `assistant_interaction_config.speaks_first=true`.
@@ -298,12 +298,12 @@ Use these pages as the canonical payload contracts:
 
 ## Assistant Modes
 
-Two independent axes: **mode** (`assistant_mode`) = how many models are in the loop, **provider** (`assistant_llm_config.provider`) = LLM vendor (`openai` | `gemini`).
+Two axes: **mode** (`assistant_mode`) = how many models are in the loop, **provider** (`assistant_llm_config.provider`) = LLM vendor. `gemini` is valid in `realtime` mode only; `pipeline` and `cascade` are OpenAI-only and reject it with a `422`. Full table: `docs/reference/compatibility.md`.
 
 - `pipeline` mode (default, half-cascade) — a realtime model emits text, separate TTS speaks it:
   - Requires `assistant_tts_model` and `assistant_tts_config`
-  - `assistant_llm_config.provider` defaults to `openai`; set `gemini` to use the Gemini realtime model in text mode
-  - `assistant_llm_config` optional; `provider`/`model`/`api_key` override defaults (`api_key` → the selected vendor's system key)
+  - `assistant_llm_config.provider` must be `openai` (the default) — Gemini cannot run the text-only modality half-cascade needs on its native-audio Live models
+  - `assistant_llm_config` optional; `model`/`api_key` override defaults. `model` must be an OpenAI realtime ID (`gpt-realtime-1.5`, …), not a chat model
   - When `assistant_interaction_config.speaks_first=true`, the assistant sends the configured start instruction as the first response
 - `realtime` mode — LLM speaks its own audio, no external TTS:
   - Requires `assistant_llm_config`
@@ -313,7 +313,7 @@ Two independent axes: **mode** (`assistant_mode`) = how many models are in the l
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
 - `cascade` mode — a true three-stage STT → LLM → TTS pipeline (`docs/architecture/cascade-pipeline.md`):
   - Requires `assistant_tts_model` and `assistant_tts_config`, same as pipeline
-  - `assistant_stt_model` is the session's own STT stage: `sarvam` (default, multilingual) or `cartesia`. `native` is rejected — there is no realtime model to self-transcribe
+  - `assistant_stt_model` is the session's own STT stage: `sarvam` (default, multilingual), or `cartesia`, `deepgram`, `elevenlabs` (all cascade-only). `native` is rejected — there is no realtime model to self-transcribe
   - `assistant_llm_config.provider` must be `openai` (the default); `model` defaults to `gpt-4.1`, so cheap text models like `gpt-4.1-mini` are available
   - The only mode reporting **per-component usage**: `stt_provider` / `stt_model` / `stt_audio_duration` land on `UsageRecord` and the end-of-call webhook alongside the LLM and TTS numbers
   - Does not use the Sarvam parallel tap; turn detection is local (in-process Silero VAD + a bundled audio end-of-utterance model), so nothing here needs LiveKit Cloud
@@ -381,7 +381,7 @@ api_livekit/
 │   │   ├── dependencies/
 │   │   │   └── auth.py                # Bearer api-key auth (get_current_user / get_super_admin)
 │   │   ├── models/
-│   │   │   ├── api_schemas.py         # Pydantic request/response schemas + validators
+│   │   │   ├── api_schemas/           # Pydantic request/response schemas + validators, split by domain
 │   │   │   └── response_models.py
 │   │   ├── routes/
 │   │   │   ├── assistant.py

@@ -70,7 +70,7 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | Session lifecycle (gate, recording) | `src/core/agents/session_lifecycle.py` |
 | Voice features (silence watchdog, filler, hold) | `src/core/agents/voice_features.py` |
 | TTS factory (cartesia/sarvam/elevenlabs/mistral) | `src/core/agents/tts/factory.py` |
-| STT resolver (native/sarvam) + cascade STT builder (sarvam/cartesia) | `src/core/agents/stt/factory.py` |
+| STT resolver (native/sarvam) + cascade STT builder (sarvam/cartesia/deepgram/elevenlabs) | `src/core/agents/stt/factory.py` |
 | LLM factory (cascade only, OpenAI) | `src/core/agents/llm/factory.py` |
 | Per-component usage folding (`session.usage` → `UsageRecord`) | `src/core/agents/usage.py` |
 | Sarvam parallel STT tap (pipeline mode only) | `src/core/agents/stt/sarvam_parallel.py` |
@@ -87,15 +87,17 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 
 Selected by the `assistant_mode` field (`pipeline` | `realtime` | `cascade`) on the `Assistant` document — it sets the session *shape*, not the LLM vendor (that is `assistant_llm_config.provider`).
 
-- **`pipeline`** (default, half-cascade): OpenAI realtime for STT+LLM, separate TTS provider. Requires `assistant_tts_model` + `assistant_tts_config`.
+- **`pipeline`** (default, half-cascade): OpenAI realtime for STT+LLM, separate TTS provider. Requires `assistant_tts_model` + `assistant_tts_config`. Provider must be `openai` — Gemini is rejected here (its Live API cannot do text-only modality on native-audio models); use `realtime` for Gemini.
 - **`realtime`**: Gemini realtime handles STT+LLM+TTS in one model. `assistant_tts_model` / `assistant_tts_config` are ignored at runtime.
-- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam` or `cartesia` (`native` rejected); provider must be `openai`. Docs: `docs/architecture/cascade-pipeline.md`.
+- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (`native` rejected); provider must be `openai`. Docs: `docs/architecture/cascade-pipeline.md`.
 
 TTS providers: `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Per-provider config lives in `assistant_tts_config` dict on the `Assistant` document; factory is `src/core/agents/tts/factory.py`.
 
-STT providers: `sarvam` (default — Saras v3), `native` (the conversational LLM transcribes itself), and `cartesia` (cascade only). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document. **Two resolvers, don't mix them:** `resolve_stt` returns a `(provider, config)` tuple for the pipeline-mode parallel tap; `create_stt` builds an actual plugin STT object for cascade. Both in `src/core/agents/stt/factory.py`. Unset means `sarvam`. Ignored in realtime mode.
+STT providers: `sarvam` (default — Saras v3), `native` (the conversational LLM transcribes itself), and `cartesia`, `deepgram`, `elevenlabs` (all cascade only). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document. **Two resolvers, don't mix them:** `resolve_stt` returns a `(provider, config)` tuple for the pipeline-mode parallel tap; `create_stt` builds an actual plugin STT object for cascade. Both in `src/core/agents/stt/factory.py`. Unset means `sarvam`. Ignored in realtime mode.
 
 LLM: `src/core/agents/llm/factory.py::create_llm` — cascade only. The other two modes build a `RealtimeModel` inline in `session.py`.
+
+**Mode/provider validation:** one rule table, `validate_mode_config` in `src/api/models/api_schemas/config/llm_config.py`, covering all three modes (allowlists `OPENAI_REALTIME_MODELS` for pipeline/realtime, `OPENAI_CASCADE_MODELS` for cascade). The request path calls it from the Create/Update schema validators; `enforce_stored_mode_constraints` in `src/api/routes/assistant.py` re-runs the same table against the stored row merged with the PATCH, so a mode switch cannot land an unrunnable combination. User-facing matrix: `docs/reference/compatibility.md`.
 
 **Self-hosted constraint:** `inference.STT/LLM/TTS` (the LiveKit Inference gateway), `inference.TurnDetector(version="v1")` and `interruption={"mode":"adaptive"}` all require LiveKit Cloud credentials and must not be used. `inference.VAD(model="silero")` and `inference.TurnDetector(version="v1-mini")` are fully local (weights ship in `livekit-local-inference`, a core SDK dep) and are what cascade uses.
 
@@ -117,7 +119,7 @@ In multi-host production: set `ENABLE_SIP_LISTENER=false` and `ENABLE_DISPATCHER
 All read in `src/core/config.py` (`Settings`). Beyond `ENABLE_SIP_LISTENER` / `ENABLE_DISPATCHER` / `MAX_CONCURRENT_JOBS`:
 - DB: `MONGODB_URL`, `DATABASE_NAME`
 - LiveKit: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
-- Providers: `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `CARTESIA_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY`, `MISTRAL_API_KEY`
+- Providers: `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `CARTESIA_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY` (STT + TTS), `MISTRAL_API_KEY`, `DEEPGRAM_API_KEY` (STT)
 - Recordings (S3): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET_NAME`, `S3_RECORDINGS_PREFIX`, `S3_GREETING_PREFIX`
 - Webhooks/email: `BACKEND_URL`, `SMTP_*`, `FROM_EMAIL`
 - Server: `PORT`, `GUNICORN_WORKERS`

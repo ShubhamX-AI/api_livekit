@@ -45,6 +45,9 @@ class Settings:
         # Sarvam settings
         self.SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 
+        # Deepgram settings
+        self.DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+
         # ElevenLabs settings
         self.ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 

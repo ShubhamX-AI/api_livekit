@@ -33,7 +33,8 @@ Update an existing assistant. Only send fields you want to change.
 
 ## LLM Config Rules
 
-- In `pipeline` mode, `assistant_llm_config` is optional and defaults to `provider="openai"`. Send it to pick `gemini`, override `model`, or set `api_key`; `voice` is ignored (external TTS handles audio).
+- In `pipeline` mode, `assistant_llm_config` is optional and defaults to `provider="openai"`. Send it to override `model` or set `api_key`; `voice` is ignored (external TTS handles audio).
+- `provider="gemini"` is rejected in `pipeline` and `cascade` mode — it is supported in `realtime` mode only. See the [Compatibility Matrix](../../reference/compatibility.md#mode-llm-provider).
 - `assistant_llm_config.api_key` overrides the system key for the selected provider (`OPENAI_API_KEY` or `GOOGLE_API_KEY`). Omit `assistant_llm_config` to use system keys + mode default provider.
 - You can update `assistant_llm_config` alone (without re-sending `assistant_mode` or TTS fields) and the existing TTS config is preserved.
 - In `realtime` mode, `assistant_llm_config` is required only when switching into realtime; it defaults to `provider="gemini"`.
@@ -54,7 +55,7 @@ Update an existing assistant. Only send fields you want to change.
     | `assistant_mode` | string | Yes | Set to `pipeline`. |
     | `assistant_tts_model` | string | Conditional | Required only if no TTS config exists in DB. |
     | `assistant_tts_config` | object | Conditional | Required if `assistant_tts_model` is provided. Must be sent together. |
-    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. `cartesia` is cascade-only. |
+    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. `cartesia`, `deepgram` and `elevenlabs` are cascade-only. |
     | `assistant_stt_config` | object | No | Config for the selected STT provider. Requires `assistant_stt_model`; omit it to reset that provider's defaults. |
 
     !!! note "Stale realtime LLM config is cleared automatically"
@@ -120,13 +121,15 @@ Update an existing assistant. Only send fields you want to change.
     | :--- | :--- | :--- | :--- |
     | `assistant_mode` | string | Yes | Set to `cascade`. |
     | `assistant_tts_model` + `assistant_tts_config` | | Conditional | Required only if no TTS config is already stored on the assistant. |
-    | `assistant_stt_model` | string | Conditional | Required in this same request if the stored value is `native`, which cascade rejects. `sarvam` or `cartesia`. |
+    | `assistant_stt_model` | string | Conditional | Required in this same request if the stored value is `native`, which cascade rejects. `sarvam`, `cartesia`, `deepgram` or `elevenlabs`. Per-provider `assistant_stt_config` fields: see the Cascade STT tabs in [create.md](create.md). |
     | `assistant_llm_config` | object | No | If sent, `provider` must be `openai`. Any stored Gemini config is cleared automatically when leaving realtime mode. |
 
     !!! warning "A stored `native` STT blocks the switch"
         `native` means "the realtime model transcribes itself", which cascade has no model for.
         If the assistant currently has `assistant_stt_model: "native"`, send a replacement in the
         same request or the update fails with `400`.
+
+    - Changing `assistant_stt_model` to `deepgram` or `elevenlabs` requires the matching `assistant_stt_config` in the same request if the stored value is `native`. All of their config fields (`model`, `language` / `language_code`, `keyterm`, `enable_diarization`, `no_verbatim`) are optional — sending `assistant_stt_model` without a config resets that provider's config to its defaults. Per-provider fields: see the Cascade STT tabs in [create.md](create.md).
 
     **Example request**
 
@@ -154,12 +157,15 @@ Update an existing assistant. Only send fields you want to change.
 - In `pipeline` mode, only `assistant_llm_config.api_key` affects runtime behavior.
 - Switching to `realtime` requires `assistant_llm_config`.
 - Switching to `pipeline` or `cascade` requires TTS fields **only if no TTS config exists in DB**. If the assistant previously had a TTS config, it is preserved and reused — you do not need to re-send it.
-- In `cascade` mode, `assistant_stt_model` must be `sarvam` or `cartesia` (`native` returns `400`/`422`), and `assistant_llm_config.provider` must be `openai` or omitted.
+- In `cascade` mode, `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (`native` returns `400`/`422`), and `assistant_llm_config.provider` must be `openai` or omitted.
+- The mode rules are re-checked against the **stored** assistant, not just the request. A PATCH that switches mode is judged on the merged result, so `{"assistant_mode": "cascade"}` against a row that still holds `provider: "gemini"` or a non-allowlisted `model` returns `400` — send the corrected `assistant_llm_config` in the same request.
+- `assistant_llm_config.model` is validated per mode: an OpenAI realtime ID in `pipeline`/`realtime`, an allowlisted chat model in `cascade`. Gemini realtime model IDs are not validated.
+- Unknown keys in `assistant_llm_config`, `assistant_tts_config` (including `voice_settings`) or `assistant_stt_config` return `422`.
 - When switching to `pipeline`, any stored realtime `assistant_llm_config` (e.g. Gemini keys) is automatically cleared unless you explicitly provide a new one.
 
 ## Runtime Behavior Notes
 
-- `assistant_interaction_config.speaks_first` is supported in both `pipeline` and `realtime` modes.
+- `assistant_interaction_config.speaks_first` is supported in all three modes.
 - When `speaks_first=true`, `assistant_start_instruction` is used as the opening response — unless `assistant_greeting_audio.enabled=true`, in which case the referenced audio asset is played instead (no LLM/TTS for the greeting). On any failure (missing/inactive asset, download error) it falls back to the model greeting.
 - `assistant_interaction_config.background_sound_enabled` controls background ambience for all sessions using the assistant.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.

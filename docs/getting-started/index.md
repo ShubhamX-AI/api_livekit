@@ -28,20 +28,26 @@ Save the `api_key` from the response. All subsequent requests require `Authoriza
 
 ## Step 2 — Create an Assistant
 
-Assistants support two execution modes:
+Assistants support three execution modes. `assistant_mode` selects the *shape* of the session;
+`assistant_llm_config.provider` selects the LLM vendor within that shape.
 
-Mode = output shape; `assistant_llm_config.provider` = LLM vendor (`openai` | `gemini`), honored in both modes.
-
-- `pipeline` (default): LLM emits text, a separate TTS provider speaks it. Vendor `openai` (default) or `gemini`.
-- `realtime`: LLM speaks its own audio (no external TTS). Vendor `gemini` (default) or `openai`.
+- `pipeline` (default, half-cascade): a realtime LLM emits text, a separate TTS provider speaks it. Vendor `openai` only.
+- `realtime`: the LLM speaks its own audio (no external TTS). Vendor `gemini` (default) or `openai`.
+- `cascade`: a true three-stage pipeline — plugin STT, a plain chat LLM, plugin TTS. Vendor `openai` only.
 
 LLM config rules:
 
-- `pipeline`: `assistant_llm_config` is optional (defaults to `provider="openai"`). Set `gemini` to switch vendor; `api_key` overrides the selected vendor's system key.
-- `realtime`: `assistant_llm_config` is required, but `provider`, `model`, and `voice` may be omitted to use defaults.
-- Defaults — Gemini: `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`.
+- `pipeline`: `assistant_llm_config` is optional (defaults to `provider="openai"`, `model="gpt-realtime-1.5"`). `api_key` overrides the system `OPENAI_API_KEY`; `voice` is ignored because the external TTS produces the audio.
+- `realtime`: `assistant_llm_config` is required, but `provider`, `model` and `voice` may be omitted to use defaults.
+- `cascade`: `provider` must be `openai` and `model` must be one of the allowlisted chat models.
+- Defaults — Gemini realtime: `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`.
 
-Both modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted).
+!!! warning "Gemini works in `realtime` mode only"
+    `provider: "gemini"` is rejected with a `422` in `pipeline` and `cascade` mode. Google's Live API
+    cannot run the text-only modality that half-cascade requires on its native-audio models. See the
+    [Compatibility Matrix](../reference/compatibility.md#mode-llm-provider).
+
+All three modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted).
 
 ### Example A — Create Assistant in `pipeline` mode
 

@@ -7,6 +7,7 @@ the LLM is a standalone stage.
 """
 
 from livekit.plugins import openai
+from openai.types import Reasoning
 
 from src.core.config import settings
 from src.core.logger import logger
@@ -39,7 +40,36 @@ def create_llm(assistant):
     # chat-completions, and the same @function_tool contract, so DB-backed tools work
     # unchanged. openai.LLM stays the path for OpenAI-compatible third-party endpoints,
     # which this platform does not use.
-    return openai.responses.LLM(
-        model=llm_config.get("model") or DEFAULT_MODEL,
-        api_key=api_key,
-    )
+    kwargs: dict = {
+        "model": llm_config.get("model") or DEFAULT_MODEL,
+        "api_key": api_key,
+    }
+
+    # Generation knobs from assistant_llm_config — forwarded only when explicitly set in
+    # config, so omitted knobs keep the SDK defaults. responses.LLM exposes the Responses
+    # API param surface: temperature (not top_p — Responses rejects setting both),
+    # max_output_tokens, service_tier, verbosity, tool_choice and a Reasoning object for
+    # reasoning_effort. These match src/api/models/api_schemas.py::AssistantLLMConfig.
+    temperature = llm_config.get("temperature")
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    max_output_tokens = llm_config.get("max_output_tokens")
+    if max_output_tokens is not None:
+        kwargs["max_output_tokens"] = max_output_tokens
+    service_tier = llm_config.get("service_tier")
+    if service_tier:
+        kwargs["service_tier"] = service_tier
+    verbosity = llm_config.get("verbosity")
+    if verbosity:
+        kwargs["verbosity"] = verbosity
+    tool_choice = llm_config.get("tool_choice")
+    if tool_choice:
+        kwargs["tool_choice"] = tool_choice
+    parallel_tool_calls = llm_config.get("parallel_tool_calls")
+    if parallel_tool_calls is not None:
+        kwargs["parallel_tool_calls"] = parallel_tool_calls
+    reasoning_effort = llm_config.get("reasoning_effort")
+    if reasoning_effort:
+        kwargs["reasoning"] = Reasoning(effort=reasoning_effort)
+
+    return openai.responses.LLM(**kwargs)

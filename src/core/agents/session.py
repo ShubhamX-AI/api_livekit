@@ -200,6 +200,14 @@ async def entrypoint(ctx: JobContext):
     _mode = assistant.assistant_mode
     is_realtime = _mode == "realtime"
     is_cascade = _mode == "cascade"
+    # assistant_mode is a plain string in the DB (see src/core/db/db_schemas.py), so a row
+    # written outside the API can hold anything. Anything unrecognised lands in the pipeline
+    # branch below; say so rather than letting it look intentional.
+    if _mode not in {"pipeline", "realtime", "cascade"}:
+        logger.warning(
+            f"Unknown assistant_mode '{_mode}' — treating as 'pipeline'. "
+            "Valid values are 'pipeline', 'realtime' and 'cascade'."
+        )
 
     # Extract metadata from job metadata
     to_number = "Web Call"
@@ -651,6 +659,15 @@ async def entrypoint(ctx: JobContext):
         # conversation events carry the user text.
         _use_sarvam_stt = not is_text_only and _stt_provider == "sarvam"
 
+        # cartesia / deepgram / elevenlabs are cascade-only plugins — there is no pipeline
+        # tap for them. Degrade to the LLM's own native transcription while in a pipeline
+        # call so the caller still leaves with transcripts (matches the no-key fallback).
+        if _stt_provider in {"cartesia", "deepgram", "elevenlabs"}:
+            logger.warning(
+                f"assistant_stt_model '{_stt_provider}' is cascade-only and ignored in "
+                "pipeline mode — falling back to native transcription"
+            )
+
         if realtime_provider == "openai":
             llm = realtime.RealtimeModel(
                 model=llm_config.get("model", "gpt-realtime-1.5"),
@@ -670,24 +687,19 @@ async def entrypoint(ctx: JobContext):
                 ),
                 api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
             )
-        elif realtime_provider == "gemini":
-            # Gemini realtime emitting TEXT only; external TTS speaks it. Sarvam parallel STT
-            # (default) taps the track independently, so ask Gemini for its own user transcript
-            # only when Sarvam is not doing it.
-            from google.genai import types as genai_types
-
-            _gemini_user_transcription = (
-                None if _use_sarvam_stt else genai_types.AudioTranscriptionConfig()
-            )
-            llm = google_realtime.RealtimeModel(
-                model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
-                modalities=["TEXT"],
-                instructions=assistant.assistant_prompt,
-                input_audio_transcription=_gemini_user_transcription,
-                api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
-            )
         else:
-            logger.error(f"Unsupported pipeline provider: {realtime_provider}")
+            # Gemini used to be wired up here. It is no longer supported in pipeline mode:
+            # the LiveKit half-cascade pattern needs a realtime model in text-only modality,
+            # and Google's Live API only supports that on non-native-audio models
+            # (https://github.com/googleapis/python-genai/issues/1780). The default model here
+            # was a native-audio one, and the 3.1 Live models additionally ignore
+            # generate_reply()/update_instructions(), which the greeting and handoff paths
+            # depend on. Use assistant_mode 'realtime' for Gemini, or provider 'openai' here.
+            # See docs/reference/compatibility.md.
+            logger.error(
+                f"Unsupported pipeline provider: {realtime_provider} — "
+                "pipeline mode supports 'openai' only."
+            )
             return
         logger.info("Half-cascade mode | llm=%s | tts=%s", realtime_provider, assistant.assistant_tts_model)
 
@@ -1088,6 +1100,7 @@ async def entrypoint(ctx: JobContext):
             api_key=_stt_config.get("api_key"),
             model=_stt_config.get("model"),
             language=_stt_config.get("language"),
+            mode=_stt_config.get("mode"),
         ))
 
     # --- Start Instruction ---

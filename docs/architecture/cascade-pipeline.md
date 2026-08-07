@@ -27,7 +27,7 @@ pipeline (half-cascade)     realtime                cascade (true pipeline)
  caller audio                caller audio            caller audio
       │                           │                       │
  ┌────▼─────┐  (+ Sarvam     ┌────▼─────┐            ┌────▼────┐
- │ realtime │   tap on the   │ realtime │            │   STT   │  sarvam | cartesia
+ │ realtime │   tap on the   │ realtime │            │   STT   │  sarvam | cartesia | deepgram | elevenlabs
  │  model   │   side for     │  model   │            └────┬────┘
  │ STT+LLM  │   transcripts) │STT+LLM+  │            ┌────▼────┐
  └────┬─────┘                │   TTS    │            │   LLM   │  openai
@@ -69,12 +69,41 @@ Validation rules specific to cascade:
 | Rule | Why |
 |---|---|
 | `assistant_tts_model` + `assistant_tts_config` required | The LLM emits text only; something must speak it. |
-| `assistant_stt_model` must be `sarvam` or `cartesia` | `native` means "the realtime model transcribes itself" — cascade has no realtime model. |
+| `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` | `native` means "the realtime model transcribes itself" — cascade has no realtime model. |
 | `assistant_llm_config.provider` must be `openai` or unset | Only OpenAI is wired up as a non-realtime LLM. |
+| `assistant_llm_config.model` must be a documented OpenAI ID | Curated allowlist so users pick a tested model; unknown names are rejected with `422`. See [Models & Providers](../reference/models.md#cascade-llm-cascade-mode-only). |
+
+These rules are re-checked against the **stored** assistant on update, not just against the request:
+switching an existing assistant into cascade while it still holds `provider: "gemini"` or a realtime
+`model` returns `400`, so send the corrected `assistant_llm_config` in the same PATCH. Every mode's
+rules, and what happens when you get one wrong, are tabulated in the
+[Compatibility Matrix](../reference/compatibility.md).
 
 ## STT stage
 
-Built by `create_stt` in `src/core/agents/stt/factory.py`. Both providers are streaming.
+Built by `create_stt` in `src/core/agents/stt/factory.py`. All providers are streaming.
+
+**API keys and fallback.** Every STT provider accepts an `api_key` in
+`assistant_stt_config`; a per-assistant value always beats the system key below.
+
+| System key | Provider | Note |
+|---|---|---|
+| `SARVAM_API_KEY` | `sarvam` | Sarvam is STT **and** TTS — one key serves both |
+| `CARTESIA_API_KEY` | `cartesia` | |
+| `DEEPGRAM_API_KEY` | `deepgram` | |
+| `ELEVENLABS_API_KEY` | `elevenlabs` | ElevenLabs is STT **and** TTS — one key serves both |
+
+If both the per-assistant `api_key` and the system key are missing, `create_stt` returns
+`None` and the cascade job **aborts** with a logged error — it does **not** silently fall back
+or swap providers. (Separately, selecting a cascade-only provider — cartesia / deepgram /
+elevenlabs — in `pipeline` mode runs no tap; the conversation LLM self-transcribes, the
+provider is ignored and a warning is logged.)
+
+**Pitfalls & what not to combine.** Deepgram's `keyterm` is ignored on `nova-2` and
+`enable_diarization` is nova-only; `flux-general-en` is English-only. Setting an ElevenLabs
+`language_code` disables auto-detect. And the omission defaults differ: omitted `language` on
+Deepgram falls back to `en` (not `multi`), whereas omitted `language_code` on ElevenLabs can
+auto-detect. Full list: [STT pitfalls & what not to combine](../reference/models.md#stt-pitfalls-what-not-to-combine).
 
 ### sarvam — the multilingual default
 
@@ -108,6 +137,38 @@ any call where the caller might switch languages.
 that default flipped from `ink-whisper` to the English-only `ink-2` in `livekit-agents` 1.5.15.
 `ink-whisper`'s 43 language codes: [Models & Providers](../reference/models.md#stt).
 
+### deepgram — multilingual with `nova-3`
+
+| Config key | Default | Values |
+|---|---|---|
+| `model` | `nova-3` | `nova-3` (multilingual, 45 languages), `nova-2`, `flux-general-en` (English), `flux-general-multi` — swapping changes the transcription family; omitted keeps the default |
+| `language` | first `preferred_languages` entry, then `en` | a fixed BCP-47 code, or `multi` to **auto-detect** per segment — set explicitly; omitted falls back to the preferred list, then `en` |
+| `enable_diarization` | `false` | `bool` — label each utterance with its speaker (nova models) — `true` turns it on; **omitted stays `false`, never force-enabled** |
+| `keyterm` | not sent | string or list of terms to bias recognition toward (`nova-3`/`flux` only) — set to bias; **omitted — the key is not sent, no biasing** |
+| `api_key` | system `DEEPGRAM_API_KEY` | per-assistant override — wins over the env key |
+
+`model="nova-3"` with `language="multi"` covers 45 languages and auto-detects, so it is the
+Multilingual Deepgram option: a caller who switches languages mid-call is still transcribed
+correctly without pinning a code.
+
+**Omitted-knob summary:** `language` omitted → first `preferred_languages` entry, then `en`; `enable_diarization` omitted → stays off (never force-enabled); `keyterm` omitted → not sent (no biasing).
+
+### elevenlabs — auto-detecting `scribe_v2_realtime`
+
+| Config key | Default | Values |
+|---|---|---|
+| `model` | `scribe_v2_realtime` | `scribe_v2_realtime` (auto-detects ~190 languages), `scribe_v2`, `scribe_v1` — swapping changes the Scribe generation; omitted keeps the default |
+| `language_code` | omitted → auto-detect; else first `preferred_languages` entry | a BCP-47 code, or **omit to auto-detect** — setting a code pins it and **disables auto-detect**; omitting falls back to the first preferred language, else auto-detect |
+| `no_verbatim` | `false` | `bool` — strip filler words ("um", "uh") from the transcript — `true` strips them; **omitted stays `false`, fillers kept** |
+| `api_key` | system `ELEVENLABS_API_KEY` | per-assistant override — wins over the env key; the same variable serves the ElevenLabs TTS stage |
+
+`scribe_v2_realtime` auto-detects roughly 190 languages with no config needed, making it a
+drop-in multilingual option alongside `sarvam` and `deepgram`. Authentication is the single
+`ELEVENLABS_API_KEY` — the same variable the ElevenLabs TTS provider reads, so setting it once
+covers both stages.
+
+**Omitted-knob summary:** `language_code` omitted → first `preferred_languages` entry, else auto-detect (~190 languages); `no_verbatim` omitted → `false` — fillers kept.
+
 ## LLM stage
 
 Built by `create_llm` in `src/core/agents/llm/factory.py`, using
@@ -117,12 +178,26 @@ chat-completions, and the same `@function_tool` contract, so DB-backed tools wor
 | Config key | Default | Notes |
 |---|---|---|
 | `provider` | `openai` | Only `openai` is supported in cascade |
-| `model` | `gpt-4.1` | Any OpenAI chat model; known-good list in [Models & Providers](../reference/models.md#cascade-llm-cascade-mode-only) |
+| `model` | `gpt-4.1` | Must be one of the documented OpenAI models — validated at creation/update. List in [Models & Providers](../reference/models.md#cascade-llm-cascade-mode-only) |
 | `api_key` | system `OPENAI_API_KEY` | per-assistant override |
+| `temperature` | SDK default (`0.8`) | `0`–`2`. **Ignored by reasoning models** (`gpt-5.x`) |
+| `max_output_tokens` | model default | cap on output tokens |
+| `reasoning_effort` | unset | `none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`. Reasoning models only |
+| `service_tier` | unset | `auto`/`default`/`flex`/`scale`/`priority` |
+| `verbosity` | unset | `low`/`medium`/`high` |
+| `tool_choice` | unset | `auto`/`required`/`none` |
+| `parallel_tool_calls` | unset | allow multiple tool calls in one response |
 
-`model` is deliberately a free-form string, not an enum: OpenAI ships models continuously and
-an enum would mean a deploy per model. An unknown name fails at the first API call, not at
-assistant creation.
+The model list is a **curated allowlist** (`OPENAI_CASCADE_MODELS` in
+`src/api/models/api_schemas/config/llm_config.py`), enforced by the mode validator. This replaced the old
+free-form string: an unknown model now fails fast at assistant creation with a `422` listing the
+supported IDs, instead of failing at the first API call. The realtime/pipeline modes keep the
+free-form model field because they accept realtime model IDs (`gpt-realtime-1.5`, Gemini) that do
+not overlap with the cascade set.
+
+These knobs map onto `openai.responses.LLM` constructor args — they are the Responses-API param
+surface, not the LiveKit Inference `extra_kwargs` surface. `temperature` and `top_p` are
+mutually exclusive on the Responses API; only `temperature` is exposed.
 
 ## TTS stage
 

@@ -2,12 +2,43 @@
 
 import asyncio
 
+from livekit.agents.types import NOT_GIVEN
 from livekit.plugins import cartesia, sarvam
 
 from src.core.config import settings
 from src.core.logger import logger
-from src.services.elevenlabs.v3_nonstream import ElevenLabsNonStreamingTTS
+from src.services.elevenlabs.v3_nonstream import (
+    ElevenLabsNonStreamingTTS,
+    VoiceSettings,
+)
 from src.services.mistral.tts import MistralTTS
+
+# Per-provider system key, used when the assistant config carries no api_key of its own.
+# One variable per vendor: ELEVENLABS_API_KEY and SARVAM_API_KEY each serve both the STT and the
+# TTS stage (see src/core/agents/stt/factory.py for the STT side).
+_TTS_ENV_KEYS = {
+    "cartesia": "CARTESIA_API_KEY",
+    "sarvam": "SARVAM_API_KEY",
+    "elevenlabs": "ELEVENLABS_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+}
+
+
+def _resolve_api_key(model: str, tts_config: dict, assistant_id: str) -> str | None:
+    """Config key, else the system key, else None with a log line.
+
+    Checked up front so a missing key ends the job through the same `return None` path as
+    every other config error. Without this the key reaches the plugin constructor, and at
+    least one of them (ElevenLabs) raises out of create_tts and out of entrypoint().
+    """
+    api_key = tts_config.get("api_key") or getattr(settings, _TTS_ENV_KEYS[model], None)
+    if not api_key:
+        logger.error(
+            f"Missing API key for {model} TTS on assistant {assistant_id} — set "
+            f"assistant_tts_config.api_key or the {_TTS_ENV_KEYS[model]} environment variable"
+        )
+        return None
+    return api_key
 
 
 def create_tts(assistant):
@@ -21,12 +52,18 @@ def create_tts(assistant):
         if not voice_id:
             logger.error(f"Missing voice_id for Cartesia assistant {assistant_id}")
             return None
-        api_key = tts_config.get("api_key") or settings.CARTESIA_API_KEY
+        api_key = _resolve_api_key(model, tts_config, assistant_id)
+        if not api_key:
+            return None
         return cartesia.TTS(
             model="sonic-3",
-            speed=1.0,
             voice=voice_id,
             api_key=api_key,
+            language=tts_config.get("language", "en"),
+            speed=tts_config.get("speed", 1.0),
+            volume=tts_config.get("volume"),
+            emotion=tts_config.get("emotion"),
+            pronunciation_dict_id=tts_config.get("pronunciation_dict_id"),
         )
 
     if model == "sarvam":
@@ -34,17 +71,21 @@ def create_tts(assistant):
         if not speaker:
             logger.error(f"Missing speaker for Sarvam assistant {assistant_id}")
             return None
-        api_key = tts_config.get("api_key") or settings.SARVAM_API_KEY
+        api_key = _resolve_api_key(model, tts_config, assistant_id)
+        if not api_key:
+            return None
         return sarvam.TTS(
             model="bulbul:v3",
-            pace=1.0,
-            speech_sample_rate=24000,
-            target_language_code=tts_config.get("target_language_code", "en-IN"),
+            pace=tts_config.get("pace", 1.0),
+            speech_sample_rate=tts_config.get("speech_sample_rate", 24000),
+            # `or`, not a .get default: the schema always serializes the key, as None when
+            # the caller omits it.
+            target_language_code=tts_config.get("target_language_code") or "en-IN",
             speaker=speaker,
             api_key=api_key,
             min_buffer_size=30,
             max_chunk_length=50,
-            temperature=0.3,
+            temperature=tts_config.get("temperature", 0.3),
         )
 
     if model == "elevenlabs":
@@ -52,12 +93,32 @@ def create_tts(assistant):
         if not voice_id:
             logger.error(f"Missing voice_id for ElevenLabs assistant {assistant_id}")
             return None
-        api_key = tts_config.get("api_key") or settings.ELEVENLABS_API_KEY
+        api_key = _resolve_api_key(model, tts_config, assistant_id)
+        if not api_key:
+            return None
         # eleven_v3 (latest, best quality) has no websocket API — HTTP /stream only.
+        # Only when the caller provides a voice_settings block do we build a VoiceSettings
+        # object. When it is absent we must pass NOT_GIVEN (not None): the client's
+        # `is_given(voice_settings)` treats None as "set", so `dataclasses.asdict(None)`
+        # would crash on the first synthesis. NOT_GIVEN reproduces the pre-existing
+        # behaviour (serializes `"voice_settings": null`, which means "use API defaults").
+        voice_settings = tts_config.get("voice_settings") or NOT_GIVEN
+        settings_obj = (
+            VoiceSettings(
+                stability=voice_settings.get("stability", 0.5),
+                similarity_boost=voice_settings.get("similarity_boost", 0.5),
+                style=voice_settings.get("style"),
+                speed=voice_settings.get("speed"),
+                use_speaker_boost=voice_settings.get("use_speaker_boost"),
+            )
+            if voice_settings is not NOT_GIVEN
+            else NOT_GIVEN
+        )
         return ElevenLabsNonStreamingTTS(
-            model="eleven_v3",
+            model=tts_config.get("model", "eleven_v3"),
             voice_id=voice_id,
             api_key=api_key,
+            voice_settings=settings_obj,
         )
 
     if model == "mistral":
@@ -65,7 +126,9 @@ def create_tts(assistant):
         if not voice_id:
             logger.error(f"Missing voice_id for Mistral assistant {assistant_id}")
             return None
-        api_key = tts_config.get("api_key") or settings.MISTRAL_API_KEY
+        api_key = _resolve_api_key(model, tts_config, assistant_id)
+        if not api_key:
+            return None
         return MistralTTS(
             model="voxtral-mini-tts-2603",
             voice_id=voice_id,

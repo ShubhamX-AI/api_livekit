@@ -88,7 +88,7 @@ class Assistant(Document):
     assistant_llm_config: Optional[Dict] = None  # shared assistant LLM config; pipeline currently uses only api_key
     assistant_tts_model: Optional[str] = None  # required for pipeline, ignored for realtime
     assistant_tts_config: Optional[Dict] = None  # required for pipeline, ignored for realtime
-    assistant_stt_model: Optional[str] = None  # "native" | "sarvam"; None -> sarvam. Ignored for realtime
+    assistant_stt_model: Optional[str] = None  # "native" | "sarvam" | "cartesia" | "deepgram" | "elevenlabs"; None -> sarvam. Ignored for realtime
     assistant_stt_config: Optional[Dict] = None  # provider config; None -> provider defaults + system key
     assistant_prompt: str = Field(default="")
     assistant_start_instruction: Optional[str] = None
@@ -342,8 +342,8 @@ class UsageRecord(Document):
 
     # STT usage. Only a mode with a standalone STT stage (cascade) reports these; in
     # pipeline/realtime the LLM transcribes internally and the cost is inside its tokens.
-    stt_provider: Optional[str] = None  # "sarvam" | "cartesia" | "native"
-    stt_model: Optional[str] = None  # e.g. "saaras:v3", "ink-whisper"
+    stt_provider: Optional[str] = None  # "sarvam" | "cartesia" | "deepgram" | "elevenlabs" | "native"
+    stt_model: Optional[str] = None  # e.g. "saaras:v3", "ink-whisper", "nova-3", "scribe_v2_realtime"
     stt_audio_duration: float = 0.0  # seconds of audio transcribed
 
     # Telephony duration (copied from CallRecord for aggregation convenience)

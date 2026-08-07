@@ -153,7 +153,7 @@ class TestMaskedKeyGuard(unittest.TestCase):
             UpdateAssistant(assistant_llm_config={"provider": "openai", "api_key": "sk-t...5678"})
 
     def test_masked_stt_key_rejected_for_every_provider(self):
-        for provider in ("sarvam", "cartesia"):
+        for provider in ("sarvam", "cartesia", "deepgram", "elevenlabs"):
             for masked in ("sk-t...5678", "****", SYSTEM_KEY_PLACEHOLDER):
                 with self.subTest(provider=provider, masked=masked):
                     with self.assertRaises(ValidationError):
@@ -235,6 +235,34 @@ class TestResolveSTT(unittest.TestCase):
         config = {"type": "sarvam", "api_key": "sk_x", "language": "hi-IN"}
         assistant = SimpleNamespace(assistant_stt_model="sarvam", assistant_stt_config=config)
         self.assertEqual(resolve_stt(assistant), ("sarvam", config))
+
+    def test_cascade_only_provider_without_key_degrades_to_native(self):
+        for provider, env in (
+            ("cartesia", "CARTESIA_API_KEY"),
+            ("deepgram", "DEEPGRAM_API_KEY"),
+            ("elevenlabs", "ELEVENLABS_API_KEY"),
+        ):
+            with self.subTest(provider=provider), patch(
+                f"src.core.agents.stt.factory.settings.{env}", ""
+            ):
+                assistant = SimpleNamespace(
+                    assistant_id="assistant-1",
+                    assistant_stt_model=provider,
+                    assistant_stt_config={},
+                )
+                self.assertEqual(resolve_stt(assistant), ("native", {}))
+
+    def test_cascade_only_provider_with_config_key_is_kept(self):
+        for provider in ("deepgram", "elevenlabs"):
+            with self.subTest(provider=provider):
+                assistant = SimpleNamespace(
+                    assistant_id="assistant-1",
+                    assistant_stt_model=provider,
+                    assistant_stt_config={"api_key": "sk_x"},
+                )
+                model, config = resolve_stt(assistant)
+                self.assertEqual(model, provider)
+                self.assertEqual(config["api_key"], "sk_x")
 
 
 class TestSTTBackfill(unittest.TestCase):

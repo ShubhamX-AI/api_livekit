@@ -55,15 +55,23 @@ Speech generation has **two orthogonal axes**:
    - `pipeline` (**half**-cascade, the default): a *realtime* model emits **text**, an external TTS plugin speaks it. User transcription is a side channel — a parallel Sarvam tap, or the realtime model transcribing itself.
    - `realtime`: one model does STT + LLM + TTS and speaks its own **audio** (no external TTS).
    - `cascade`: a **true three-stage pipeline** — a plugin STT, a plain (non-realtime) LLM, and a plugin TTS, each a separate stage that is separately metered and independently swappable. See [Cascade Pipeline](cascade-pipeline.md).
-2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Honored in `pipeline` and `realtime`. Defaults to `gemini` in `realtime` mode and `openai` in the other two. **`cascade` supports `openai` only** — it is the only vendor wired up as a non-realtime LLM.
+2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Defaults to `gemini` in `realtime` mode and `openai` in the other two. **`gemini` is accepted in `realtime` mode only**; `pipeline` and `cascade` are OpenAI-only and reject it with a `422`.
 
 The matrix:
 
 | Mode | provider `openai` | provider `gemini` |
 |---|---|---|
-| `pipeline` (text + external TTS) | OpenAI `gpt-realtime-1.5` (text out) -> external TTS | Gemini realtime (TEXT out) -> external TTS |
+| `pipeline` (text + external TTS) | OpenAI `gpt-realtime-1.5` (text out) -> external TTS | **not supported** — rejected at create/update |
 | `realtime` (model speaks audio) | OpenAI realtime (audio out) | Gemini realtime (STT+LLM+TTS) |
-| `cascade` (true pipeline) | plugin STT -> `openai.responses.LLM` -> plugin TTS | not supported |
+| `cascade` (true pipeline) | plugin STT -> `openai.responses.LLM` -> plugin TTS | **not supported** — rejected at create/update |
+
+**Why Gemini is not available in `pipeline` mode.** Half-cascade needs the realtime model in a
+text-only response modality so an external TTS can speak the result. Google's Live API supports that
+only on non-native-audio models ([googleapis/python-genai#1780](https://github.com/googleapis/python-genai/issues/1780)),
+and the Live models this platform targets are native-audio; the 3.1 line additionally ignores
+`generate_reply()` and `update_instructions()`, which the greeting and handoff paths depend on. The
+combination used to be accepted and then misbehaved at call time — it is now a `422`. Full table:
+[Compatibility Matrix](../reference/compatibility.md).
 
 Which to pick:
 
@@ -73,7 +81,7 @@ Which to pick:
 | Realtime understanding but a specific TTS voice | `pipeline` |
 | Per-component cost visibility, cheap text models, swappable STT | `cascade` |
 
-In both `pipeline` combinations, user transcription runs **in parallel** via Sarvam Saras v3 by default — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below; if Sarvam is disabled the LLM's own transcription tap is used instead. `cascade` does not use the tap at all: its STT *is* the session's first stage.
+In `pipeline` mode, user transcription runs **in parallel** via Sarvam Saras v3 by default — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below; if Sarvam is disabled the LLM's own transcription tap is used instead. `cascade` does not use the tap at all: its STT *is* the session's first stage.
 
 All modes share the same room orchestration, call lifecycle, transcript flow, and tool execution framework.
 All modes also support assistant-first openings when `speaks_first=true`, using `assistant_start_instruction` as the opening response text.
@@ -140,8 +148,12 @@ Selected per assistant via `assistant_stt_model`, configured via `assistant_stt_
 | Value | Effect |
 |-------|--------|
 | `sarvam` (default) | Sarvam parallel tap writes user transcripts. The LLM's own transcription is disabled (`None`). Config: `model`, `language`, `mode`, `api_key`. |
-| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own on a Gemini pipeline). No Sarvam tap, no config fields. |
+| `native` | The conversational LLM writes user transcripts itself (OpenAI `gpt-4o-mini-transcribe`). No Sarvam tap, no config fields. |
 | `cartesia` | **`cascade` mode only.** Rejected in `pipeline` mode — there is no Cartesia tap. |
+| `deepgram` | **`cascade` mode only.** Rejected in `pipeline` mode — there is no Deepgram tap. |
+| `elevenlabs` | **`cascade` mode only.** Rejected in `pipeline` mode — there is no ElevenLabs tap. |
+
+**Degrade rule.** `cartesia`/`deepgram`/`elevenlabs` are cascade-only: on a `pipeline` assistant the selection does **not** change transcription — `resolve_stt` ignores it, logs a warning, and the conversational LLM self-transcribes (`native` path) instead. Their settings are meaningful only in `cascade` mode. Similarly, wherever a plugin provider is selected but no key is available (neither config `api_key` nor a matching system `*_API_KEY`), `resolve_stt` logs a warning and degrades to `native` rather than starting a session that cannot authenticate.
 
 In `cascade` mode the same two fields select the session's own STT **stage** instead of a tap, and are resolved by `create_stt` rather than `resolve_stt`. `native` is rejected there: it means "the realtime model transcribes itself", and cascade has no realtime model. See [Cascade Pipeline](cascade-pipeline.md).
 

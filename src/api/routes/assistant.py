@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from src.api.models.api_schemas import (
     CreateAssistant,
     UpdateAssistant,
+    validate_mode_config,
 )
 from src.core.providers.keys import mask_assistant_keys
 from src.api.models.response_models import apiResponse
@@ -11,6 +12,7 @@ from src.api.dependencies import get_current_user
 from src.core.logger import logger
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 router = APIRouter()
 
@@ -31,35 +33,44 @@ async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
         raise HTTPException(status_code=404, detail="Audio asset not found")
 
 
-def enforce_cascade_constraints(assistant, update_data: dict, new_mode: str | None) -> None:
-    """Apply the cascade STT/provider rules against the *stored* assistant.
+def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str | None) -> None:
+    """Apply the per-mode provider/model/STT rules against the *effective* assistant.
 
-    The schema validator can only see the request, and its cascade rules fire only when
-    the request names the mode — but most PATCHes touch a field or two without resending
-    it. So an assistant that is already in cascade needs the same two rules re-checked
-    here. Without this the update is accepted and the assistant then fails to start with
-    no signal at update time (create_llm/create_stt return None and the job just ends).
+    The schema validator can only see the request, and its rules fire only when the
+    request names the mode — but most PATCHes touch a field or two without resending it.
+    So the stored row has to be merged in and re-checked here. Without this the update is
+    accepted and the assistant then fails to start with no signal at update time
+    (create_llm/create_stt return None and the job just ends).
+
+    The rule table itself lives in one place — validate_mode_config() — so the request
+    path and this path can never drift apart.
     """
-    is_cascade = new_mode == "cascade" or (new_mode is None and assistant.assistant_mode == "cascade")
-    if not is_cascade:
+    effective_mode = new_mode or getattr(assistant, "assistant_mode", None)
+    if effective_mode not in ("pipeline", "cascade", "realtime"):
         return
 
-    # "native" means "the realtime model transcribes itself", and cascade has no realtime
-    # model. A stored 'native' must therefore be replaced in the same request.
-    effective_stt = update_data.get("assistant_stt_model") or assistant.assistant_stt_model
-    if effective_stt == "native":
-        raise HTTPException(
-            status_code=400,
-            detail="assistant_stt_model 'native' is not valid in cascade mode. Send assistant_stt_model 'sarvam' or 'cartesia' in the same request.",
-        )
+    # Request values win over stored ones, key by key: a PATCH that changes only `model`
+    # must still be judged against the provider already on the row.
+    stored_llm = getattr(assistant, "assistant_llm_config", None) or {}
+    # An explicit null clears the stored config (the realtime→pipeline switch above does
+    # this), so nothing from the old row should be merged in.
+    if "assistant_llm_config" in update_data and update_data["assistant_llm_config"] is None:
+        stored_llm = {}
+    requested_llm = update_data.get("assistant_llm_config") or {}
+    effective_llm = SimpleNamespace(
+        provider=requested_llm.get("provider") or stored_llm.get("provider"),
+        model=requested_llm.get("model") or stored_llm.get("model"),
+    )
+    effective_stt = update_data.get("assistant_stt_model") or getattr(
+        assistant, "assistant_stt_model", None
+    )
 
-    llm_config = update_data.get("assistant_llm_config")
-    provider = (llm_config or {}).get("provider")
-    if provider and provider != "openai":
-        raise HTTPException(
-            status_code=400,
-            detail=f"assistant_llm_config.provider '{provider}' is not supported in cascade mode — cascade supports 'openai' only.",
-        )
+    try:
+        validate_mode_config(effective_mode, effective_llm, effective_stt)
+    except ValueError as e:
+        # 400 (not 422): the request itself is well-formed — it is the combination with
+        # what is already stored that cannot run.
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # Create new assistant
@@ -155,7 +166,7 @@ async def update_assistant(
         if assistant.assistant_mode == "realtime" and "assistant_llm_config" not in update_data:
             update_data["assistant_llm_config"] = None
 
-    enforce_cascade_constraints(assistant, update_data, new_mode)
+    enforce_stored_mode_constraints(assistant, update_data, new_mode)
 
     logger.info(f"Updating assistant {assistant_id}")
     update_data.update(

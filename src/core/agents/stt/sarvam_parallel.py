@@ -100,6 +100,7 @@ async def run_sarvam_parallel_stt(
     api_key: str | None = None,
     model: str | None = None,
     language: str | None = None,
+    mode: str | None = None,
 ) -> None:
     """Stream caller audio into Sarvam Saras v3 and feed finalized utterances to `coalescer`.
 
@@ -109,7 +110,10 @@ async def run_sarvam_parallel_stt(
     """
     sarvam_stt = sarvam_plugin.STT(
         model=model or "saaras:v3",
-        mode="codemix",
+        # Same field, same meaning as in cascade (see src/core/agents/stt/factory.py) —
+        # "codemix" stays the default because callers here routinely mix English with an
+        # Indian language mid-sentence.
+        mode=mode or "codemix",
         # An empty string is reachable from the API (SarvamSTTConfig.language has no
         # min_length) and the plugin silently turns it into en-IN instead of auto-detect.
         language=(language or "").strip() or "unknown",

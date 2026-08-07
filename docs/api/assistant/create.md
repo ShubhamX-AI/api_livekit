@@ -33,9 +33,9 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 === ":material-pipe: Pipeline"
 
     **Pipeline mode** (half-cascade): the LLM emits text and a separate TTS provider speaks it.
-    The LLM vendor is set by `assistant_llm_config.provider` — `openai` (default) or `gemini`; both emit text into the external TTS.
+    The LLM vendor is `openai` only — `assistant_llm_config.provider: "gemini"` returns `422` here, because Google's Live API cannot run the text-only modality half-cascade needs on its native-audio models. Use `assistant_mode: "realtime"` for Gemini. See the [Compatibility Matrix](../../reference/compatibility.md#mode-llm-provider).
     If `assistant_interaction_config.speaks_first=true`, the opening response is spoken at session start.
-    `assistant_llm_config` is optional in this mode (defaults to `openai`). Send it to pick `gemini`, override the model, or set an `api_key`; `voice` is ignored (TTS handles audio).
+    `assistant_llm_config` is optional in this mode (defaults to `provider="openai"`, `model="gpt-realtime-1.5"`). Send it to override the model — it must be an OpenAI **realtime** model ID — or to set an `api_key`; `voice` is ignored (TTS handles audio).
 
     **Required fields**
 
@@ -54,7 +54,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. `cartesia` is cascade-only. |
+    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. `cartesia`, `deepgram` and `elevenlabs` are cascade-only. |
     | `assistant_stt_config` | object | No | Config for the selected STT provider (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
 
     === "Sarvam"
@@ -85,7 +85,12 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `voice_id` | string | Yes | Cartesia voice ID. |
-        | `api_key` | string | No | Optional Cartesia API key. |
+        | `language` | string | No | BCP-47 code for the input text. Default: `en`. Affects pronunciation only. |
+        | `speed` | number | No | Speaking speed as a numeric multiplier of normal (e.g. `1.5` = 50% faster), range `0`–`3`. Default: `1.0`. Preset strings (`slow`/`normal`/`fast`) are **not** accepted: they belong to Cartesia's older models, and `sonic-3` requires a float. |
+        | `volume` | number | No | Output volume where `1.0` is the default. Range `0`–`3`. |
+        | `emotion` | string | No | Emotion control string (Sonic 3 only), e.g. `excited`, `calm`, `sad`. See [Cartesia docs](https://docs.cartesia.ai/build-with-cartesia/sonic-3/volume-speed-emotion) for supported values. |
+        | `pronunciation_dict_id` | string | No | ID of a Cartesia pronunciation dictionary to apply (Sonic 3 models only). |
+        | `api_key` | string | No | Optional Cartesia API key. Falls back to system `CARTESIA_API_KEY`. |
 
     === "Sarvam"
 
@@ -93,21 +98,26 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | :--- | :--- | :--- | :--- |
         | `speaker` | string | Yes | Sarvam speaker identifier. |
         | `target_language_code` | string | No | BCP-47 code. Default: `bn-IN`. |
-        | `api_key` | string | No | Optional Sarvam API key. |
+        | `pace` | number | No | Speaking pace multiplier, `0.3`–`3.0`. Default: `1.0` (`>1.0` faster, `<1.0` slower). |
+        | `speech_sample_rate` | number | No | Output sample rate in Hz. One of `8000`, `16000`, `22050`, `24000`, `32000`, `44100`, `48000` — other values are rejected. Default: `24000`; use `8000` only for narrowband telephony. |
+        | `temperature` | number | No | TTS sampling temperature, `0.01`–`2.0`. Default: `0.3`. Lower = more stable. |
+        | `api_key` | string | No | Optional Sarvam API key. Falls back to system `SARVAM_API_KEY`. |
 
     === "ElevenLabs"
 
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `voice_id` | string | Yes | ElevenLabs voice ID. |
-        | `api_key` | string | No | Optional ElevenLabs API key. |
+        | `model` | string | No | TTS model. Default: `eleven_v3`. Also `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`. |
+        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. |
+        | `api_key` | string | No | Optional ElevenLabs API key. Falls back to system `ELEVENLABS_API_KEY`. |
 
     === "Mistral"
 
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `voice_id` | string | Yes | Mistral voice ID. |
-        | `api_key` | string | No | Optional Mistral API key. |
+        | `api_key` | string | No | Optional Mistral API key. Falls back to system `MISTRAL_API_KEY`. |
 
     **Example request**
 
@@ -213,8 +223,8 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_stt_model` | string | No | `sarvam` (default when unset) or `cartesia`. **`native` is rejected** — there is no realtime model to transcribe itself. |
-    | `assistant_stt_config` | object | No | Config for the selected STT provider. |
+    | `assistant_stt_model` | string | No | `sarvam` (default when unset), `cartesia`, `deepgram` or `elevenlabs`. **`native` is rejected** — there is no realtime model to transcribe itself. |
+    | `assistant_stt_config` | object | No | Config for the selected STT provider — `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
 
     === "Sarvam (multilingual)"
 
@@ -236,19 +246,52 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | `language` | string | No | Fixed BCP-47 code. Default: `en`. **No auto-detect** — use Sarvam if the caller may switch languages. |
         | `api_key` | string | No | Falls back to system `CARTESIA_API_KEY`. |
 
-        Allowed `model`, `language` and `mode` values for both providers: [Models & Providers](../../reference/models.md#stt).
+        Allowed `model`, `language` and `mode` values for the Sarvam and Cartesia tabs: [Models & Providers](../../reference/models.md#stt).
+
+    === "Deepgram (multilingual)"
+
+        | Field | Type | Required | Description |
+        | :--- | :--- | :--- | :--- |
+        | `model` | string | No | Deepgram STT model. Default: `nova-3` (multilingual, 45 languages). Also `nova-2`, `flux-general-en` (English only) and `flux-general-multi` (multilingual). |
+        | `language` | string | No | BCP-47 code, or `multi` to auto-detect. When omitted, falls back to the first entry of `assistant_interaction_config.preferred_languages`, then `en`. `multi` auto-detects per segment; pin a fixed BCP-47 code to force one language (a caller switching languages is then mis-transcribed). |
+        | `enable_diarization` | boolean | No | Labels each utterance with a speaker id. Default: `false`. When omitted, diarization stays off — it is never force-enabled. Nova models only. |
+        | `keyterm` | string or array of strings | No | Boosts recognition of a term. When omitted it is not sent (no biasing). `nova-3` / `flux` only — `nova-2` does not take keyterm. |
+        | `api_key` | string | No | Optional Deepgram API key. Falls back to system `DEEPGRAM_API_KEY`. |
+
+    === "ElevenLabs (auto-detect)"
+
+        | Field | Type | Required | Description |
+        | :--- | :--- | :--- | :--- |
+        | `model` | string | No | ElevenLabs STT model. Default: `scribe_v2_realtime` (auto-detects ~190 languages). Also `scribe_v2` and `scribe_v1`. |
+        | `language_code` | string | No | BCP-47 code. When omitted, the factory falls back to the first entry of `assistant_interaction_config.preferred_languages`, else the provider auto-detects. When set, auto-detection is disabled and the code is pinned. |
+        | `no_verbatim` | boolean | No | Strips filler words (`um`, `uh`) and false starts from the transcript. Default: `false`. |
+        | `api_key` | string | No | Optional ElevenLabs key for the STT stage. Falls back to system `ELEVENLABS_API_KEY`, the same variable the ElevenLabs TTS provider uses. |
+
+    > **Don't assume all STT providers auto-detect when `language`/`language_code` is omitted.**
+    > ElevenLabs auto-detects, but Deepgram falls back to `en` (not `multi`), and `flux-general-en` is
+    > English-only. `keyterm` is ignored on `nova-2`, `enable_diarization` is nova-only, and a pinned
+    > ElevenLabs `language_code` disables auto-detect. Full list:
+    > [STT pitfalls & what not to combine](../../reference/models.md#stt-pitfalls-what-not-to-combine).
 
     **LLM stage** (`assistant_llm_config`)
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
     | `provider` | string | No | Must be `openai` (the default when unset). Any other value is rejected. |
-    | `model` | string | No | OpenAI chat model. Default: `gpt-4.1`. Free-form — any OpenAI chat model name works. Known-good list: [Models & Providers](../../reference/models.md#cascade-llm-cascade-mode-only). |
+    | `model` | string | No | One of the documented OpenAI models. Default: `gpt-4.1`. Full list and knobs: [Models & Providers](../../reference/models.md#cascade-llm-cascade-mode-only). |
     | `api_key` | string | No | Falls back to system `OPENAI_API_KEY`. |
+    | `temperature` | number | No | Sampling temperature `0`–`2`. Higher = more random. **Ignored by reasoning models** (`gpt-5.x`). |
+    | `max_output_tokens` | integer | No | Cap on the number of output tokens in the response. |
+    | `reasoning_effort` | string | No | Reasoning depth: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. **Reasoning models only** (`gpt-5`, `gpt-5.x`). |
+    | `service_tier` | string | No | OpenAI processing/billing tier: `auto`, `default`, `flex`, `scale`, `priority`. |
+    | `verbosity` | string | No | Constrains response length: `low`, `medium`, `high`. |
+    | `tool_choice` | string | No | Tool usage: `auto`, `required`, `none`. |
+    | `parallel_tool_calls` | boolean | No | Allow multiple tool calls in one response. |
 
-    `voice` is ignored — the TTS provider owns the voice in this mode.
+    `voice` is ignored — the TTS provider owns the voice in this mode. Any unknown key in
+    `assistant_llm_config` is rejected with `422`.
 
-    **Example request**
+    **Example request** (with the new LLM generation knobs and TTS speed settings; all are optional)
 
     ```bash
     curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
@@ -267,11 +310,104 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         },
         "assistant_llm_config": {
           "provider": "openai",
-          "model": "gpt-4.1-mini"
+          "model": "gpt-5-mini",
+          "reasoning_effort": "low",
+          "max_output_tokens": 500,
+          "verbosity": "medium",
+          "service_tier": "default",
+          "tool_choice": "auto",
+          "parallel_tool_calls": true
         },
         "assistant_tts_model": "cartesia",
         "assistant_tts_config": {
-          "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275"
+          "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
+          "speed": 1.1,
+          "volume": 1.0,
+          "emotion": "calm",
+          "language": "en"
+        }
+      }'
+    ```
+
+    > **Note on the example above:** `gpt-5-mini` is a *reasoning* model, which ignores
+    > `temperature` — so the example sends `reasoning_effort` instead. For a **non-reasoning**
+    > model (like the default `gpt-4.1`), do the opposite: send `temperature` and drop
+    > `reasoning_effort`. Both are optional — omit whichever your model family does not use.
+
+    **Example request — Deepgram STT**
+
+    ```bash
+    curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_name": "Cascade Assistant",
+        "assistant_description": "True STT -> LLM -> TTS pipeline",
+        "assistant_prompt": "You are a helpful assistant.",
+        "assistant_mode": "cascade",
+        "assistant_stt_model": "deepgram",
+        "assistant_stt_config": {
+          "model": "nova-3",
+          "language": "multi",
+          "enable_diarization": true,
+          "keyterm": "invoice",
+          "api_key": "dg-..."
+        },
+        "assistant_llm_config": {
+          "provider": "openai",
+          "model": "gpt-5-mini",
+          "max_output_tokens": 500,
+          "reasoning_effort": "low",
+          "verbosity": "medium",
+          "service_tier": "default",
+          "tool_choice": "auto",
+          "parallel_tool_calls": true
+        },
+        "assistant_tts_model": "cartesia",
+        "assistant_tts_config": {
+          "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
+          "speed": 1.1,
+          "volume": 1.0,
+          "emotion": "calm",
+          "language": "en"
+        }
+      }'
+    ```
+
+    **Example request — ElevenLabs STT**
+
+    ```bash
+    curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_name": "Cascade Assistant",
+        "assistant_description": "True STT -> LLM -> TTS pipeline",
+        "assistant_prompt": "You are a helpful assistant.",
+        "assistant_mode": "cascade",
+        "assistant_stt_model": "elevenlabs",
+        "assistant_stt_config": {
+          "model": "scribe_v2_realtime",
+          "no_verbatim": true,
+          "api_key": "el-stt-..."
+        },
+        "assistant_llm_config": {
+          "provider": "openai",
+          "model": "gpt-5-mini",
+          "max_output_tokens": 500,
+          "reasoning_effort": "low",
+          "verbosity": "medium",
+          "service_tier": "default",
+          "tool_choice": "auto",
+          "parallel_tool_calls": true
+        },
+        "assistant_tts_model": "cartesia",
+        "assistant_tts_config": {
+          "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
+          "speed": 1.1,
+          "volume": 1.0,
+          "emotion": "calm",
+          "language": "en"
         }
       }'
     ```
