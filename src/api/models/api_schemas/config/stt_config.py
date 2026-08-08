@@ -49,15 +49,30 @@ class DeepgramSTTConfig(BaseModel):
 
 
 class ElevenLabsSTTConfig(BaseModel):
-    """Cascade mode only. Scribe v2 Real-Time auto-detects among 100+ languages when language_code is omitted."""
+    """Cascade mode only. Scribe v2 Real-Time auto-detects when neither language_code nor preferred_languages is set."""
 
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["elevenlabs"] = "elevenlabs"
     model: str = Field("scribe_v2_realtime", max_length=40, description="ElevenLabs STT model: scribe_v2_realtime (default), scribe_v2 or scribe_v1.")
-    language_code: Optional[str] = Field(None, max_length=10, description="BCP-47 language code. When omitted, Scribe v2 Real-Time auto-detects among ~190 languages; otherwise it falls back to the first entry of assistant_interaction_config.preferred_languages.")
+    language_code: Optional[str] = Field(None, max_length=10, description="BCP-47 language code. When omitted, falls back to the first entry of assistant_interaction_config.preferred_languages; only when that is empty too does Scribe v2 Real-Time auto-detect among ~190 languages. Setting either one pins the language and disables auto-detect.")
     no_verbatim: bool = Field(False, description="Strips filler words, false starts and disfluencies from the transcript for cleaner output.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="ElevenLabs API key for the STT stage (optional, falls back to system ELEVENLABS_API_KEY, the same variable the TTS stage uses). Distinct from assistant_tts_config.api_key, which belongs to whichever provider the TTS stage selected.")
+
+
+class OpenAISTTConfig(BaseModel):
+    """Cascade mode only. Streams over OpenAI's realtime transcription WebSocket by default."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["openai"] = "openai"
+    model: str = Field("gpt-4o-mini-transcribe", max_length=40, description="OpenAI STT model: gpt-4o-mini-transcribe (default — fast and cheap), gpt-4o-transcribe (more accurate) or whisper-1. 'gpt-realtime-whisper' is rejected: it has no server-side endpointing and needs a client-side VAD this runtime cannot supply.")
+    language: Optional[str] = Field(None, max_length=10, description="ISO-639-1 language code. OpenAI STT defaults to English, so when omitted this falls back to the first entry of assistant_interaction_config.preferred_languages, then 'en'. Ignored when detect_language is true.")
+    detect_language: bool = Field(False, description="Auto-detect the spoken language instead of pinning one. Overrides `language`.")
+    prompt: Optional[str] = Field(None, max_length=500, description="Text prompt biasing the transcription (names, jargon, spellings). whisper-1 only — the gpt-4o transcribe models ignore it.")
+    noise_reduction_type: Optional[Literal["near_field", "far_field"]] = Field(None, description="Server-side noise reduction: 'near_field' for headsets, 'far_field' for speakerphone/room mics. Omit for none.")
+    use_realtime: bool = Field(True, description="Stream over the realtime transcription WebSocket (interim results, low latency). Set false to use the batch REST transcription API — cheaper, but adds a full utterance of latency per turn.")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="OpenAI API key for the STT stage (optional, falls back to system OPENAI_API_KEY — the same variable the cascade LLM uses). Distinct from assistant_tts_config.api_key.")
 
 
 STTConfig = Annotated[
@@ -67,6 +82,7 @@ STTConfig = Annotated[
         CartesiaSTTConfig,
         DeepgramSTTConfig,
         ElevenLabsSTTConfig,
+        OpenAISTTConfig,
     ],
     Field(discriminator="type"),
 ]

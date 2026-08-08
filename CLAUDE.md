@@ -2,6 +2,45 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working agreement (do this before touching anything)
+
+Applies to any **non-trivial** request — one that touches 2+ files or needs 3+ steps. A one-line
+fix, a rename, or a plain question skips all of it; do those directly.
+
+1. **Check the skills first.** Before planning, see whether an available skill already covers the
+   task (they are listed in the session context). If one fits, invoke it and follow it instead of
+   improvising a workflow. The same goes for the `livekit-docs` MCP server: for anything about the
+   LiveKit SDK, plugins, or model parameters, read the live docs — never work from memory, the
+   SDK moves faster than any snapshot.
+2. **Write the todo list before the first edit.** Use `TaskCreate` to lay out the steps, then
+   `TaskUpdate` to mark exactly one `in_progress` at a time and `completed` as each lands. The
+   list is the plan; write it while the work is still reversible, not as a summary afterwards.
+3. **Ask when something is genuinely undecided.** Use `AskUserQuestion` when two readings of the
+   request lead to materially different work, when the request contradicts what is already in
+   the repo (a doc, a validation rule, a stored schema), or when a choice is the user's to make
+   (defaults, naming, scope, whether to drop a provider). Ask *before* building on the guess.
+   Do **not** ask about things with an obvious default — pick it, say which, and move on.
+4. **Then work the list step by step**, verifying as you go rather than at the end.
+5. **Finish the whole chain.** In this repo a change is not done until code, schemas, tests and
+   docs agree. See [Definition of done](#definition-of-done).
+
+Same block lives in `AGENTS.md` for non-Claude agents — edit both or neither.
+
+## Definition of done
+
+A change to models, providers or config knobs is finished only when all of these are true:
+
+- Factory code, `src/api/models/api_schemas/`, and the `validate_mode_config` rule table agree.
+- Tests updated and green: `uv run python -m unittest discover -s tests`.
+- Docs updated in **every** place that lists the thing you changed: `docs/reference/models.md`,
+  `docs/reference/compatibility.md`, `docs/architecture/cascade-pipeline.md`,
+  `docs/api/assistant/{create,update,index,list}.md`, plus `README.md` / `docs/features.md`
+  when the feature list changes. `grep` for a sibling provider's name to find them all.
+- Docs build clean: `uv run mkdocs build --strict`.
+- Lint the files you touched: `uvx ruff check <paths>` (the repo has pre-existing violations
+  elsewhere — don't reflow unrelated files).
+- **Never `git commit` unless explicitly asked.**
+
 ## Commands
 
 ```bash
@@ -70,7 +109,7 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | Session lifecycle (gate, recording) | `src/core/agents/session_lifecycle.py` |
 | Voice features (silence watchdog, filler, hold) | `src/core/agents/voice_features.py` |
 | TTS factory (cartesia/sarvam/elevenlabs/mistral) | `src/core/agents/tts/factory.py` |
-| STT resolver (native/sarvam) + cascade STT builder (sarvam/cartesia/deepgram/elevenlabs) | `src/core/agents/stt/factory.py` |
+| STT resolver (native/sarvam) + cascade STT builder (sarvam/cartesia/deepgram/elevenlabs/openai) | `src/core/agents/stt/factory.py` |
 | LLM factory (cascade only, OpenAI) | `src/core/agents/llm/factory.py` |
 | Per-component usage folding (`session.usage` → `UsageRecord`) | `src/core/agents/usage.py` |
 | Sarvam parallel STT tap (pipeline mode only) | `src/core/agents/stt/sarvam_parallel.py` |
@@ -89,11 +128,11 @@ Selected by the `assistant_mode` field (`pipeline` | `realtime` | `cascade`) on 
 
 - **`pipeline`** (default, half-cascade): OpenAI realtime for STT+LLM, separate TTS provider. Requires `assistant_tts_model` + `assistant_tts_config`. Provider must be `openai` — Gemini is rejected here (its Live API cannot do text-only modality on native-audio models); use `realtime` for Gemini.
 - **`realtime`**: Gemini realtime handles STT+LLM+TTS in one model. `assistant_tts_model` / `assistant_tts_config` are ignored at runtime.
-- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (`native` rejected); provider must be `openai`. Docs: `docs/architecture/cascade-pipeline.md`.
+- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` rejected); provider must be `openai`. Docs: `docs/architecture/cascade-pipeline.md`.
 
 TTS providers: `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Per-provider config lives in `assistant_tts_config` dict on the `Assistant` document; factory is `src/core/agents/tts/factory.py`.
 
-STT providers: `sarvam` (default — Saras v3), `native` (the conversational LLM transcribes itself), and `cartesia`, `deepgram`, `elevenlabs` (all cascade only). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document. **Two resolvers, don't mix them:** `resolve_stt` returns a `(provider, config)` tuple for the pipeline-mode parallel tap; `create_stt` builds an actual plugin STT object for cascade. Both in `src/core/agents/stt/factory.py`. Unset means `sarvam`. Ignored in realtime mode.
+STT providers: `sarvam` (default — Saras v3), `native` (the conversational LLM transcribes itself), and `cartesia`, `deepgram`, `elevenlabs`, `openai` (all cascade only; `openai` collapses back to `native` in pipeline mode). Same shape as TTS: `assistant_stt_model` + `assistant_stt_config` on the `Assistant` document. **Two resolvers, don't mix them:** `resolve_stt` returns a `(provider, config)` tuple for the pipeline-mode parallel tap; `create_stt` builds an actual plugin STT object for cascade. Both in `src/core/agents/stt/factory.py`. Unset means `sarvam`. Ignored in realtime mode.
 
 LLM: `src/core/agents/llm/factory.py::create_llm` — cascade only. The other two modes build a `RealtimeModel` inline in `session.py`.
 

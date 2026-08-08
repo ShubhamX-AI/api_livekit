@@ -5,6 +5,44 @@ complements `CLAUDE.md` (project overview) by tracking **recent cross-cutting
 changes** so other agents do not reintroduce regressions, and records the
 system-of-record for each topic.
 
+## Working agreement (do this before touching anything)
+
+Applies to any **non-trivial** request — one that touches 2+ files or needs 3+ steps. A one-line
+fix, a rename, or a plain question skips all of it; do those directly.
+
+1. **Check the skills first.** Before planning, see whether an available skill already covers the
+   task. If one fits, invoke it and follow it instead of improvising a workflow. The same goes for
+   the `livekit-docs` MCP server: for anything about the LiveKit SDK, plugins, or model parameters,
+   read the live docs — never work from memory, the SDK moves faster than any snapshot.
+2. **Write the todo list before the first edit.** Lay out the steps, keep exactly one in progress,
+   mark each done as it lands. The list is the plan; write it while the work is still reversible,
+   not as a summary afterwards.
+3. **Ask when something is genuinely undecided.** Ask the user when two readings of the request
+   lead to materially different work, when the request contradicts what is already in the repo (a
+   doc, a validation rule, a stored schema), or when a choice is theirs to make (defaults, naming,
+   scope, whether to drop a provider). Ask *before* building on the guess. Do **not** ask about
+   things with an obvious default — pick it, say which, and move on.
+4. **Then work the list step by step**, verifying as you go rather than at the end.
+5. **Finish the whole chain.** A change is not done until code, schemas, tests and docs agree —
+   see [Definition of done](#definition-of-done).
+
+Same block lives in `CLAUDE.md` — edit both or neither.
+
+## Definition of done
+
+A change to models, providers or config knobs is finished only when all of these are true:
+
+- Factory code, `src/api/models/api_schemas/`, and the `validate_mode_config` rule table agree.
+- Tests updated and green: `uv run python -m unittest discover -s tests`.
+- Docs updated in **every** place that lists the thing you changed: `docs/reference/models.md`,
+  `docs/reference/compatibility.md`, `docs/architecture/cascade-pipeline.md`,
+  `docs/api/assistant/{create,update,index,list}.md`, plus `README.md` / `docs/features.md`
+  when the feature list changes. `grep` for a sibling provider's name to find them all.
+- Docs build clean: `uv run mkdocs build --strict`.
+- Lint the files you touched: `uvx ruff check <paths>` — pre-existing violations live outside
+  them; don't reflow unrelated files.
+- **Never `git commit` unless explicitly asked.**
+
 ## Rule of thumb: where truth lives
 
 | Topic | Source of truth |
@@ -89,6 +127,14 @@ a second one.
   `deepgram.STTv2` (/listen/v2, `language_hint` instead of `language`). Neither validates the
   model at construction, so `create_stt` dispatches on the name. Adding a Deepgram model means
   checking which family it belongs to.
+- **OpenAI STT streams only if you ask.** The plugin's `use_realtime` defaults to `False`
+  (batch REST, no interim results); `create_stt` passes `True` because a live call needs
+  streaming. `gpt-realtime-whisper` is rejected outright — it has no server-side endpointing
+  and the plugin then requires a `livekit-plugins-silero` VAD, which is not installed (the
+  session's VAD is `inference.VAD`, which an STT plugin cannot take).
+- **`assistant_stt_model="openai"` means two different things per mode.** Cascade builds the
+  real OpenAI STT plugin; pipeline collapses it to `native` (same vendor, same model, one less
+  connection) — which also keeps pre-migration rows working.
 - **Sarvam TTS numeric bounds mirror the provider**, verified against the LiveKit Sarvam TTS
   page: `pace` 0.3-3.0, `temperature` 0.01-2.0 (not 0.0), `speech_sample_rate` an enum of
   8000/16000/22050/24000/32000/44100/48000 rather than a range.

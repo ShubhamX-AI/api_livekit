@@ -662,6 +662,8 @@ async def entrypoint(ctx: JobContext):
         # cartesia / deepgram / elevenlabs are cascade-only plugins — there is no pipeline
         # tap for them. Degrade to the LLM's own native transcription while in a pipeline
         # call so the caller still leaves with transcripts (matches the no-key fallback).
+        # 'openai' is cascade-only too, but resolve_stt already collapses it to native
+        # (same vendor, same model), so it never shows up here.
         if _stt_provider in {"cartesia", "deepgram", "elevenlabs"}:
             logger.warning(
                 f"assistant_stt_model '{_stt_provider}' is cascade-only and ignored in "

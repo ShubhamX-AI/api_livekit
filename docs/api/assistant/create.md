@@ -54,7 +54,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. `cartesia`, `deepgram` and `elevenlabs` are cascade-only. |
+    | `assistant_stt_model` | string | No | User-transcription source: `sarvam` (default when unset) or `native`. `cartesia`, `deepgram`, `elevenlabs` and `openai` are cascade-only (`openai` collapses to `native` here). |
     | `assistant_stt_config` | object | No | Config for the selected STT provider (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
 
     === "Sarvam"
@@ -223,8 +223,8 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
-    | `assistant_stt_model` | string | No | `sarvam` (default when unset), `cartesia`, `deepgram` or `elevenlabs`. **`native` is rejected** — there is no realtime model to transcribe itself. |
-    | `assistant_stt_config` | object | No | Config for the selected STT provider — `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
+    | `assistant_stt_model` | string | No | `sarvam` (default when unset), `cartesia`, `deepgram`, `elevenlabs` or `openai`. **`native` is rejected** — there is no realtime model to transcribe itself. |
+    | `assistant_stt_config` | object | No | Config for the selected STT provider — `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (see tabs below). Requires `assistant_stt_model`. Omit for provider defaults. |
 
     === "Sarvam (multilingual)"
 
@@ -267,9 +267,23 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | `no_verbatim` | boolean | No | Strips filler words (`um`, `uh`) and false starts from the transcript. Default: `false`. |
         | `api_key` | string | No | Optional ElevenLabs key for the STT stage. Falls back to system `ELEVENLABS_API_KEY`, the same variable the ElevenLabs TTS provider uses. |
 
+    === "OpenAI (same vendor as the LLM)"
+
+        | Field | Type | Required | Description |
+        | :--- | :--- | :--- | :--- |
+        | `model` | string | No | OpenAI STT model. Default: `gpt-4o-mini-transcribe` (fast, cheap). Also `gpt-4o-transcribe` (more accurate) and `whisper-1` (legacy batch model — the only one that reads `prompt`). `gpt-realtime-whisper` is **rejected**: it has no server-side endpointing and needs a client-side VAD this runtime cannot supply. |
+        | `language` | string | No | ISO-639-1 code. When omitted, falls back to the first entry of `assistant_interaction_config.preferred_languages`, then `en` — **omitting does not auto-detect**. Ignored when `detect_language` is `true`. |
+        | `detect_language` | boolean | No | Auto-detect the spoken language instead of pinning one. Default: `false`. Overrides `language`. |
+        | `prompt` | string | No | Biases spellings and jargon (names, product terms). **`whisper-1` only** — the gpt-4o transcribe models accept and ignore it. |
+        | `noise_reduction_type` | string | No | Server-side noise reduction: `near_field` (headset) or `far_field` (speakerphone / room mic). Omitted applies none. |
+        | `use_realtime` | boolean | No | Streams over OpenAI's realtime transcription WebSocket (interim results, low latency). Default: `true`. Set `false` for the batch REST API — cheaper, but adds a full utterance of latency per turn. |
+        | `api_key` | string | No | Optional OpenAI key for the STT stage. Falls back to system `OPENAI_API_KEY`, the same variable the cascade LLM stage uses. |
+
     > **Don't assume all STT providers auto-detect when `language`/`language_code` is omitted.**
-    > ElevenLabs auto-detects, but Deepgram falls back to `en` (not `multi`), and `flux-general-en` is
-    > English-only. `keyterm` is ignored on `nova-2`, `enable_diarization` is nova-only, and a pinned
+    > ElevenLabs auto-detects, but Deepgram and OpenAI fall back to `en` (not `multi`), and
+    > `flux-general-en` is
+    > English-only. `keyterm` is ignored on `nova-2`, `enable_diarization` is nova-only, OpenAI's
+    > `prompt` works on `whisper-1` only, and a pinned
     > ElevenLabs `language_code` disables auto-detect. Full list:
     > [STT pitfalls & what not to combine](../../reference/models.md#stt-pitfalls-what-not-to-combine).
 
@@ -390,6 +404,45 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
           "model": "scribe_v2_realtime",
           "no_verbatim": true,
           "api_key": "el-stt-..."
+        },
+        "assistant_llm_config": {
+          "provider": "openai",
+          "model": "gpt-5-mini",
+          "max_output_tokens": 500,
+          "reasoning_effort": "low",
+          "verbosity": "medium",
+          "service_tier": "default",
+          "tool_choice": "auto",
+          "parallel_tool_calls": true
+        },
+        "assistant_tts_model": "cartesia",
+        "assistant_tts_config": {
+          "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
+          "speed": 1.1,
+          "volume": 1.0,
+          "emotion": "calm",
+          "language": "en"
+        }
+      }'
+    ```
+
+    **Example request — OpenAI STT** (one vendor and one key for both the STT and LLM stages)
+
+    ```bash
+    curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_name": "Cascade Assistant",
+        "assistant_description": "True STT -> LLM -> TTS pipeline",
+        "assistant_prompt": "You are a helpful assistant.",
+        "assistant_mode": "cascade",
+        "assistant_stt_model": "openai",
+        "assistant_stt_config": {
+          "model": "gpt-4o-mini-transcribe",
+          "language": "en",
+          "noise_reduction_type": "far_field",
+          "use_realtime": true
         },
         "assistant_llm_config": {
           "provider": "openai",

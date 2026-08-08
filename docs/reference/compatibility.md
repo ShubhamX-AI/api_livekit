@@ -72,6 +72,12 @@ allowlist would reject them the day they land. Both OpenAI allowlists live in
 | `cartesia` | :recycle: degrades to `native` with a warning | :warning: ignored | :white_check_mark: |
 | `deepgram` | :recycle: degrades to `native` with a warning | :warning: ignored | :white_check_mark: |
 | `elevenlabs` | :recycle: degrades to `native` with a warning | :warning: ignored | :white_check_mark: |
+| `openai` | :recycle: collapses to `native`, silently | :warning: ignored | :white_check_mark: |
+
+**Why `openai` collapses silently.** In pipeline mode the realtime model already transcribes with
+the same vendor and the same `gpt-4o-mini-transcribe`, so a separate OpenAI STT connection would add
+cost and nothing else. No warning is logged because nothing is lost. (This also keeps pre-migration
+rows working, where `assistant_stt_model="openai"` *meant* native transcription.)
 
 **Why the degrade.** `cartesia`, `deepgram` and `elevenlabs` are plugin STTs with no parallel-tap
 implementation for pipeline mode. Rather than start a call with no transcripts at all, `resolve_stt`
@@ -151,6 +157,7 @@ Per-assistant `api_key` fields always win; the environment variable is the fallb
 | STT | cartesia | `assistant_stt_config.api_key` | `CARTESIA_API_KEY` |
 | STT | deepgram | `assistant_stt_config.api_key` | `DEEPGRAM_API_KEY` |
 | STT | elevenlabs | `assistant_stt_config.api_key` | `ELEVENLABS_API_KEY` |
+| STT | openai (cascade) | `assistant_stt_config.api_key` | `OPENAI_API_KEY` |
 | TTS | cartesia | `assistant_tts_config.api_key` | `CARTESIA_API_KEY` |
 | TTS | sarvam | `assistant_tts_config.api_key` | `SARVAM_API_KEY` |
 | TTS | elevenlabs | `assistant_tts_config.api_key` | `ELEVENLABS_API_KEY` |

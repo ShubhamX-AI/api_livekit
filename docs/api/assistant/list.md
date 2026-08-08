@@ -30,7 +30,7 @@ List assistants created by the current user.
 | `data.assistants[].assistant_mode` | string | Assistant mode: `pipeline`, `realtime` or `cascade`. |
 | `data.assistants[].assistant_tts_model` | string/null | TTS provider for pipeline assistants. |
 | `data.assistants[].assistant_tts_config` | object/null | Masked TTS config. |
-| `data.assistants[].assistant_stt_model` | string/null | STT provider (`sarvam` \| `native` \| `cartesia` \| `deepgram` \| `elevenlabs`). `null` means the default, `sarvam`. |
+| `data.assistants[].assistant_stt_model` | string/null | STT provider (`sarvam` \| `native` \| `cartesia` \| `deepgram` \| `elevenlabs` \| `openai`). `null` means the default, `sarvam`. |
 | `data.assistants[].assistant_stt_config` | object/null | Masked STT config (`native` carries no key and is returned as-is). |
 | `data.assistants[].assistant_interaction_config` | object | Interaction settings. |
 | `data.assistants[].assistant_created_by_email` | string | Creator email. |

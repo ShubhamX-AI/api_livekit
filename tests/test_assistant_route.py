@@ -153,7 +153,7 @@ class TestMaskedKeyGuard(unittest.TestCase):
             UpdateAssistant(assistant_llm_config={"provider": "openai", "api_key": "sk-t...5678"})
 
     def test_masked_stt_key_rejected_for_every_provider(self):
-        for provider in ("sarvam", "cartesia", "deepgram", "elevenlabs"):
+        for provider in ("sarvam", "cartesia", "deepgram", "elevenlabs", "openai"):
             for masked in ("sk-t...5678", "****", SYSTEM_KEY_PLACEHOLDER):
                 with self.subTest(provider=provider, masked=masked):
                     with self.assertRaises(ValidationError):
@@ -251,6 +251,16 @@ class TestResolveSTT(unittest.TestCase):
                     assistant_stt_config={},
                 )
                 self.assertEqual(resolve_stt(assistant), ("native", {}))
+
+    def test_openai_stt_collapses_to_native_in_pipeline(self):
+        """Same vendor, same model as the realtime model's own transcription — a second
+        connection would buy nothing. Also keeps pre-migration 'openai' rows working."""
+        assistant = SimpleNamespace(
+            assistant_id="assistant-1",
+            assistant_stt_model="openai",
+            assistant_stt_config={"api_key": "sk_x"},
+        )
+        self.assertEqual(resolve_stt(assistant), ("native", {"api_key": "sk_x"}))
 
     def test_cascade_only_provider_with_config_key_is_kept(self):
         for provider in ("deepgram", "elevenlabs"):

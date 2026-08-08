@@ -27,7 +27,7 @@ pipeline (half-cascade)     realtime                cascade (true pipeline)
  caller audio                caller audio            caller audio
       │                           │                       │
  ┌────▼─────┐  (+ Sarvam     ┌────▼─────┐            ┌────▼────┐
- │ realtime │   tap on the   │ realtime │            │   STT   │  sarvam | cartesia | deepgram | elevenlabs
+ │ realtime │   tap on the   │ realtime │            │   STT   │  sarvam | cartesia | deepgram | elevenlabs | openai
  │  model   │   side for     │  model   │            └────┬────┘
  │ STT+LLM  │   transcripts) │STT+LLM+  │            ┌────▼────┐
  └────┬─────┘                │   TTS    │            │   LLM   │  openai
@@ -69,7 +69,7 @@ Validation rules specific to cascade:
 | Rule | Why |
 |---|---|
 | `assistant_tts_model` + `assistant_tts_config` required | The LLM emits text only; something must speak it. |
-| `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` | `native` means "the realtime model transcribes itself" — cascade has no realtime model. |
+| `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` | `native` means "the realtime model transcribes itself" — cascade has no realtime model. |
 | `assistant_llm_config.provider` must be `openai` or unset | Only OpenAI is wired up as a non-realtime LLM. |
 | `assistant_llm_config.model` must be a documented OpenAI ID | Curated allowlist so users pick a tested model; unknown names are rejected with `422`. See [Models & Providers](../reference/models.md#cascade-llm-cascade-mode-only). |
 
@@ -81,7 +81,8 @@ rules, and what happens when you get one wrong, are tabulated in the
 
 ## STT stage
 
-Built by `create_stt` in `src/core/agents/stt/factory.py`. All providers are streaming.
+Built by `create_stt` in `src/core/agents/stt/factory.py`. All providers stream by default
+(`openai` is the one that can be switched to batch — see `use_realtime` below).
 
 **API keys and fallback.** Every STT provider accepts an `api_key` in
 `assistant_stt_config`; a per-assistant value always beats the system key below.
@@ -92,12 +93,14 @@ Built by `create_stt` in `src/core/agents/stt/factory.py`. All providers are str
 | `CARTESIA_API_KEY` | `cartesia` | |
 | `DEEPGRAM_API_KEY` | `deepgram` | |
 | `ELEVENLABS_API_KEY` | `elevenlabs` | ElevenLabs is STT **and** TTS — one key serves both |
+| `OPENAI_API_KEY` | `openai` | the same variable the cascade LLM stage reads |
 
 If both the per-assistant `api_key` and the system key are missing, `create_stt` returns
 `None` and the cascade job **aborts** with a logged error — it does **not** silently fall back
 or swap providers. (Separately, selecting a cascade-only provider — cartesia / deepgram /
 elevenlabs — in `pipeline` mode runs no tap; the conversation LLM self-transcribes, the
-provider is ignored and a warning is logged.)
+provider is ignored and a warning is logged. `openai` collapses to the same self-transcription
+without a warning, because there is nothing to lose: same vendor, same model.)
 
 **Pitfalls & what not to combine.** Deepgram's `keyterm` is ignored on `nova-2` and
 `enable_diarization` is nova-only; `flux-general-en` is English-only. Setting an ElevenLabs
@@ -168,6 +171,69 @@ drop-in multilingual option alongside `sarvam` and `deepgram`. Authentication is
 covers both stages.
 
 **Omitted-knob summary:** `language_code` omitted → first `preferred_languages` entry, else auto-detect (~190 languages); `no_verbatim` omitted → `false` — fillers kept.
+
+### openai — one vendor for STT and LLM
+
+| Config key | Default | Values |
+|---|---|---|
+| `model` | `gpt-4o-mini-transcribe` | `gpt-4o-mini-transcribe` (fast, cheap), `gpt-4o-transcribe` (more accurate, dearer), `whisper-1` (legacy batch model — the only one that reads `prompt`). `gpt-realtime-whisper` is **rejected**; omitted keeps the default |
+| `language` | first `preferred_languages` entry, then `en` | one fixed ISO-639-1 code — **omitting does not auto-detect**, it pins English. Ignored when `detect_language` is `true` |
+| `detect_language` | `false` | `bool` — `true` auto-detects the spoken language and overrides `language`; **omitted stays `false`, so the language stays pinned** |
+| `prompt` | not sent | string biasing spellings and jargon — **`whisper-1` only**, the gpt-4o transcribe models accept and ignore it; omitted sends nothing |
+| `noise_reduction_type` | not sent | `near_field` (headset) or `far_field` (speakerphone / room mic); omitted applies none |
+| `use_realtime` | `true` | `bool` — `true` streams over OpenAI's realtime transcription WebSocket (interim results, low latency); `false` uses the batch REST API — cheaper, but adds a full utterance of latency per turn |
+| `api_key` | system `OPENAI_API_KEY` | per-assistant override — wins over the env key; the same variable the cascade LLM stage reads |
+
+Pick this when the assistant is already on OpenAI for the LLM and you want one vendor, one key
+and one invoice for both stages. It is *not* the multilingual choice: OpenAI STT pins one
+language unless you set `detect_language: true`, and even then Sarvam handles Indic
+code-switching better inside a single utterance.
+
+`use_realtime` **inverts the plugin's own default** (which is batch REST). A live phone call
+needs interim results and per-utterance streaming, so the factory streams unless you say
+otherwise. `gpt-realtime-whisper` is rejected outright: it has no server-side endpointing and
+the plugin then demands a `livekit-plugins-silero` VAD instance, which this runtime does not
+ship (the session's VAD is `inference.VAD` from `livekit-local-inference` and cannot be handed
+to an STT plugin). Selecting it aborts the job with a logged error rather than crashing at
+connect time.
+
+**Omitted-knob summary:** `language` omitted → first `preferred_languages` entry, then `en` (**not** auto-detect); `detect_language` omitted → `false`; `prompt` and `noise_reduction_type` omitted → not sent; `use_realtime` omitted → `true` (streaming).
+
+Minimal — English assistant, everything defaulted:
+
+```json
+{
+  "assistant_stt_model": "openai",
+  "assistant_stt_config": {}
+}
+```
+
+Auto-detecting, on a speakerphone-heavy inbound line:
+
+```json
+{
+  "assistant_stt_model": "openai",
+  "assistant_stt_config": {
+    "model": "gpt-4o-transcribe",
+    "detect_language": true,
+    "noise_reduction_type": "far_field"
+  }
+}
+```
+
+Prompt-biased for domain jargon (needs `whisper-1`, and therefore batch):
+
+```json
+{
+  "assistant_stt_model": "openai",
+  "assistant_stt_config": {
+    "model": "whisper-1",
+    "language": "en",
+    "prompt": "Vyom, LiveKit, Exotel, SIP trunk, Sarvam",
+    "use_realtime": false
+  }
+}
+```
 
 ## LLM stage
 

@@ -313,7 +313,7 @@ Two axes: **mode** (`assistant_mode`) = how many models are in the loop, **provi
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
 - `cascade` mode — a true three-stage STT → LLM → TTS pipeline (`docs/architecture/cascade-pipeline.md`):
   - Requires `assistant_tts_model` and `assistant_tts_config`, same as pipeline
-  - `assistant_stt_model` is the session's own STT stage: `sarvam` (default, multilingual), or `cartesia`, `deepgram`, `elevenlabs` (all cascade-only). `native` is rejected — there is no realtime model to self-transcribe
+  - `assistant_stt_model` is the session's own STT stage: `sarvam` (default, multilingual), or `cartesia`, `deepgram`, `elevenlabs`, `openai` (all cascade-only). `native` is rejected — there is no realtime model to self-transcribe
   - `assistant_llm_config.provider` must be `openai` (the default); `model` defaults to `gpt-4.1`, so cheap text models like `gpt-4.1-mini` are available
   - The only mode reporting **per-component usage**: `stt_provider` / `stt_model` / `stt_audio_duration` land on `UsageRecord` and the end-of-call webhook alongside the LLM and TTS numbers
   - Does not use the Sarvam parallel tap; turn detection is local (in-process Silero VAD + a bundled audio end-of-utterance model), so nothing here needs LiveKit Cloud

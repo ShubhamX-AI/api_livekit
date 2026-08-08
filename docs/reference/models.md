@@ -88,15 +88,18 @@ don't always agree, see the quirks below.
 | `sarvam` | `pipeline` (default), `cascade` | `saaras:v3` (also `saaras:v2.5`, `saarika:v2.5`) | `language` default `unknown` (auto-detect); `mode` default `codemix` (also `transcribe`, `translate`, `verbatim`, `translit`; honoured in both pipeline and cascade) |
 | `cartesia` | `cascade` only | `ink-whisper` (43 languages) or `ink-2` (English only) | `language` fixed, no auto-detect; falls back to `assistant_interaction_config.preferred_languages[0]`, then `en` |
 | `deepgram` | `cascade` only | `nova-3` (multilingual, 45 languages); also `nova-2`, `flux-general-en` (English), `flux-general-multi` | `language` BCP-47 or `multi` (explicit auto-detect; omitted — falls back to `preferred_languages`, then `en`); `enable_diarization` (bool, default `false` — omitted stays **off**, never force-enabled); `keyterm` (string or list — omitted — not sent, no biasing); `api_key` falls back to system `DEEPGRAM_API_KEY` |
-| `elevenlabs` | `cascade` only | `scribe_v2_realtime` (auto-detects ~190 languages); also `scribe_v2`, `scribe_v1` | `language_code` BCP-47 (omit = auto-detect; falls back to `preferred_languages`, then auto-detect); `no_verbatim` (bool, default `false` — omitted keeps fillers); `api_key` falls back to system `ELEVENLABS_API_KEY` — the same variable the ElevenLabs TTS provider uses |
+| `elevenlabs` | `cascade` only | `scribe_v2_realtime` (auto-detects ~190 languages); also `scribe_v2`, `scribe_v1` | `language_code` BCP-47 (omit → falls back to `preferred_languages[0]`; auto-detect only when both are unset); `no_verbatim` (bool, default `false` — omitted keeps fillers); `api_key` falls back to system `ELEVENLABS_API_KEY` — the same variable the ElevenLabs TTS provider uses |
+| `openai` | `cascade` only (in `pipeline` it collapses to `native`) | `gpt-4o-mini-transcribe`; also `gpt-4o-transcribe`, `whisper-1` | `language` ISO-639-1, defaults to `preferred_languages[0]`, then `en`; `detect_language` (bool, default `false`) turns on auto-detect and overrides `language`; `prompt` (whisper-1 only); `noise_reduction_type` (`near_field` / `far_field`); `use_realtime` (bool, default **`true`** — streams over the realtime transcription socket); `api_key` falls back to system `OPENAI_API_KEY` — the same variable the cascade LLM uses |
 | `native` | `pipeline` only — rejected in `cascade` (no realtime model to self-transcribe) | n/a (the conversational LLM transcribes itself: `gpt-4o-mini-transcribe`) | no config |
 
 Ignored entirely in `realtime` mode (the model always transcribes itself).
 
 **Quirks worth knowing before you rely on them:**
 
-- A stored legacy value `assistant_stt_model="openai"` is silently rewritten to `"native"` at resolve
-  time — old data, not a documented option to send.
+- `assistant_stt_model="openai"` is a real cascade provider, but in **pipeline** mode it is rewritten
+  to `"native"` at resolve time: the pipeline's realtime model already transcribes with the same
+  vendor and the same `gpt-4o-mini-transcribe`, so a second connection would only cost money. (This
+  also keeps pre-migration rows, where `"openai"` *meant* native, working unchanged.)
 - If `sarvam` is selected with no API key available (neither in config nor `SARVAM_API_KEY`), pipeline
   mode silently degrades to `native` rather than erroring.
 - The `mode` config key is honoured in **both** pipeline and cascade, and defaults to `codemix` in
@@ -132,9 +135,16 @@ provider (cartesia / deepgram / elevenlabs) degrades to native transcription wit
 | `deepgram` | `keyterm` | not sent | bias recognition toward a term | a string/list biases recognition (`nova-3`/`flux` only); **omitted — the key is not sent, no biasing** |
 | `deepgram` | `api_key` | system `DEEPGRAM_API_KEY` | auth | override wins; both missing → **pipeline** degrades to `native` (warning), **cascade** aborts |
 | `elevenlabs` | `model` | `scribe_v2_realtime` | auto-detects ~190 languages | `scribe_v2`, `scribe_v1`; omitted keeps the default |
-| `elevenlabs` | `language_code` | omitted = auto-detect; else first `preferred_languages` entry | BCP-47 pins one language; omitting enables auto-detect | set a code to pin (**disables auto-detect**); omit to auto-detect (or first preferred language) |
+| `elevenlabs` | `language_code` | first `preferred_languages` entry; auto-detect only when that is empty too | BCP-47 pins one language; auto-detect needs **both** unset | set a code to pin (**disables auto-detect**); omit *and* clear `preferred_languages` to auto-detect |
 | `elevenlabs` | `no_verbatim` | `false` | strip filler words from the transcript when `true` | `true` strips fillers; **omitted stays `false` — fillers kept** |
 | `elevenlabs` | `api_key` | system `ELEVENLABS_API_KEY` | auth — one variable covers both the STT and TTS stages | override wins; both missing → **pipeline** degrades to `native` (warning), **cascade** aborts |
+| `openai` | `model` | `gpt-4o-mini-transcribe` | which OpenAI transcription model runs | `gpt-4o-transcribe` is more accurate and dearer; `whisper-1` is the legacy batch model (the only one that reads `prompt`). `gpt-realtime-whisper` is **rejected** — it has no server-side endpointing and needs a client-side VAD this runtime can't hand it |
+| `openai` | `language` | first `preferred_languages` entry, then `en` | one fixed ISO-639-1 language | set a code to pin it; **omitted does not auto-detect** — OpenAI STT defaults to English, so the factory pins the preferred language instead. Ignored when `detect_language` is `true` |
+| `openai` | `detect_language` | `false` | auto-detect the spoken language | `true` blanks `language` and lets the model detect; omitted keeps the pinned language |
+| `openai` | `prompt` | not sent | biases spellings/jargon (names, product terms) | a string biases recognition on **`whisper-1` only**; the gpt-4o transcribe models ignore it |
+| `openai` | `noise_reduction_type` | not sent | server-side noise reduction | `near_field` (headset) or `far_field` (speakerphone / room mic); omitted sends none |
+| `openai` | `use_realtime` | `true` | streams over OpenAI's realtime transcription WebSocket (interim results, low latency) | `false` switches to the batch REST API — cheaper, but adds a full utterance of latency per turn and gives no interim results. **This inverts the plugin's own default**, which is batch |
+| `openai` | `api_key` | system `OPENAI_API_KEY` | auth — the same variable the cascade LLM stage uses | override wins; both missing → **cascade** aborts (in pipeline the provider is already collapsed to `native`) |
 
 `native` (pipeline only) takes no config — the conversational LLM transcribes itself
 (`gpt-4o-mini-transcribe`).
@@ -162,12 +172,21 @@ These are the easy-to-miss traps. All statements match the plugin behaviour in L
   BCP-47 code or `multi`, never a mix of the two.
 - **Fallback asymmetry — the big one for phone callers.** When `language`/`language_code` is omitted,
   the providers **do not all auto-detect**:
-  - `elevenlabs`: falls back to `preferred_languages[0]`, else the provider auto-detects (~190 langs) — safe for multilingual.
+  - `elevenlabs`: falls back to `preferred_languages[0]`, else the provider auto-detects (~190 langs) — but a non-empty `preferred_languages` **pins the first entry and turns auto-detect off**, which is the opposite of what the field name suggests.
   - `deepgram`: falls back to `preferred_languages[0]`, else **`en`** (NOT `multi`). A caller switching to a language you didn't list lands on English → mis-transcribed. Prefer setting `language: "multi"` when callers may be multilingual.
+  - `openai`: falls back to `preferred_languages[0]`, else **`en`**. Set `detect_language: true` for auto-detect — there is no "auto" language code.
   - `sarvam` (`unknown`) and `cartesia` (pinned) differ again — never assume a uniform default.
 - **Pinning `language_code` (ElevenLabs) disables auto-detect.** `omit` → auto-detect; `set` → pinned & detection off. So a caller who switches languages mid-call is mis-transcribed once pinned. Set it only when a fixed language is guaranteed.
 - **One `ELEVENLABS_API_KEY` covers both stages,** STT and TTS. The per-assistant fields stay separate, though: `assistant_stt_config.api_key` and `assistant_tts_config.api_key` are scoped to whichever provider that stage selected, so on a mixed assistant they hold two different vendors' keys. Sending one vendor's key on another vendor's path fails auth (Sarvam answers `403`).
 - **Missing key in cascade aborts (no fallback).** If neither a config `api_key` nor the system env var is present, `create_stt` returns `None` and the cascade job is abandoned (logged) — it does **not** silently switch models. In `pipeline` mode the same selection only degrades to `native` transcription with a warning.
+- **OpenAI STT: `prompt` only works on `whisper-1`.** The `gpt-4o-transcribe` family accepts the
+  field and ignores it — no error, no biasing. If you need prompt biasing, pick `whisper-1` (and
+  accept that it is the slower, batch-only model).
+- **OpenAI STT: `use_realtime: false` is a latency decision, not a cosmetic one.** Batch mode holds
+  each utterance until it ends, then transcribes it in one HTTP call — no interim results, and the
+  turn-taking pipeline waits. Only switch it off when cost beats responsiveness.
+- **OpenAI STT: `detect_language` beats `language`.** Setting both is not an error — `language` is
+  simply dropped. Pick one.
 - **Multilingual billing.** Deepgram `language: "multi"` (and any multilingual detection) is billed at a higher per-minute rate than monolingual. Factor this in before enabling it broadly.
 
 ## TTS

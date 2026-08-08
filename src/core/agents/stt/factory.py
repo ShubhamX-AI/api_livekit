@@ -1,6 +1,6 @@
 """Resolve the user-transcription source from the assistant's STT model + config."""
 
-from livekit.plugins import cartesia, deepgram, elevenlabs, sarvam
+from livekit.plugins import cartesia, deepgram, elevenlabs, openai, sarvam
 
 from src.core.config import settings
 from src.core.logger import logger
@@ -11,13 +11,16 @@ def resolve_stt(assistant) -> tuple[str, dict]:
 
     "sarvam" runs Sarvam Saras v3 as a parallel audio tap (native-script Indic
     transcripts); "native" lets the conversational LLM transcribe itself
-    (OpenAI gpt-4o-mini-transcribe, or Gemini's own); "cartesia", "deepgram" and
-    "elevenlabs" are cascade-only plugins — resolved here but only instantiated by
-    create_stt. Ignored in realtime (audio-out) mode.
+    (OpenAI gpt-4o-mini-transcribe, or Gemini's own); "cartesia", "deepgram",
+    "elevenlabs" and "openai" are cascade-only plugins — resolved here but only
+    instantiated by create_stt. Ignored in realtime (audio-out) mode.
     """
     model = assistant.assistant_stt_model or "sarvam"
     if model == "openai":
-        # ponytail: pre-migration rows; delete once scripts/migrate_stt_config.py has run everywhere
+        # In pipeline mode the OpenAI STT plugin buys nothing over the realtime model's own
+        # transcription — same vendor, same gpt-4o-mini-transcribe, one less connection. It
+        # is a cascade-only provider, so collapse it to native here. This also keeps the
+        # pre-migration rows (where "openai" *meant* native) working unchanged.
         model = "native"
     config = assistant.assistant_stt_config or {}
 
@@ -145,8 +148,49 @@ def create_stt(assistant):
             api_key=api_key,
         )
 
+    if model == "openai":
+        api_key = stt_config.get("api_key") or settings.OPENAI_API_KEY
+        if not api_key:
+            logger.error(f"No OpenAI API key for cascade assistant {assistant_id}")
+            return None
+        openai_model = stt_config.get("model", "gpt-4o-mini-transcribe")
+        # gpt-realtime-whisper has no server-side endpointing: the plugin then wants a
+        # livekit-plugins-silero VAD to commit the buffer, which is not installed here
+        # (the session's VAD is inference.VAD from livekit-local-inference and cannot be
+        # handed to the STT). Constructing it would raise ImportError at job start.
+        if openai_model.startswith("gpt-realtime-whisper"):
+            logger.error(
+                f"OpenAI STT model {openai_model!r} is not supported for assistant "
+                f"{assistant_id} — it needs a client-side VAD to commit audio. Use "
+                "'gpt-4o-mini-transcribe', 'gpt-4o-transcribe' or 'whisper-1'."
+            )
+            return None
+        interaction = getattr(assistant, "assistant_interaction_config", None)
+        preferred = getattr(interaction, "preferred_languages", None)
+        # detect_language wins: the plugin blanks `language` when it is set, which is how
+        # auto-detect is expressed. Otherwise pin one — OpenAI STT defaults to English.
+        detect_language = bool(stt_config.get("detect_language", False))
+        language = stt_config.get("language") or (preferred or ["en"])[0]
+        kwargs: dict[str, object] = {}
+        if stt_config.get("prompt"):
+            # whisper-1 only; the gpt-4o transcribe models ignore it.
+            kwargs["prompt"] = stt_config["prompt"]
+        if stt_config.get("noise_reduction_type"):
+            kwargs["noise_reduction_type"] = stt_config["noise_reduction_type"]
+        # use_realtime streams over the transcription WebSocket (interim results, much
+        # lower latency); the plugin default is the batch REST API, which is wrong for a
+        # live call, so default the other way.
+        return openai.STT(
+            model=openai_model,
+            language=language,
+            detect_language=detect_language,
+            use_realtime=stt_config.get("use_realtime", True),
+            api_key=api_key,
+            **kwargs,
+        )
+
     logger.error(
         f"Unsupported cascade STT model {model!r} for assistant {assistant_id} "
-        "— cascade supports 'sarvam', 'cartesia', 'deepgram' or 'elevenlabs'"
+        "— cascade supports 'sarvam', 'cartesia', 'deepgram', 'elevenlabs' or 'openai'"
     )
     return None

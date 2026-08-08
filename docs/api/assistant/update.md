@@ -55,7 +55,7 @@ Update an existing assistant. Only send fields you want to change.
     | `assistant_mode` | string | Yes | Set to `pipeline`. |
     | `assistant_tts_model` | string | Conditional | Required only if no TTS config exists in DB. |
     | `assistant_tts_config` | object | Conditional | Required if `assistant_tts_model` is provided. Must be sent together. |
-    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. `cartesia`, `deepgram` and `elevenlabs` are cascade-only. |
+    | `assistant_stt_model` | string | No | `sarvam` (default when never set) or `native`. `cartesia`, `deepgram`, `elevenlabs` and `openai` are cascade-only. |
     | `assistant_stt_config` | object | No | Config for the selected STT provider. Requires `assistant_stt_model`; omit it to reset that provider's defaults. |
 
     !!! note "Stale realtime LLM config is cleared automatically"
@@ -121,7 +121,7 @@ Update an existing assistant. Only send fields you want to change.
     | :--- | :--- | :--- | :--- |
     | `assistant_mode` | string | Yes | Set to `cascade`. |
     | `assistant_tts_model` + `assistant_tts_config` | | Conditional | Required only if no TTS config is already stored on the assistant. |
-    | `assistant_stt_model` | string | Conditional | Required in this same request if the stored value is `native`, which cascade rejects. `sarvam`, `cartesia`, `deepgram` or `elevenlabs`. Per-provider `assistant_stt_config` fields: see the Cascade STT tabs in [create.md](create.md). |
+    | `assistant_stt_model` | string | Conditional | Required in this same request if the stored value is `native`, which cascade rejects. `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai`. Per-provider `assistant_stt_config` fields: see the Cascade STT tabs in [create.md](create.md). |
     | `assistant_llm_config` | object | No | If sent, `provider` must be `openai`. Any stored Gemini config is cleared automatically when leaving realtime mode. |
 
     !!! warning "A stored `native` STT blocks the switch"
@@ -129,7 +129,7 @@ Update an existing assistant. Only send fields you want to change.
         If the assistant currently has `assistant_stt_model: "native"`, send a replacement in the
         same request or the update fails with `400`.
 
-    - Changing `assistant_stt_model` to `deepgram` or `elevenlabs` requires the matching `assistant_stt_config` in the same request if the stored value is `native`. All of their config fields (`model`, `language` / `language_code`, `keyterm`, `enable_diarization`, `no_verbatim`) are optional — sending `assistant_stt_model` without a config resets that provider's config to its defaults. Per-provider fields: see the Cascade STT tabs in [create.md](create.md).
+    - Changing `assistant_stt_model` to `deepgram`, `elevenlabs` or `openai` requires the matching `assistant_stt_config` in the same request if the stored value is `native`. All of their config fields (`model`, `language` / `language_code`, `keyterm`, `enable_diarization`, `no_verbatim`, `detect_language`, `use_realtime`) are optional — sending `assistant_stt_model` without a config resets that provider's config to its defaults. Per-provider fields: see the Cascade STT tabs in [create.md](create.md).
 
     **Example request**
 
@@ -147,6 +147,24 @@ Update an existing assistant. Only send fields you want to change.
       }'
     ```
 
+    **Example — switch the STT stage to OpenAI** (assistant already in cascade)
+
+    ```bash
+    curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_stt_model": "openai",
+        "assistant_stt_config": {
+          "model": "gpt-4o-transcribe",
+          "detect_language": true
+        }
+      }'
+    ```
+
+    Sending `{"assistant_stt_model": "openai"}` alone is also valid — it resets the config to
+    OpenAI's defaults (`gpt-4o-mini-transcribe`, streaming, language from `preferred_languages`).
+
 ---
 
 ## Validation Rules
@@ -157,7 +175,7 @@ Update an existing assistant. Only send fields you want to change.
 - In `pipeline` mode, only `assistant_llm_config.api_key` affects runtime behavior.
 - Switching to `realtime` requires `assistant_llm_config`.
 - Switching to `pipeline` or `cascade` requires TTS fields **only if no TTS config exists in DB**. If the assistant previously had a TTS config, it is preserved and reused — you do not need to re-send it.
-- In `cascade` mode, `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (`native` returns `400`/`422`), and `assistant_llm_config.provider` must be `openai` or omitted.
+- In `cascade` mode, `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` returns `400`/`422`), and `assistant_llm_config.provider` must be `openai` or omitted.
 - The mode rules are re-checked against the **stored** assistant, not just the request. A PATCH that switches mode is judged on the merged result, so `{"assistant_mode": "cascade"}` against a row that still holds `provider: "gemini"` or a non-allowlisted `model` returns `400` — send the corrected `assistant_llm_config` in the same request.
 - `assistant_llm_config.model` is validated per mode: an OpenAI realtime ID in `pipeline`/`realtime`, an allowlisted chat model in `cascade`. Gemini realtime model IDs are not validated.
 - Unknown keys in `assistant_llm_config`, `assistant_tts_config` (including `voice_settings`) or `assistant_stt_config` return `422`.

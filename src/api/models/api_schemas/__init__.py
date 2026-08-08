@@ -28,6 +28,7 @@ from .config.stt_config import (
     DeepgramSTTConfig,
     ElevenLabsSTTConfig,
     NativeSTTConfig,
+    OpenAISTTConfig,
     SarvamSTTConfig,
     STTConfig,
 )
@@ -85,6 +86,7 @@ __all__ = [
     "CartesiaSTTConfig",
     "DeepgramSTTConfig",
     "ElevenLabsSTTConfig",
+    "OpenAISTTConfig",
     "STTConfig",
     "inject_provider_type",
     "inject_stt_config",

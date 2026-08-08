@@ -28,7 +28,7 @@ LLM, STT and TTS are actually valid lives in the
 - `assistant_mode="realtime"` requires `assistant_llm_config`.
 - In `realtime` mode, Gemini fields still have defaults: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`. `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
-- `assistant_mode="cascade"` requires `assistant_tts_model` + `assistant_tts_config`; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram` or `elevenlabs` (`native` rejected); `assistant_llm_config.provider` must be `openai` or unset.
+- `assistant_mode="cascade"` requires `assistant_tts_model` + `assistant_tts_config`; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` rejected); `assistant_llm_config.provider` must be `openai` or unset.
 - `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
 - `assistant_interaction_config.speaks_first` works in all three modes.
 - Unknown keys inside `assistant_llm_config`, `assistant_tts_config` or `assistant_stt_config` are rejected with `422` rather than ignored.

@@ -46,7 +46,7 @@ table in [Models & Providers](reference/models.md#tts).
 - **Native LLM transcription** — the conversational LLM transcribes itself (OpenAI `gpt-4o-mini-transcribe`, or Gemini's own) when `assistant_stt_model="native"`, and always in full realtime mode; same fragment coalescing and end-of-call drain as the Sarvam path
 - **First-class STT stage (cascade mode)** — the same `assistant_stt_model` selects the session's own STT stage instead of a side tap, and the LLM sees only that transcript, so a transcription fix also fixes understanding
 - **Multilingual transcription** — Sarvam `saaras:v3` with `language="unknown"` (auto-detect) and `mode="codemix"` keeps code-switching intact inside a single utterance, across 24 Indic language codes
-- Per-assistant STT provider selection, same shape as TTS: `assistant_stt_model` (`sarvam` default, `native`, or `cartesia`/`deepgram`/`elevenlabs` in cascade) + `assistant_stt_config`
+- Per-assistant STT provider selection, same shape as TTS: `assistant_stt_model` (`sarvam` default, `native`, or `cartesia`/`deepgram`/`elevenlabs`/`openai` in cascade) + `assistant_stt_config`
 - Per-assistant STT `api_key`, `model`, `language` and `mode` in `assistant_stt_config`, separate from the TTS provider key
 - Phone vs. web noise-reduction branching: `far_field` (G.711/PSTN) vs. `near_field` (browser mic) sent to OpenAI Realtime
 - Local turn detection for cascade calls: in-process Silero VAD (`inference.VAD(model="silero")`) plus a bundled audio end-of-utterance model (`inference.TurnDetector(version="v1-mini")`) — no Cloud dependency on a self-hosted server

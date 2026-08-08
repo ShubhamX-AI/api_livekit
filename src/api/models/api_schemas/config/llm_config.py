@@ -132,7 +132,7 @@ def validate_mode_config(mode, llm_config, stt_model) -> None:
         if stt_model == "native":
             raise ValueError(
                 "assistant_stt_model 'native' is not valid in cascade mode — "
-                "choose 'sarvam' (multilingual), 'cartesia', 'deepgram' or 'elevenlabs'."
+                "choose 'sarvam' (multilingual), 'cartesia', 'deepgram', 'elevenlabs' or 'openai'."
             )
         if provider and provider != "openai":
             raise ValueError(

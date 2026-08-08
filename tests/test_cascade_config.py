@@ -275,6 +275,66 @@ class TestCreateSTT(unittest.TestCase):
                     )
                 )
             )
+        with mock.patch("src.core.agents.stt.factory.settings.OPENAI_API_KEY", ""):
+            self.assertIsNone(
+                create_stt(
+                    make_assistant(assistant_stt_model="openai", assistant_stt_config={})
+                )
+            )
+
+
+class TestOpenAISTT(unittest.TestCase):
+    def _stt(self, preferred_languages=None, **config):
+        return create_stt(
+            make_assistant(
+                preferred_languages=preferred_languages,
+                assistant_stt_model="openai",
+                assistant_stt_config={"api_key": "k", **config},
+            )
+        )
+
+    def test_defaults_stream_over_the_realtime_socket(self):
+        """The plugin default is batch REST — a live call needs the streaming path."""
+        stt = self._stt()
+        self.assertEqual(stt._opts.model, "gpt-4o-mini-transcribe")
+        self.assertTrue(stt.capabilities.streaming)
+        self.assertTrue(stt.capabilities.interim_results)
+
+    def test_use_realtime_false_falls_back_to_batch(self):
+        self.assertFalse(self._stt(use_realtime=False).capabilities.streaming)
+
+    def test_language_defaults_to_english(self):
+        self.assertEqual(self._stt()._opts.language, "en")
+
+    def test_falls_back_to_preferred_language(self):
+        self.assertEqual(self._stt(preferred_languages=["hi"])._opts.language, "hi")
+
+    def test_explicit_language_beats_preferred(self):
+        self.assertEqual(
+            self._stt(preferred_languages=["hi"], language="ta")._opts.language, "ta"
+        )
+
+    def test_detect_language_blanks_the_pinned_language(self):
+        """The plugin expresses auto-detect as an empty language code."""
+        stt = self._stt(preferred_languages=["hi"], detect_language=True)
+        self.assertTrue(stt._opts.detect_language)
+        self.assertEqual(stt._opts.language, "")
+
+    def test_optional_knobs_stay_unset_by_default(self):
+        stt = self._stt()
+        self.assertFalse(stt._opts.prompt)
+        self.assertFalse(stt._opts.noise_reduction_type)
+
+    def test_optional_knobs_forwarded(self):
+        stt = self._stt(
+            model="whisper-1", prompt="Acme Corp", noise_reduction_type="far_field"
+        )
+        self.assertEqual(stt._opts.prompt, "Acme Corp")
+        self.assertEqual(stt._opts.noise_reduction_type, "far_field")
+
+    def test_realtime_whisper_is_rejected(self):
+        """No server-side endpointing: the plugin would need a silero VAD we don't ship."""
+        self.assertIsNone(self._stt(model="gpt-realtime-whisper"))
 
 
 class TestCreateLLM(unittest.TestCase):
@@ -381,6 +441,17 @@ class TestCascadeSchemaRules(unittest.TestCase):
         )
         self.assertEqual(request.assistant_stt_config.type, "elevenlabs")
         self.assertEqual(request.assistant_stt_config.no_verbatim, True)
+
+    def test_cascade_accepts_openai_stt(self):
+        request = CreateAssistant(
+            **self.BASE,
+            assistant_stt_model="openai",
+            assistant_stt_config={"model": "gpt-4o-transcribe", "detect_language": True},
+        )
+        self.assertEqual(request.assistant_stt_config.type, "openai")
+        self.assertEqual(request.assistant_stt_config.model, "gpt-4o-transcribe")
+        self.assertTrue(request.assistant_stt_config.detect_language)
+        self.assertTrue(request.assistant_stt_config.use_realtime)
 
     def test_cascade_rejects_native_stt(self):
         with self.assertRaises(ValidationError):
@@ -897,6 +968,7 @@ class TestUnknownConfigKeys(unittest.TestCase):
             (stt_schemas.CartesiaSTTConfig, {}),
             (stt_schemas.DeepgramSTTConfig, {}),
             (stt_schemas.ElevenLabsSTTConfig, {}),
+            (stt_schemas.OpenAISTTConfig, {}),
         ]
         for model_cls, base in cases:
             with self.subTest(model=model_cls.__name__):
