@@ -7,6 +7,7 @@ from src.api.dependencies import get_current_user
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import APIKey, AudioAsset
 from src.core.logger import logger
+from src.core.providers.keys import redact_text
 from src.services.storage import s3_audio
 from src.services.storage.audio_transcode import (
     AudioDecodeError,
@@ -51,7 +52,7 @@ async def upload_audio(
     except AudioTooLong:
         raise HTTPException(status_code=400, detail="Audio must be 30 seconds or shorter")
     except AudioDecodeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=redact_text(str(e)))
 
     audio_id = str(uuid.uuid4())
     key = await asyncio.to_thread(s3_audio.upload, audio_id, wav_bytes)

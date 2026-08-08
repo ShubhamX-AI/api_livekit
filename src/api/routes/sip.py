@@ -4,6 +4,7 @@ from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import OutboundSIP, APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger
+from src.core.providers.keys import redact_text
 from src.services.livekit.livekit_svc import LiveKitService
 from google.protobuf.json_format import MessageToDict
 from datetime import datetime, timezone
@@ -42,7 +43,7 @@ async def create_outbound_trunk(
                 logger.error(f"Failed to create outbound trunk in LiveKit: {e}")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to create outbound trunk in LiveKit: {str(e)}",
+                    detail=f"Failed to create outbound trunk in LiveKit: {redact_text(str(e))}",
                 )
         elif request.trunk_type == "exotel":
             # Local Exotel trunk, just generate a trunk_id
@@ -73,7 +74,7 @@ async def create_outbound_trunk(
         logger.error(f"Failed to create/insert outbound trunk: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to create outbound trunk: {str(e)}",
+            detail=f"Failed to create outbound trunk: {redact_text(str(e))}",
         )
 
     logger.info(f"Outbound trunk created successfully: {trunk_id}")

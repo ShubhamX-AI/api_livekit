@@ -74,10 +74,18 @@ app = FastAPI(title="LiveKit AI Backend", version="1.0.0", lifespan=lifespan)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     from fastapi.encoders import jsonable_encoder
 
-    # Clean up errors to ensure they are JSON serializable
-    errors = jsonable_encoder(exc.errors())
+    from src.core.providers.keys import redact_validation_errors
 
-    error_msg = str(exc)
+    # Clean up errors to ensure they are JSON serializable, then strip the submitted
+    # values: both `exc.errors()[].input` and `str(exc)` echo the rejected value, which
+    # for an `api_key` field means handing the caller's secret back in the 422 body and
+    # writing it to the log. Build the message from `loc`/`msg` only, never `str(exc)`.
+    errors = redact_validation_errors(jsonable_encoder(exc.errors()))
+
+    error_msg = "; ".join(
+        f"{'.'.join(str(part) for part in error.get('loc', ()))}: {error.get('msg', '')}"
+        for error in errors
+    )
 
     # Check for JSON invalid errors to provide better hints
     for error in errors:
@@ -103,10 +111,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    from src.core.providers.keys import redact_text
+
+    # Route handlers raise details that may embed a caught exception's text (which
+    # can carry a secret), so scrub before it reaches the body.
     return JSONResponse(
         status_code=exc.status_code,
         content=apiResponse(
-            success=False, message=str(exc.detail), data={}
+            success=False, message=redact_text(str(exc.detail)), data={}
         ).model_dump(),
     )
 
@@ -115,14 +127,18 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def generic_exception_handler(request: Request, exc: Exception):
     import traceback
 
-    error_msg = str(exc)
-    trace = traceback.format_exc()
-    logger.error(f"Generic Error: {error_msg}\nTraceback: {trace}")
+    from src.core.providers.keys import redact_text
 
+    trace = traceback.format_exc()
+    logger.error(f"Generic Error: {trace}")
+
+    # Never echo str(exc) back to the caller — third-party SDK / DB error text can
+    # contain the submitted api_key. The full trace is logged above; the client only
+    # sees a redacted fragment.
     return JSONResponse(
         status_code=500,
         content=apiResponse(
-            success=False, message=f"Internal Server Error: {error_msg}", data={}
+            success=False, message=f"Internal Server Error: {redact_text(str(exc))}", data={}
         ).model_dump(),
     )
 

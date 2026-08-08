@@ -134,13 +134,11 @@ class ElevenLabsNonStreamingTTS(tts.TTS):
         )
 
         elevenlabs_api_key = (
-            api_key
-            if is_given(api_key)
-            else os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY")
+            api_key if is_given(api_key) else os.environ.get("ELEVENLABS_API_KEY", "")
         )
         if not elevenlabs_api_key:
             raise ValueError(
-                "ElevenLabs API key is required, either as argument or set ELEVENLABS_API_KEY (or legacy ELEVENLABS_API_KEY) environment variable"
+                "ElevenLabs API key is required, either as argument or set ELEVENLABS_API_KEY environment variable"
             )
 
         self._opts = _TTSOptions(

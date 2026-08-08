@@ -7,6 +7,7 @@ from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import OutboundSIP, APIKey, Assistant, OutboundCallQueue, CallRecord
 from src.api.dependencies import get_current_user
 from src.core.logger import logger
+from src.core.providers.keys import redact_text
 from src.services.livekit.livekit_svc import LiveKitService
 
 router = APIRouter()
@@ -91,7 +92,7 @@ async def get_queue_status(
             "queued_at": item.queued_at.isoformat(),
             "dispatched_at": item.dispatched_at.isoformat() if item.dispatched_at else None,
             "retry_count": item.retry_count,
-            "last_error": item.last_error,
+            "last_error": redact_text(item.last_error) if item.last_error else None,
         },
     )
 
@@ -224,10 +225,15 @@ async def list_call_records(
 
 @router.post("/end_call")
 async def end_call(request: Request, _: dict = Body(...)):
+    from src.core.providers.keys import mask_secret_values
+
     logger.info("Received payload after end call")
+
     body = await request.json()
+    # The caller's webhooks may include credential-looking fields (Authorization,
+    # api_key, tokens); don't round-trip those verbatim in the response body.
     return apiResponse(
         success=True,
         message="Call ended successfully",
-        data=body,
+        data=mask_secret_values(body),
     )

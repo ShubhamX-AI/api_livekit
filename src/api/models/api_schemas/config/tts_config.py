@@ -11,7 +11,7 @@ class CartesiaTTSConfig(BaseModel):
 
     type: Literal["cartesia"] = "cartesia"  # discriminator field
     voice_id: str = Field(..., min_length=1, max_length=100, description="Cartesia voice ID")
-    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Cartesia API key (optional, falls back to system key)")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Cartesia API key (optional, falls back to system key)")
     language: str = Field("en", max_length=10, description="BCP-47 language code for the input text (default: en). Only affects pronunciation; set to the caller's language when known.")
     # Numeric only. The preset strings ("slow"/"normal"/"fast") belong to Cartesia's older
     # models; sonic-3 — which this platform pins — raises
@@ -38,7 +38,7 @@ class SarvamTTSConfig(BaseModel):
     pace: float = Field(1.0, ge=0.3, le=3.0, description="Speaking pace multiplier, 0.3–3.0 (1.0 = normal; >1.0 faster).")
     speech_sample_rate: Literal[8000, 16000, 22050, 24000, 32000, 44100, 48000] = Field(24000, description="Output audio sample rate in Hz. Use 24000 for general voice agents and 8000 only for narrowband telephony.")
     temperature: float = Field(0.3, ge=0.01, le=2.0, description="TTS sampling temperature, 0.01–2.0. Lower is more stable. Applies to bulbul:v3.")
-    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_stt_config.api_key.")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_stt_config.api_key.")
 
 
 class ElevenLabsVoiceSettings(BaseModel):
@@ -58,7 +58,7 @@ class ElevenLabsTTSConfig(BaseModel):
     voice_id: str = Field(..., min_length=1, max_length=100, description="ElevenLabs voice ID")
     model: str = Field("eleven_v3", max_length=40, description="ElevenLabs TTS model: eleven_v3 (default), eleven_multilingual_v2, eleven_turbo_v2_5 or eleven_flash_v2_5.")
     voice_settings: Optional[ElevenLabsVoiceSettings] = Field(None, description="Voice settings (stability, similarity_boost, style, speed, use_speaker_boost). Applies to all models.")
-    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="ElevenLabs API key (optional, falls back to system key)")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="ElevenLabs API key (optional, falls back to system key)")
 
 
 class MistralTTSConfig(BaseModel):
@@ -66,7 +66,7 @@ class MistralTTSConfig(BaseModel):
 
     type: Literal["mistral"] = "mistral"
     voice_id: str = Field(..., min_length=1, max_length=100, description="Mistral voice ID")
-    api_key: ProviderApiKey = Field(None, min_length=1, max_length=100, description="Mistral API key (optional, falls back to system key)")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Mistral API key (optional, falls back to system key)")
 
 
 # Discriminated union type

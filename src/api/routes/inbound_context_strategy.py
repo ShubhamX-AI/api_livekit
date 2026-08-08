@@ -15,7 +15,7 @@ from src.core.db.db_schemas import (
     InboundSIP,
 )
 from src.core.logger import logger
-from src.core.providers.keys import mask_secret_values
+from src.core.providers.keys import mask_secret_values, redact_text
 
 router = APIRouter()
 
@@ -65,7 +65,7 @@ async def create_inbound_context_strategy(
         logger.error(f"Failed to create inbound context strategy: {exc}")
         raise HTTPException(
             status_code=400,
-            detail=f"Failed to create inbound context strategy: {exc}",
+            detail=f"Failed to create inbound context strategy: {redact_text(str(exc))}",
         )
 
     return apiResponse(

@@ -5,7 +5,7 @@ from src.api.models.api_schemas import (
     UpdateAssistant,
     validate_mode_config,
 )
-from src.core.providers.keys import mask_assistant_keys
+from src.core.providers.keys import mask_assistant_keys, redact_text
 from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Assistant, APIKey, CallRecord, AudioAsset
 from src.api.dependencies import get_current_user
@@ -70,7 +70,7 @@ def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str 
     except ValueError as e:
         # 400 (not 422): the request itself is well-formed — it is the combination with
         # what is already stored that cannot run.
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=redact_text(str(e)))
 
 
 # Create new assistant
@@ -102,7 +102,7 @@ async def create_assistant(
         await new_assistant.insert()
     except Exception as e:
         logger.error(f"Failed to create assistant: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to create assistant: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to create assistant: {redact_text(str(e))}")
 
     logger.info(f"Assistant created successfully: {assistant_id}")
     return apiResponse(

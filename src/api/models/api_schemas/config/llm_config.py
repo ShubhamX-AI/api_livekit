@@ -84,7 +84,7 @@ class AssistantLLMConfig(BaseModel):
     provider: Optional[Literal["gemini", "openai"]] = Field(None, description="LLM vendor. 'openai' in pipeline and cascade mode (the only value accepted there); 'gemini' (default) or 'openai' in realtime mode. Defaults to openai in pipeline/cascade and gemini in realtime.")
     model: Optional[str] = Field(None, description="Model override for the selected provider. Validated per mode: an OpenAI realtime ID in pipeline/realtime mode, an allowlisted OpenAI chat model in cascade mode. Gemini realtime model IDs are not validated.")
     voice: Optional[str] = Field(None, description="Voice override. Used when the model speaks its own audio (realtime mode).")
-    api_key: ProviderApiKey = Field(None, min_length=1, max_length=200, description="Provider API key override for the selected provider (openai or gemini).")
+    api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Provider API key override for the selected provider (openai or gemini).")
 
     # Generation knobs. These are applied to the cascade LLM (openai.responses.LLM);
     # they are harmless (ignored) in the realtime/pipeline modes. See

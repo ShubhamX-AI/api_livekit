@@ -4,7 +4,7 @@ from src.api.models.response_models import apiResponse
 from src.core.db.db_schemas import Tool, Assistant, APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger
-from src.core.providers.keys import mask_secret_values
+from src.core.providers.keys import mask_secret_values, redact_text
 import uuid
 from datetime import datetime, timezone
 
@@ -40,7 +40,7 @@ async def create_tool(
         await new_tool.insert()
     except Exception as e:
         logger.error(f"Failed to create tool: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to create tool: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to create tool: {redact_text(str(e))}")
 
     logger.info(f"Tool created successfully: {tool_id}")
     return apiResponse(

@@ -50,3 +50,18 @@ All endpoints return a standard envelope with `success`, `message`, and `data`.
 - Current routes generally return `200` on successful create/update/delete operations.
 - Route-specific pages are the source of truth for endpoint-specific statuses.
 - `502` and `504` are not guaranteed on every route. For example, asynchronous flows such as `POST /call/outbound` with Exotel can return `202 Accepted` first and later report final provider outcome via webhook `data.call_status`.
+
+## Secret redaction
+
+Error responses never echo back secret material. Before any exception message or validation
+detail reaches the response body, secret-shaped substrings are masked with `****`:
+
+- **Validation errors (`422`)** — the `input` value of a field whose `loc` names a secret
+  (`api_key`, `token`, `secret`, `password`, `authorization`) is replaced by `"****"`, as is
+  any *nested* dict inside that value whose key is secret. Non-secret fields are unchanged.
+- **Exception messages (`400`/`500`/`502`/`504`)** — free-form text is scrubbed for:
+  - labelled assignments, e.g. `api_key=sk-...`, `Authorization: Bearer ...`;
+  - key prefixes (`sk-proj-`, `sk-ant-`, `AIza`, `ghp_`, ...) and the full masked remainder;
+  - `Bearer <token>` headers and any opaque 32+-character token that walks like a credential.
+
+Opaque provider error details are logged server-side in full; only the HTTP body is scrubbed.

@@ -94,6 +94,19 @@ is absent.
 Keep the "what changes if you change it" per-column style already in
 `docs/reference/models.md` — it is what users rely on.
 
+## Recent changes — secret redaction + key caps (2026-08)
+
+- **Error responses never echo secrets.** `redact_text` in `src/core/providers/keys.py`
+  scrubs secret-shaped substrings out of any exception message before it reaches an HTTP
+  body (labelled `api_key=…`/`Authorization: Bearer …` assignments, key prefixes
+  `sk-proj-`/`sk-ant-`/`AIza`/`ghp_`, bare `Bearer <jwt>`, and 32+-char opaque tokens).
+  `redact_validation_errors` masks a failing field's `input` when the field `loc` is a
+  secret name (and any nested dict value whose key is secret). Endpoints must not
+  interpolate a raw exception into `detail` — run it through `redact_text` first.
+- **Provider key cap is now 500 characters** on every `api_key` field (was 100 on
+  STT/TTS, 200 on LLM). `ProviderApiKey` stays an `Annotated` type; the per-field
+  `max_length=500` is intentional so validation errors name the offending field.
+
 ## Recent changes — mode guardrails (2026-08)
 
 Combinations that used to be accepted and then failed at call time are now rejected

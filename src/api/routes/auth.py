@@ -5,6 +5,7 @@ from src.core.db.db_schemas import APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger,setup_logging
 import secrets
+from src.core.providers.keys import redact_text
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ async def create_api_key(request: CreateApiKey):
         await user.insert()
     except Exception as e:
         logger.error(f"Failed to create API key: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=redact_text(str(e))) 
     
     logger.info(f"API key created successfully")
     return apiResponse(
