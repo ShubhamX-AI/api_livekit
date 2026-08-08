@@ -5,6 +5,7 @@ import asyncio
 from livekit.agents.types import NOT_GIVEN
 from livekit.plugins import cartesia, sarvam
 
+from src.core.agents.stt.lang import validate_language
 from src.core.config import settings
 from src.core.logger import logger
 from src.services.elevenlabs.v3_nonstream import (
@@ -78,9 +79,17 @@ def create_tts(assistant):
             model="bulbul:v3",
             pace=tts_config.get("pace", 1.0),
             speech_sample_rate=tts_config.get("speech_sample_rate", 24000),
+            # Bulbul speaks 11 Indic BCP-47 codes and nothing else — 'en-US' in particular
+            # is not one of them, however reasonable it looks in a language picker. An
+            # unusable code falls back to en-IN rather than failing every synthesis.
             # `or`, not a .get default: the schema always serializes the key, as None when
             # the caller omits it.
-            target_language_code=tts_config.get("target_language_code") or "en-IN",
+            target_language_code=validate_language(
+                "sarvam_tts",
+                tts_config.get("target_language_code"),
+                assistant_id=assistant_id,
+                field="assistant_tts_config.target_language_code",
+            ) or "en-IN",
             speaker=speaker,
             api_key=api_key,
             min_buffer_size=30,

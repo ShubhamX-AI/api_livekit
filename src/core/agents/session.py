@@ -1103,6 +1103,7 @@ async def entrypoint(ctx: JobContext):
             model=_stt_config.get("model"),
             language=_stt_config.get("language"),
             mode=_stt_config.get("mode"),
+            assistant_id=assistant.assistant_id,
         ))
 
     # --- Start Instruction ---

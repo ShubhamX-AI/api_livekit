@@ -31,7 +31,7 @@ class SarvamTTSConfig(BaseModel):
     # Default is None, not a language: the field is always serialized, so any concrete
     # default here would silently override the factory fallback ("en-IN", see
     # src/core/agents/tts/factory.py) for every assistant that omits it.
-    target_language_code: Optional[str] = Field(None, max_length=10, description="BCP-47 language code for synthesized speech (e.g. en-IN, hi-IN). Defaults to en-IN when omitted.")
+    target_language_code: Optional[str] = Field(None, max_length=10, description="BCP-47 language code for synthesized speech. Bulbul speaks 11 Indic codes and nothing else: bn-IN, en-IN, gu-IN, hi-IN, kn-IN, ml-IN, mr-IN, od-IN, pa-IN, ta-IN, te-IN. Note en-IN, not en-US — anything outside the list is rejected and falls back to en-IN. Defaults to en-IN when omitted.")
     # Ranges mirror Sarvam's own limits. temperature starts at 0.01, not 0.0, and the
     # sample rate is an enum on their side — a value in between (20000, say) is rejected
     # by the API, so it must not pass validation here.

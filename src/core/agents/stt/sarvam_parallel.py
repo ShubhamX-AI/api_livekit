@@ -10,6 +10,7 @@ from livekit.agents import stt as stt_pkg
 from livekit.plugins import sarvam as sarvam_plugin
 
 from src.core.agents.audio_denoise import SpeechGate
+from src.core.agents.stt.lang import validate_sarvam_language, validate_sarvam_mode
 from src.core.config import settings
 from src.core.logger import logger
 
@@ -101,6 +102,7 @@ async def run_sarvam_parallel_stt(
     model: str | None = None,
     language: str | None = None,
     mode: str | None = None,
+    assistant_id: str = "unknown",
 ) -> None:
     """Stream caller audio into Sarvam Saras v3 and feed finalized utterances to `coalescer`.
 
@@ -108,15 +110,18 @@ async def run_sarvam_parallel_stt(
     On `stop_event` it feeds Sarvam silence so it finalizes its buffered audio rather than
     dropping it, so the caller's last sentence survives a hangup.
     """
+    sarvam_model = model or "saaras:v3"
     sarvam_stt = sarvam_plugin.STT(
-        model=model or "saaras:v3",
+        model=sarvam_model,
         # Same field, same meaning as in cascade (see src/core/agents/stt/factory.py) —
         # "codemix" stays the default because callers here routinely mix English with an
         # Indian language mid-sentence.
-        mode=mode or "codemix",
-        # An empty string is reachable from the API (SarvamSTTConfig.language has no
-        # min_length) and the plugin silently turns it into en-IN instead of auto-detect.
-        language=(language or "").strip() or "unknown",
+        mode=validate_sarvam_mode(sarvam_model, mode or "codemix", assistant_id=assistant_id),
+        # Validated, not passed through: the plugin RAISES on a code its model does not
+        # speak (saarika:v2.5 accepts fewer than saaras:v3), which would take down the tap
+        # for the whole call. An empty string is reachable from the API too — the schema
+        # sets no min_length — and the plugin reads it as en-IN rather than auto-detect.
+        language=validate_sarvam_language(sarvam_model, language, assistant_id=assistant_id),
         # Never assistant_tts_config["api_key"] — that key belongs to the selected TTS
         # provider (cartesia/elevenlabs/mistral) and Sarvam rejects it with a 403.
         api_key=api_key or settings.SARVAM_API_KEY,

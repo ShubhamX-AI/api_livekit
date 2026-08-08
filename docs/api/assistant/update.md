@@ -163,7 +163,7 @@ Update an existing assistant. Only send fields you want to change.
     ```
 
     Sending `{"assistant_stt_model": "openai"}` alone is also valid — it resets the config to
-    OpenAI's defaults (`gpt-4o-mini-transcribe`, streaming, language from `preferred_languages`).
+    OpenAI's defaults (`gpt-4o-mini-transcribe`, streaming, auto-detected language).
 
 ---
 
@@ -189,7 +189,7 @@ Update an existing assistant. Only send fields you want to change.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.
 - `assistant_interaction_config.allow_interruptions` controls whether users can interrupt the assistant's initial greeting. Default: `false`.
 - `assistant_interaction_config.input_guard_window_sec` sets how many seconds of **every** agent reply have caller audio blanked (0.0-10.0, default `3.0`). This is what blocks repeated "Hello? Hello?" and short filler sounds ("um", "uh") from cutting the agent off — the input speech gate cannot, because those are genuine speech. Raising it rejects more fillers but also prevents genuine interruptions for that long; `0` disables the guard entirely. The window is a ceiling, not a fixed cost: it releases early when the reply finishes. Applies in both `pipeline` and `realtime` modes.
-- `assistant_interaction_config.preferred_languages` accepts a list of BCP-47 codes (e.g. `["hi-IN", "en-US"]`). Pass an empty list `[]` to clear the hint and revert to auto-detection.
+- `assistant_interaction_config.preferred_languages` accepts a list of BCP-47 codes (e.g. `["hi-IN", "en-US"]`). It hints the `native` transcription prompt only — it is never sent to a speech provider and never disables auto-detection. Pass an empty list `[]` to clear it.
 - `assistant_interaction_config.max_call_duration_minutes` sets a hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached the assistant speaks a brief farewell and the call is torn down gracefully. Unset or `null` falls back to the platform default of **30 minutes**. Does not apply to passthrough calls. The end-of-call webhook payload and `CallRecord.call_end_reason` are set to `max_duration_exceeded` for cuts triggered by this limit.
 - `assistant_stt_config.api_key` is the Sarvam key for the parallel STT tap (`assistant_stt_model="sarvam"`). It is **not** the same field as `assistant_tts_config.api_key`, which belongs to the selected TTS provider — sending a Cartesia/ElevenLabs/Mistral key to Sarvam fails with `403`. Unset falls back to the system `SARVAM_API_KEY`.
 - The retired `assistant_interaction_config.user_stt_provider` / `.stt_api_key` keys now return `422`. Use `assistant_stt_model` + `assistant_stt_config` instead.

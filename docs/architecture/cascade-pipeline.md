@@ -145,7 +145,7 @@ that default flipped from `ink-whisper` to the English-only `ink-2` in `livekit-
 | Config key | Default | Values |
 |---|---|---|
 | `model` | `nova-3` | `nova-3` (multilingual, 45 languages), `nova-2`, `flux-general-en` (English), `flux-general-multi` — swapping changes the transcription family; omitted keeps the default |
-| `language` | first `preferred_languages` entry, then `en` | a fixed BCP-47 code, or `multi` to **auto-detect** per segment — set explicitly; omitted falls back to the preferred list, then `en` |
+| `language` | `multi` on `nova-3` / `flux-general-multi`, else `en-US` | a fixed BCP-47 code (`en-US`, `hi-IN`), or `multi` to **auto-detect** per segment. A 3-letter code such as `hin` belongs to ElevenLabs and is rejected here. On the flux models this becomes `language_hint`, which only `flux-general-multi` reads |
 | `enable_diarization` | `false` | `bool` — label each utterance with its speaker (nova models) — `true` turns it on; **omitted stays `false`, never force-enabled** |
 | `keyterm` | not sent | string or list of terms to bias recognition toward (`nova-3`/`flux` only) — set to bias; **omitted — the key is not sent, no biasing** |
 | `api_key` | system `DEEPGRAM_API_KEY` | per-assistant override — wins over the env key |
@@ -154,14 +154,14 @@ that default flipped from `ink-whisper` to the English-only `ink-2` in `livekit-
 Multilingual Deepgram option: a caller who switches languages mid-call is still transcribed
 correctly without pinning a code.
 
-**Omitted-knob summary:** `language` omitted → first `preferred_languages` entry, then `en`; `enable_diarization` omitted → stays off (never force-enabled); `keyterm` omitted → not sent (no biasing).
+**Omitted-knob summary:** `language` omitted → `multi` on the models that can detect (`nova-3`, `flux-general-multi`), `en-US` on the ones that cannot — `multi` bills at a higher per-minute rate, so pin a code to avoid it; `enable_diarization` omitted → stays off (never force-enabled); `keyterm` omitted → not sent (no biasing).
 
 ### elevenlabs — auto-detecting `scribe_v2_realtime`
 
 | Config key | Default | Values |
 |---|---|---|
 | `model` | `scribe_v2_realtime` | `scribe_v2_realtime` (auto-detects ~190 languages), `scribe_v2`, `scribe_v1` — swapping changes the Scribe generation; omitted keeps the default |
-| `language_code` | omitted → auto-detect; else first `preferred_languages` entry | a BCP-47 code, or **omit to auto-detect** — setting a code pins it and **disables auto-detect**; omitting falls back to the first preferred language, else auto-detect |
+| `language_code` | omitted → auto-detect | an **ISO 639-3** code (`eng`, `hin`, `ben`) — **not** BCP-47 and **not** ISO 639-1. Scribe answers anything else with `1008 invalid_request` and closes the socket, so an unrecognized code is rejected before it is sent and the call auto-detects. Setting a valid code **disables auto-detect** |
 | `no_verbatim` | `false` | `bool` — strip filler words ("um", "uh") from the transcript — `true` strips them; **omitted stays `false`, fillers kept** |
 | `api_key` | system `ELEVENLABS_API_KEY` | per-assistant override — wins over the env key; the same variable serves the ElevenLabs TTS stage |
 
@@ -170,15 +170,15 @@ drop-in multilingual option alongside `sarvam` and `deepgram`. Authentication is
 `ELEVENLABS_API_KEY` — the same variable the ElevenLabs TTS provider reads, so setting it once
 covers both stages.
 
-**Omitted-knob summary:** `language_code` omitted → first `preferred_languages` entry, else auto-detect (~190 languages); `no_verbatim` omitted → `false` — fillers kept.
+**Omitted-knob summary:** `language_code` omitted → auto-detect (~190 languages); `no_verbatim` omitted → `false` — fillers kept.
 
 ### openai — one vendor for STT and LLM
 
 | Config key | Default | Values |
 |---|---|---|
 | `model` | `gpt-4o-mini-transcribe` | `gpt-4o-mini-transcribe` (fast, cheap), `gpt-4o-transcribe` (more accurate, dearer), `whisper-1` (legacy batch model — the only one that reads `prompt`). `gpt-realtime-whisper` is **rejected**; omitted keeps the default |
-| `language` | first `preferred_languages` entry, then `en` | one fixed ISO-639-1 code — **omitting does not auto-detect**, it pins English. Ignored when `detect_language` is `true` |
-| `detect_language` | `false` | `bool` — `true` auto-detects the spoken language and overrides `language`; **omitted stays `false`, so the language stays pinned** |
+| `language` | omitted → `detect_language` turns on | one fixed ISO 639-1 code (`en`, `hi`) — **not** BCP-47; `hi-IN` is rejected. Ignored when `detect_language` is `true` |
+| `detect_language` | `false`, or `true` when no valid `language` is set | `bool` — `true` auto-detects the spoken language and overrides `language` |
 | `prompt` | not sent | string biasing spellings and jargon — **`whisper-1` only**, the gpt-4o transcribe models accept and ignore it; omitted sends nothing |
 | `noise_reduction_type` | not sent | `near_field` (headset) or `far_field` (speakerphone / room mic); omitted applies none |
 | `use_realtime` | `true` | `bool` — `true` streams over OpenAI's realtime transcription WebSocket (interim results, low latency); `false` uses the batch REST API — cheaper, but adds a full utterance of latency per turn |
@@ -197,7 +197,7 @@ ship (the session's VAD is `inference.VAD` from `livekit-local-inference` and ca
 to an STT plugin). Selecting it aborts the job with a logged error rather than crashing at
 connect time.
 
-**Omitted-knob summary:** `language` omitted → first `preferred_languages` entry, then `en` (**not** auto-detect); `detect_language` omitted → `false`; `prompt` and `noise_reduction_type` omitted → not sent; `use_realtime` omitted → `true` (streaming).
+**Omitted-knob summary:** `language` omitted → auto-detect (the factory turns `detect_language` on rather than letting the plugin's hardcoded `en` pin English); `detect_language` omitted → `false` when a valid `language` is pinned; `prompt` and `noise_reduction_type` omitted → not sent; `use_realtime` omitted → `true` (streaming).
 
 Minimal — English assistant, everything defaulted:
 
@@ -364,7 +364,7 @@ code path, because they were written against a realtime model:
 | Sarvam TTS keepalive | Runs whenever the TTS is Sarvam, same as pipeline |
 | **`end_call` tool** | **Cascade-specific path.** A non-realtime LLM continues in the *same* speech handle across tool steps, so the goodbye has already played by the time the done-callback fires. The `speech_created` wait that realtime needs is skipped — leaving it in burned 5 s of dead air before hangup |
 | **Exotel pre-answer window** | **Cascade-specific path.** Pipeline disables the realtime model's server VAD so ring-tone RTP cannot open a spurious turn. Cascade has no such model, so the input is blanked through `SpeechGate.muted` for the duration of the gate wait instead |
-| **`preferred_languages`** | Honoured differently per provider. Sarvam needs nothing — `language="unknown"` auto-detects every language the list could name. Cartesia cannot auto-detect, so an unpinned `language` falls back to the first preferred language, then `en` |
+| **`preferred_languages`** | **Not read by any cascade STT.** It is a BCP-47 hint for the `native` transcription prompt, and cascade has no native path. Feeding it to a provider both pinned a language nobody asked to pin and pushed BCP-47 into providers that speak ISO 639-1 or ISO 639-3 — pin on `assistant_stt_config` instead |
 
 Two consequences worth knowing:
 

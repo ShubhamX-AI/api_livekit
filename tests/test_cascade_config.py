@@ -78,27 +78,89 @@ class TestCreateSTT(unittest.TestCase):
         self.assertEqual(stt._model, "ink-whisper")
         self.assertEqual(stt._language, "en")
 
-    def test_cartesia_falls_back_to_preferred_language(self):
-        """Cartesia cannot auto-detect, so an unpinned language must honour
-        preferred_languages instead of silently transcribing a Hindi call as English."""
+    def test_cartesia_ignores_preferred_languages(self):
+        """Contract change: preferred_languages is a prompt hint, never a provider
+        parameter. It holds BCP-47 while Cartesia takes ISO 639-1, so the old fallback
+        sent 'hi-IN' where only 'hi' is understood — and pinned a language the caller
+        never asked to pin. Unpinned now means the plugin's own default, English."""
         stt = create_stt(
             make_assistant(
                 assistant_stt_model="cartesia",
                 assistant_stt_config={"api_key": "k"},
-                preferred_languages=["hi", "en"],
+                preferred_languages=["hi-IN", "en-US"],
             )
         )
-        self.assertEqual(stt._language, "hi")
+        self.assertEqual(stt._language, "en")
 
-    def test_cartesia_explicit_language_beats_preferred(self):
+    def test_cartesia_explicit_language_is_honoured(self):
         stt = create_stt(
             make_assistant(
                 assistant_stt_model="cartesia",
                 assistant_stt_config={"api_key": "k", "language": "ta"},
-                preferred_languages=["hi"],
+                preferred_languages=["hi-IN"],
             )
         )
         self.assertEqual(stt._language, "ta")
+
+    def test_cartesia_rejects_bcp47_language(self):
+        """'en-US' is not an ISO 639-1 code. Drop it and take the default rather than
+        transcribing against a code Cartesia does not understand."""
+        stt = create_stt(
+            make_assistant(
+                assistant_stt_model="cartesia",
+                assistant_stt_config={"api_key": "k", "language": "en-US"},
+            )
+        )
+        self.assertEqual(stt._language, "en")
+
+    def test_sarvam_unsupported_language_does_not_crash_the_job(self):
+        """The Sarvam plugin RAISES on a code its model does not speak, and that exception
+        escapes create_stt and ends the job before the call connects — a harder failure
+        than any wrong-standard code on the other providers. Degrade to auto-detect."""
+        stt = create_stt(
+            make_assistant(
+                assistant_stt_model="sarvam",
+                assistant_stt_config={"api_key": "k", "language": "en-US"},
+            )
+        )
+        self.assertIsNotNone(stt)
+        self.assertEqual(stt._opts.language, "unknown")
+
+    def test_sarvam_language_sets_are_per_model(self):
+        """saarika:v2.5 speaks a subset of saaras:v3 — a code valid on one raises on the
+        other, so the check has to know which model it is building for."""
+        cfg = {"api_key": "k", "model": "saarika:v2.5", "language": "sat-IN"}
+        stt = create_stt(make_assistant(assistant_stt_model="sarvam", assistant_stt_config=cfg))
+        self.assertEqual(stt._opts.language, "unknown")
+        cfg = {"api_key": "k", "model": "saaras:v3", "language": "sat-IN"}
+        stt = create_stt(make_assistant(assistant_stt_model="sarvam", assistant_stt_config=cfg))
+        self.assertEqual(stt._opts.language, "sat-IN")
+
+    def test_sarvam_mode_is_dropped_on_models_that_reject_it(self):
+        """`mode` is model-gated exactly like `language`, and the plugin raises the same
+        way. Only saaras:v3 supports it, so this repo's blanket "codemix" default would
+        kill every job on a v2.5 model."""
+        for model in ("saarika:v2.5", "saaras:v2.5"):
+            with self.subTest(model=model):
+                stt = create_stt(
+                    make_assistant(
+                        assistant_stt_model="sarvam",
+                        assistant_stt_config={"api_key": "k", "model": model},
+                    )
+                )
+                self.assertIsNotNone(stt)
+                self.assertNotEqual(stt._opts.mode, "codemix")
+
+    def test_sarvam_blank_language_means_auto_detect(self):
+        """An empty string is reachable from the API — the schema sets no min_length — and
+        the plugin reads it as en-IN, not auto-detect."""
+        stt = create_stt(
+            make_assistant(
+                assistant_stt_model="sarvam",
+                assistant_stt_config={"api_key": "k", "language": "  "},
+            )
+        )
+        self.assertEqual(stt._opts.language, "unknown")
 
     def test_sarvam_ignores_preferred_languages_by_design(self):
         """Auto-detect already covers every language preferred_languages could list;
@@ -149,25 +211,49 @@ class TestCreateSTT(unittest.TestCase):
         self.assertEqual(stt._opts.language, "multi")
         self.assertTrue(stt._opts.enable_diarization)
 
-    def test_deepgram_falls_back_to_preferred_language(self):
+    def test_deepgram_unpinned_autodetects_on_nova3(self):
+        """Contract change: unpinned no longer means preferred_languages[0]. nova-3 can
+        detect per segment, so unpinned means 'multi' — billed higher, hence the pin."""
         stt = create_stt(
             make_assistant(
                 assistant_stt_model="deepgram",
                 assistant_stt_config={"api_key": "k"},
-                preferred_languages=["hi", "en"],
+                preferred_languages=["hi-IN", "en-US"],
             )
         )
-        self.assertEqual(stt._opts.language, "hi")
+        self.assertEqual(stt._opts.language, "multi")
 
-    def test_deepgram_explicit_language_beats_preferred(self):
+    def test_deepgram_unpinned_stays_english_on_nova2(self):
+        """nova-2 has no per-segment detection, so 'multi' would be a lie. Keep Deepgram's
+        own default instead."""
         stt = create_stt(
             make_assistant(
                 assistant_stt_model="deepgram",
-                assistant_stt_config={"api_key": "k", "language": "hi"},
-                preferred_languages=["en"],
+                assistant_stt_config={"api_key": "k", "model": "nova-2"},
             )
         )
-        self.assertEqual(stt._opts.language, "hi")
+        self.assertEqual(stt._opts.language, "en-US")
+
+    def test_deepgram_explicit_language_is_honoured(self):
+        stt = create_stt(
+            make_assistant(
+                assistant_stt_model="deepgram",
+                assistant_stt_config={"api_key": "k", "language": "hi-IN"},
+                preferred_languages=["en-US"],
+            )
+        )
+        self.assertEqual(stt._opts.language, "hi-IN")
+
+    def test_deepgram_rejects_iso639_3_language(self):
+        """A 3-letter primary subtag is an ElevenLabs code in the wrong slot — every
+        language Deepgram lists has an ISO 639-1 code."""
+        stt = create_stt(
+            make_assistant(
+                assistant_stt_model="deepgram",
+                assistant_stt_config={"api_key": "k", "language": "hin"},
+            )
+        )
+        self.assertEqual(stt._opts.language, "multi")
 
     def test_deepgram_optional_knobs_switched_off_by_default(self):
         """When diarization/keyterm are omitted they must not leak into the request as
@@ -204,29 +290,47 @@ class TestCreateSTT(unittest.TestCase):
                 assistant_stt_config={
                     "api_key": "k",
                     "model": "scribe_v2",
-                    "language_code": "hi",
+                    "language_code": "hin",  # ISO 639-3, the only standard Scribe takes
                     "no_verbatim": True,
                 },
             )
         )
         self.assertEqual(stt._opts.model_id, "scribe_v2")
-        self.assertEqual(stt._opts.language_code, "hi")
+        # Exactly "hin", not the plugin's normalized "hi": livekit.agents.LanguageCode maps
+        # ISO 639-3 down to ISO 639-1, and 639-1 is what Scribe rejects. If this ever reads
+        # "hi" again, the factory's post-construction fix-up has stopped working and every
+        # pinned-language ElevenLabs call is back to closing with 1008.
+        self.assertEqual(str(stt._opts.language_code), "hin")
         self.assertTrue(stt._opts.no_verbatim)
 
-    def test_elevenlabs_language_code_from_preferred_languages(self):
+    def test_elevenlabs_ignores_preferred_languages(self):
+        """Contract change: the old fallback put BCP-47 into an ISO 639-3 slot and the
+        socket closed with `1008 invalid_request` on the first utterance. A preferred list
+        must not disable auto-detect on the one provider built around it."""
         stt = create_stt(
             make_assistant(
                 assistant_stt_model="elevenlabs",
                 assistant_stt_config={"api_key": "k"},
-                preferred_languages=["hi", "en"],
+                preferred_languages=["hi-IN", "en-US"],
             )
         )
-        self.assertEqual(stt._opts.language_code, "hi")
+        self.assertIsNone(stt._opts.language_code)
+
+    def test_elevenlabs_rejects_bcp47_language_code(self):
+        """The exact code that produced `Invalid language code received: 'en-US'` in
+        production. Dropping it degrades to auto-detect instead of killing the call."""
+        stt = create_stt(
+            make_assistant(
+                assistant_stt_model="elevenlabs",
+                assistant_stt_config={"api_key": "k", "language_code": "en-US"},
+            )
+        )
+        self.assertIsNone(stt._opts.language_code)
 
     def test_elevenlabs_omits_language_when_unset(self):
-        """No language_code and no preferred_languages → the plugin stays auto-detect
-        (~190 languages). The module sends `language_code` upstream only when it is set, so
-        `None` is the auto-detect signal, not a literal `null`."""
+        """No language_code → the plugin stays auto-detect (~190 languages). The module
+        sends `language_code` upstream only when set, so `None` is the auto-detect signal,
+        not a literal `null`."""
         stt = create_stt(
             make_assistant(
                 assistant_stt_model="elevenlabs", assistant_stt_config={"api_key": "k"}
@@ -303,20 +407,31 @@ class TestOpenAISTT(unittest.TestCase):
     def test_use_realtime_false_falls_back_to_batch(self):
         self.assertFalse(self._stt(use_realtime=False).capabilities.streaming)
 
-    def test_language_defaults_to_english(self):
-        self.assertEqual(self._stt()._opts.language, "en")
+    def test_unpinned_autodetects(self):
+        """Contract change: unpinned used to mean preferred_languages[0], then a hardcoded
+        'en' — a Hindi caller was transcribed as English. Detect instead. The plugin
+        expresses auto-detect as an empty language code."""
+        stt = self._stt()
+        self.assertTrue(stt._opts.detect_language)
+        self.assertEqual(stt._opts.language, "")
 
-    def test_falls_back_to_preferred_language(self):
-        self.assertEqual(self._stt(preferred_languages=["hi"])._opts.language, "hi")
+    def test_preferred_languages_do_not_pin(self):
+        stt = self._stt(preferred_languages=["hi-IN"])
+        self.assertTrue(stt._opts.detect_language)
 
-    def test_explicit_language_beats_preferred(self):
-        self.assertEqual(
-            self._stt(preferred_languages=["hi"], language="ta")._opts.language, "ta"
-        )
+    def test_explicit_language_pins(self):
+        stt = self._stt(preferred_languages=["hi-IN"], language="ta")
+        self.assertEqual(stt._opts.language, "ta")
+        self.assertFalse(stt._opts.detect_language)
+
+    def test_rejects_bcp47_language(self):
+        """OpenAI transcription takes ISO 639-1; 'hi-IN' is a Sarvam code in the wrong
+        slot, so it is dropped and the call auto-detects."""
+        stt = self._stt(language="hi-IN")
+        self.assertTrue(stt._opts.detect_language)
 
     def test_detect_language_blanks_the_pinned_language(self):
-        """The plugin expresses auto-detect as an empty language code."""
-        stt = self._stt(preferred_languages=["hi"], detect_language=True)
+        stt = self._stt(language="hi", detect_language=True)
         self.assertTrue(stt._opts.detect_language)
         self.assertEqual(stt._opts.language, "")
 
@@ -855,6 +970,53 @@ class TestDeepgramFamilyDispatch(unittest.TestCase):
     def test_flux_drops_diarization_instead_of_crashing(self):
         stt = self._stt(model="flux-general-multi", enable_diarization=True)
         self.assertEqual(type(stt).__name__, "STTv2")
+
+    def test_flux_language_hint_is_a_list(self):
+        """language_hint is list[str] on the v2 API — a bare string reaches the wire as a
+        JSON string where an array is expected. The old code passed the language straight
+        through."""
+        stt = self._stt(model="flux-general-multi", language="hi-IN")
+        self.assertEqual(stt._opts.language_hint, ["hi-IN"])
+
+    def test_flux_unpinned_sends_no_hint(self):
+        """No hint IS auto-detect on flux. 'multi' is a v1 sentinel and means nothing
+        here, so it must never be forwarded as a hint."""
+        self.assertEqual(self._stt(model="flux-general-multi")._opts.language_hint, [])
+        self.assertEqual(
+            self._stt(model="flux-general-multi", language="multi")._opts.language_hint, []
+        )
+
+    def test_flux_en_model_takes_no_hint(self):
+        """The plugin supports language_hint on flux-general-multi only, and warns then
+        drops it elsewhere — do not send it at all."""
+        stt = self._stt(model="flux-general-en", language="hi-IN")
+        self.assertEqual(stt._opts.language_hint, [])
+
+
+class TestSarvamTTSLanguageGuard(unittest.TestCase):
+    """Bulbul speaks 11 Indic BCP-47 codes. Anything else 400s on every synthesis, so an
+    unusable code has to be caught here rather than at the first spoken word."""
+
+    def _tts(self, **config):
+        from src.core.agents.tts.factory import create_tts
+
+        return create_tts(
+            SimpleNamespace(
+                assistant_id="assistant-1",
+                assistant_tts_model="sarvam",
+                assistant_tts_config={"api_key": "k", "speaker": "shubh", **config},
+            )
+        )
+
+    def test_supported_code_is_forwarded(self):
+        self.assertEqual(self._tts(target_language_code="hi-IN")._opts.target_language_code, "hi-IN")
+
+    def test_unsupported_code_falls_back_to_en_in(self):
+        # 'en-US' is the code the assistant picker used to offer; Sarvam has en-IN only.
+        self.assertEqual(self._tts(target_language_code="en-US")._opts.target_language_code, "en-IN")
+
+    def test_unset_code_falls_back_to_en_in(self):
+        self.assertEqual(self._tts(target_language_code=None)._opts.target_language_code, "en-IN")
 
 
 class TestSarvamTTSRanges(unittest.TestCase):

@@ -97,7 +97,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `speaker` | string | Yes | Sarvam speaker identifier. |
-        | `target_language_code` | string | No | BCP-47 code. Default: `bn-IN`. |
+        | `target_language_code` | string | No | BCP-47 code, and only one of the 11 Bulbul speaks: `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN`. Note `en-IN`, **not** `en-US` — anything outside the list is rejected and falls back to `en-IN`. Default: `en-IN`. |
         | `pace` | number | No | Speaking pace multiplier, `0.3`–`3.0`. Default: `1.0` (`>1.0` faster, `<1.0` slower). |
         | `speech_sample_rate` | number | No | Output sample rate in Hz. One of `8000`, `16000`, `22050`, `24000`, `32000`, `44100`, `48000` — other values are rejected. Default: `24000`; use `8000` only for narrowband telephony. |
         | `temperature` | number | No | TTS sampling temperature, `0.01`–`2.0`. Default: `0.3`. Lower = more stable. |
@@ -253,7 +253,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `model` | string | No | Deepgram STT model. Default: `nova-3` (multilingual, 45 languages). Also `nova-2`, `flux-general-en` (English only) and `flux-general-multi` (multilingual). |
-        | `language` | string | No | BCP-47 code, or `multi` to auto-detect. When omitted, falls back to the first entry of `assistant_interaction_config.preferred_languages`, then `en`. `multi` auto-detects per segment; pin a fixed BCP-47 code to force one language (a caller switching languages is then mis-transcribed). |
+        | `language` | string | No | BCP-47 code (`en-US`, `hi-IN`), or `multi` to auto-detect per segment. A 3-letter code such as `hin` is an ElevenLabs code and is rejected. When omitted: `multi` on `nova-3` / `flux-general-multi`, `en-US` on `nova-2` / `flux-general-en`, which cannot detect. `multi` bills at a higher per-minute rate. On the flux models this is sent as `language_hint` and only `flux-general-multi` reads it. |
         | `enable_diarization` | boolean | No | Labels each utterance with a speaker id. Default: `false`. When omitted, diarization stays off — it is never force-enabled. Nova models only. |
         | `keyterm` | string or array of strings | No | Boosts recognition of a term. When omitted it is not sent (no biasing). `nova-3` / `flux` only — `nova-2` does not take keyterm. |
         | `api_key` | string | No | Optional Deepgram API key. Falls back to system `DEEPGRAM_API_KEY`. |
@@ -263,7 +263,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `model` | string | No | ElevenLabs STT model. Default: `scribe_v2_realtime` (auto-detects ~190 languages). Also `scribe_v2` and `scribe_v1`. |
-        | `language_code` | string | No | BCP-47 code. When omitted, the factory falls back to the first entry of `assistant_interaction_config.preferred_languages`, else the provider auto-detects. When set, auto-detection is disabled and the code is pinned. |
+        | `language_code` | string | No | **ISO 639-3** code (`eng`, `hin`, `ben`) — not BCP-47 and not ISO 639-1. Scribe rejects anything else with `1008 invalid_request` and closes the connection, so an unrecognized code is dropped here (logged) and the call auto-detects. Omit to auto-detect ~190 languages; setting a valid code pins it and disables auto-detection. |
         | `no_verbatim` | boolean | No | Strips filler words (`um`, `uh`) and false starts from the transcript. Default: `false`. |
         | `api_key` | string | No | Optional ElevenLabs key for the STT stage. Falls back to system `ELEVENLABS_API_KEY`, the same variable the ElevenLabs TTS provider uses. |
 
@@ -272,7 +272,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `model` | string | No | OpenAI STT model. Default: `gpt-4o-mini-transcribe` (fast, cheap). Also `gpt-4o-transcribe` (more accurate) and `whisper-1` (legacy batch model — the only one that reads `prompt`). `gpt-realtime-whisper` is **rejected**: it has no server-side endpointing and needs a client-side VAD this runtime cannot supply. |
-        | `language` | string | No | ISO-639-1 code. When omitted, falls back to the first entry of `assistant_interaction_config.preferred_languages`, then `en` — **omitting does not auto-detect**. Ignored when `detect_language` is `true`. |
+        | `language` | string | No | ISO 639-1 code (`en`, `hi`) — not BCP-47; `hi-IN` is rejected. Omitting it turns `detect_language` on rather than pinning English. Ignored when `detect_language` is `true`. |
         | `detect_language` | boolean | No | Auto-detect the spoken language instead of pinning one. Default: `false`. Overrides `language`. |
         | `prompt` | string | No | Biases spellings and jargon (names, product terms). **`whisper-1` only** — the gpt-4o transcribe models accept and ignore it. |
         | `noise_reduction_type` | string | No | Server-side noise reduction: `near_field` (headset) or `far_field` (speakerphone / room mic). Omitted applies none. |
@@ -483,7 +483,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 | `thinking_sound_enabled` | boolean | No | Enables the typing-style thinking sound. Default: `true`. |
 | `allow_interruptions` | boolean | No | If `true`, users can interrupt the assistant's initial greeting. Default: `false` (greeting is uninterruptible). |
 | `input_guard_window_sec` | number | No | Seconds at the start of **every** agent reply during which caller audio is blanked (0.0-10.0). Default: `3.0`. Blocks repeated "Hello? Hello?" and short filler sounds ("um", "uh") from cutting the agent off — the noise gate cannot filter those, since they are genuine speech. Raise it to reject more fillers; the caller also cannot genuinely interrupt within the window. `0` disables the guard. Unmutes early if the reply finishes first. |
-| `preferred_languages` | array of strings | No | BCP-47 language codes the agent supports (e.g. `["hi-IN", "en-US", "ta-IN"]`). Used to hint the STT model when the speaker is multilingual or switches between languages. If omitted, the STT model auto-detects all languages. |
+| `preferred_languages` | array of strings | No | BCP-47 language codes the agent supports (e.g. `["hi-IN", "en-US", "ta-IN"]`). A hint for the `native` transcription prompt only — **never** sent to a speech provider as a language parameter, and it neither pins a language nor disables auto-detect. Pin a language on `assistant_stt_config` instead. |
 | `max_call_duration_minutes` | number | No | Hard ceiling on active-call length in minutes (must be `> 0`). When the limit is reached, the assistant speaks a brief farewell and the call is torn down gracefully (recording, transcripts, usage and webhook all finalize cleanly). When unset or `null`, the platform default of **30 minutes** applies. Does not apply to passthrough calls (no AI agent). The call termination reason is reported as `max_duration_exceeded` in the end-of-call webhook payload and in the `CallRecord.call_end_reason` field. |
 
 These sound settings are assistant defaults and apply to runtime sessions started through the call and web-call APIs. Those APIs do not expose per-call sound overrides.

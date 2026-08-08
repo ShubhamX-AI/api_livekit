@@ -89,6 +89,27 @@ available.
 **Cascade does not degrade.** In cascade mode a missing API key is fatal: `create_stt` returns `None`
 and the job ends before the call connects. See [Failure modes](#failure-modes).
 
+### Language codes are NOT portable between providers
+
+The same spoken language is written differently per provider, and the standards do not overlap.
+A code from the wrong standard is rejected at build time — logged, dropped, and the provider's
+default applies — so a mis-set code degrades the call instead of breaking it.
+
+| Provider | Standard | English | Hindi | Auto-detect |
+|---|---|---|---|---|
+| `sarvam` | BCP-47 Indic | `en-IN` | `hi-IN` | `unknown` (the default) |
+| `cartesia` | ISO 639-1 | `en` | `hi` | :no_entry: none — unset means `en` |
+| `deepgram` | BCP-47 | `en-US` | `hi-IN` | `multi`, and the default on `nova-3` / `flux-general-multi` |
+| `elevenlabs` | **ISO 639-3** | `eng` | `hin` | omit the code (the default) — ~190 languages |
+| `openai` | ISO 639-1 | `en` | `hi` | `detect_language`, turned on automatically when no code is set |
+
+ElevenLabs is the one that bites. It is the only ISO 639-3 surface here, and upstream it does not
+degrade: Scribe answers a BCP-47 code with `1008 invalid_request` and closes the socket, so the
+agent retries the same failure for the length of the call and transcribes nothing.
+
+Deepgram's `multi` is billed at a higher per-minute rate than a pinned language, so leaving the
+field unset on `nova-3` costs more than setting it.
+
 ---
 
 ## Mode × TTS provider
@@ -120,6 +141,7 @@ errors — they are the fields to stop debugging when a setting appears to have 
 | `assistant_tts_model`, `assistant_tts_config` | `realtime` | `pipeline`, `cascade` | No TTS stage exists in realtime mode. |
 | `assistant_stt_model`, `assistant_stt_config` | `realtime` | `pipeline`, `cascade` | The realtime model transcribes; there is no separate STT stage. |
 | `assistant_stt_config.language` (Cartesia/Deepgram) | `pipeline` | `cascade` | The provider itself is cascade-only, so its whole config block is inert in pipeline mode. |
+| `assistant_interaction_config.preferred_languages` | `cascade` | `pipeline`, `realtime` | It hints the *native* transcription prompt, and cascade has no native path. It is never sent to a speech provider as a language parameter in any mode — pin a language on `assistant_stt_config` instead. |
 
 `assistant_stt_config.mode` (Sarvam) is **not** on this list: it is honoured in both pipeline and
 cascade, and defaults to `codemix` in both.

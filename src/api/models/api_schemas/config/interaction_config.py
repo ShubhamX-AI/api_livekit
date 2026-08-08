@@ -14,7 +14,7 @@ class AssistantInteractionConfigSchema(BaseModel):
     thinking_sound_enabled: bool = Field(True, description="Enable the typing-style thinking sound while the assistant is processing")
     allow_interruptions: bool = Field(False, description="Allow user to interrupt the assistant's initial greeting. Default False (interruptions blocked).")
     input_guard_window_sec: float = Field(3.0, ge=0.0, le=10.0, description="Seconds at the start of every agent reply during which caller audio is blanked. Blocks repeated 'Hello? Hello?' and short filler sounds ('um', 'uh') from cutting the agent off. Raise to reject more fillers; the caller also cannot genuinely interrupt within the window. 0 disables.")
-    preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. If unset, model auto-detects all languages.")
+    preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). A hint for the transcription prompt only — it is never sent to a speech provider as a language parameter and never pins or disables auto-detect. To pin a language, set it on assistant_stt_config. Unset means no hint.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. When reached, agent says a brief farewell then hangs up gracefully. Unset/null defaults to 30 minutes at runtime.")
 
     # STT moved out to assistant_stt_model / assistant_stt_config. Reject the retired
@@ -32,7 +32,7 @@ class UpdateAssistantInteractionConfigSchema(BaseModel):
     thinking_sound_enabled: Optional[bool] = Field(None, description="Enable or disable the typing-style thinking sound")
     allow_interruptions: Optional[bool] = Field(None, description="Enable or disable user interruptions during assistant's initial greeting")
     input_guard_window_sec: Optional[float] = Field(None, ge=0.0, le=10.0, description="Seconds at the start of every agent reply during which caller audio is blanked, blocking repeats and filler sounds. 0 disables.")
-    preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). Speaker may switch between these. Pass empty list to clear.")
+    preferred_languages: Optional[List[str]] = Field(None, description="BCP-47 language codes the agent supports (e.g. ['hi-IN', 'en-US', 'ta-IN']). A transcription-prompt hint only, never a speech-provider parameter. Pass empty list to clear.")
     max_call_duration_minutes: Optional[float] = Field(None, gt=0, description="Hard ceiling on active-call duration in minutes. Pass null/omit to use platform default (30 min).")
 
     model_config = ConfigDict(extra="forbid")  # see AssistantInteractionConfigSchema
