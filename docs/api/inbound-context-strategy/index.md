@@ -78,7 +78,7 @@ Only one strategy type is supported:
 The lookup is optional, and it never fails the call — but it **does block session start**.
 
 - The context has to be in the prompt before the assistant speaks, so the worker waits for your webhook before starting the session. The caller hears silence for that window.
-- Keep `timeout_seconds` low. Default is `2.0`, allowed range is `0.5`–`10.0`. A 10-second timeout means up to 10 seconds of dead air on a failing lookup.
+- `timeout_seconds` defaults to `10.0` (the maximum), allowed range is `0.5`–`10.0`. That default favors slow CRM lookups over fast failure: a hanging endpoint means up to 10 seconds of dead air before the call falls back to the default prompt. Lower it if your endpoint is reliably fast.
 - If lookup succeeds, the returned JSON object is available to prompt templates.
 - If lookup fails (timeout, HTTP error, invalid JSON, invalid shape), the call continues with default prompt behavior.
 - Failures are visible in activity logs as `inbound_context_lookup`.
@@ -239,7 +239,10 @@ Lookup is best-effort by design: no failure mode drops the call.
 - Timeout, HTTP error, invalid JSON, a response that is not a JSON object, missing URL, or inactive strategy does not fail the call.
 - The assistant still starts.
 - Prompt rendering continues without the fetched values.
-- The lookup outcome is written to activity logs as `inbound_context_lookup`.
+- The lookup outcome is written to activity logs as `inbound_context_lookup`. On success the log
+  records `context_key_paths` — the dotted path of every leaf your webhook returned, never the
+  values — so you can confirm a placeholder resolves without putting caller PII in the log. See
+  [Activity Logs](../activity-logs.md#inbound-context-lookup-log-behavior).
 
 !!! note "Contract stability"
 

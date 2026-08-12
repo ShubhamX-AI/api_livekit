@@ -82,8 +82,8 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/logs?page=1&limit
           }
         },
         "response_data": {
-          "context_keys": ["customer_name", "ticket_id"],
-          "context_size": 2
+          "context_key_paths": ["customer.name", "tickets[]", "tickets[0].id"],
+          "context_size": 3
         },
         "latency_ms": 312
       }
@@ -107,7 +107,25 @@ Success logs usually include:
 
 - strategy/request details
 - status and latency
-- summary fields like returned context keys
+- `context_key_paths`: the dotted path of every leaf in the returned JSON object, sorted, and
+  `context_size`: how many paths there are
+
+**Values are never logged.** The returned context routinely holds caller PII (names, phone
+numbers), so the log records only the payload's shape — enough to check whether a prompt
+placeholder like `{{context.candidate_first_name}}` will resolve.
+
+Path notation:
+
+| Response | `context_key_paths` |
+|---|---|
+| `{"name": "John"}` | `["name"]` |
+| `{"context": {"name": "John"}}` | `["context.name"]` |
+| `{"skills": [{"name": "python"}, {"name": "go"}]}` | `["skills[]", "skills[0].name"]` |
+| `{"tags": []}` | `["tags[]"]` |
+| `{}` | `["{}"]` |
+
+A list contributes one `key[]` marker plus the paths of its **first** element only — one path per
+row would flood the log without telling you anything new. Capped at 200 paths.
 
 Error logs usually include:
 

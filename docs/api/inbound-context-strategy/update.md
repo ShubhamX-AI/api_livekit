@@ -24,7 +24,7 @@ Update strategy metadata and/or strategy configuration.
 | `strategy_config` | object | No | Partial config update for the strategy. |
 | `strategy_config.url` | string | No | New webhook URL. Must be `http`/`https` and must not resolve to a private, loopback, link-local, or reserved address. See [URL Requirements](index.md#url-requirements). |
 | `strategy_config.headers` | object | No | Merged into the stored headers, key by key. A header sent with value `null` is deleted. |
-| `strategy_config.timeout_seconds` | number | No | New timeout value (`0.5` to `10.0`, default `2.0`). |
+| `strategy_config.timeout_seconds` | number | No | New timeout value (`0.5` to `10.0`, default `10.0`). |
 
 Header keys are not restricted. Use any keys required by your webhook endpoint.
 

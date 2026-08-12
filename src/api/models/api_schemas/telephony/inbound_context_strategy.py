@@ -46,7 +46,7 @@ class WebhookInboundContextStrategyConfigSchema(BaseModel):
     type: Literal["webhook"] = "webhook"
     url: str = Field(..., min_length=1, max_length=500, description="Webhook URL used to fetch inbound caller context (http/https, public hosts only)")
     headers: dict[str, str] = Field(default_factory=dict, description="Optional headers sent with the inbound context webhook")
-    timeout_seconds: float = Field(2.0, ge=0.5, le=10.0, description="Webhook timeout in seconds")
+    timeout_seconds: float = Field(10.0, ge=0.5, le=10.0, description="Webhook timeout in seconds")
 
     @field_validator("url")
     @classmethod

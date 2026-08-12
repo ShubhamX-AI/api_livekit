@@ -20,7 +20,7 @@ Creates a strategy that can later be attached to one or more inbound number mapp
 | `strategy_config` | object | Yes | Type-specific config object. |
 | `strategy_config.url` | string | Yes | Webhook URL that returns caller context. Must be `http`/`https` and must not resolve to a private, loopback, link-local, or reserved address. |
 | `strategy_config.headers` | object | No | Optional request headers for webhook auth/customization. |
-| `strategy_config.timeout_seconds` | number | No | Timeout in seconds. Defaults to `2.0`. Allowed range: `0.5` to `10.0`. |
+| `strategy_config.timeout_seconds` | number | No | Timeout in seconds. Defaults to `10.0`. Allowed range: `0.5` to `10.0`. |
 
 `strategy_config.headers` can contain any header keys your webhook expects (for example `Authorization`, `X-API-Key`, `X-Tenant-Id`).
 

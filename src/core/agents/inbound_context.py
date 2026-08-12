@@ -9,6 +9,36 @@ from src.core.db.db_schemas import ActivityLog, InboundContextStrategy
 logger = logging.getLogger(__name__)
 
 
+def _key_paths(data: Any, prefix: str = "", limit: int = 200) -> list[str]:
+    """Flatten a JSON object into sorted dotted key paths, values discarded.
+
+    The context payload holds caller PII (names, phone numbers), so the activity
+    log records only the shape. A list is summarized as ``key[]`` plus the paths
+    of its first element — enough to tell whether a placeholder will resolve,
+    without one path per row.
+    """
+    paths: list[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if len(paths) >= limit:
+            return
+        if isinstance(node, dict):
+            if not node:
+                paths.append(path or "{}")
+                return
+            for key in sorted(node.keys()):
+                walk(node[key], f"{path}.{key}" if path else str(key))
+        elif isinstance(node, list):
+            paths.append(f"{path}[]")
+            if node:
+                walk(node[0], f"{path}[0]")
+        else:
+            paths.append(path)
+
+    walk(data, prefix)
+    return paths[:limit]
+
+
 async def _log_lookup(
     *,
     user_email: str,
@@ -143,11 +173,11 @@ async def resolve_inbound_context(
     # Config comes straight from Mongo, so it can hold anything a legacy or
     # hand-edited document left behind — a null headers map used to TypeError
     # here and take the whole call down with it.
-    raw_timeout = config.get("timeout_seconds") or 2.0
+    raw_timeout = config.get("timeout_seconds") or 10.0
     try:
         timeout_seconds = min(max(float(raw_timeout), 0.5), 10.0)
     except (TypeError, ValueError):
-        timeout_seconds = 2.0
+        timeout_seconds = 10.0
     headers = {"Content-Type": "application/json", **(config.get("headers") or {})}
 
     try:
@@ -177,6 +207,7 @@ async def resolve_inbound_context(
             logger.warning(message)
             return None
 
+        key_paths = _key_paths(data)
         await _log_lookup(
             user_email=user_email,
             assistant_id=assistant_id,
@@ -186,8 +217,8 @@ async def resolve_inbound_context(
             latency_ms=latency_ms,
             message="Inbound context lookup completed successfully",
             response_data={
-                "context_keys": sorted(data.keys()),
-                "context_size": len(data),
+                "context_key_paths": key_paths,
+                "context_size": len(key_paths),
             },
         )
         return data

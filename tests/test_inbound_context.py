@@ -63,7 +63,7 @@ class TestResolveInboundContextConfigHandling(unittest.IsolatedAsyncioTestCase):
                 {"url": "https://example.com/x", "timeout_seconds": "abc"}
             )
         self.assertIsNone(result)
-        self.assertEqual(captured["timeout"], 2.0)
+        self.assertEqual(captured["timeout"], 10.0)
 
     async def test_out_of_range_timeout_is_clamped(self):
         captured = {}
@@ -138,6 +138,62 @@ class TestResolveInboundContextResponseShape(unittest.IsolatedAsyncioTestCase):
         for body in ([{"name": "John"}], "John", 42, None):
             with self.subTest(body=body):
                 self.assertIsNone(await self._resolve_returning(body))
+
+
+class TestSuccessLogRecordsShapeNotValues(unittest.IsolatedAsyncioTestCase):
+    """The context payload holds caller PII; the activity log gets shape only."""
+
+    async def asyncSetUp(self):
+        self._log_patch = patch(
+            "src.core.agents.inbound_context._log_lookup", new_callable=AsyncMock
+        )
+        self.mock_log = self._log_patch.start()
+        self.addCleanup(self._log_patch.stop)
+
+    async def _log_for(self, body):
+        response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: body)
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
+                return_value=response
+            )
+            await _resolve({"url": "https://example.com/x"})
+        return self.mock_log.await_args.kwargs
+
+    async def test_nested_keys_are_flattened_into_dotted_paths(self):
+        kwargs = await self._log_for(
+            {"context": {"candidate_id": "abc", "recruiter": {"name": "Pratiksha"}}}
+        )
+        self.assertEqual(kwargs["status"], "success")
+        self.assertEqual(
+            kwargs["response_data"]["context_key_paths"],
+            ["context.candidate_id", "context.recruiter.name"],
+        )
+        self.assertEqual(kwargs["response_data"]["context_size"], 2)
+
+    async def test_no_payload_value_is_logged(self):
+        kwargs = await self._log_for(
+            {"context": {"candidate_first_name": "Subham", "phone": "+918697421450"}}
+        )
+        blob = repr(kwargs["response_data"])
+        self.assertNotIn("Subham", blob)
+        self.assertNotIn("918697421450", blob)
+
+    async def test_list_records_one_marker_plus_first_element_shape(self):
+        kwargs = await self._log_for(
+            {"skills": [{"name": "python"}, {"name": "go"}], "tags": []}
+        )
+        self.assertEqual(
+            kwargs["response_data"]["context_key_paths"],
+            ["skills[]", "skills[0].name", "tags[]"],
+        )
+
+    async def test_empty_object_logs_no_paths(self):
+        kwargs = await self._log_for({})
+        self.assertEqual(kwargs["response_data"]["context_key_paths"], ["{}"])
+
+    async def test_path_count_is_capped(self):
+        kwargs = await self._log_for({f"k{i}": i for i in range(500)})
+        self.assertEqual(len(kwargs["response_data"]["context_key_paths"]), 200)
 
 
 class TestWebhookConfigValidation(unittest.TestCase):
