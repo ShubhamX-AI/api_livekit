@@ -48,6 +48,82 @@ Define a new tool that can be used by your assistants.
     anything longer than 64 — such a tool is skipped at call time (logged), and the rest of
     the assistant's tools still load.
 
+    === "Strict (all parameters required, scalars only)"
+
+        ```json title="What you create"
+        {
+          "tool_name": "lookup_weather",
+          "tool_description": "Get current weather for a location",
+          "tool_parameters": [
+            { "name": "location", "type": "string", "description": "City name", "required": true },
+            { "name": "unit", "type": "string", "enum": ["c", "f"], "required": true }
+          ]
+        }
+        ```
+
+        ```json title="What cascade sends to OpenAI"
+        {
+          "type": "function",
+          "name": "lookup_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string", "description": "City name" },
+              "unit": { "type": "string", "enum": ["c", "f"] }
+            },
+            "required": ["location", "unit"],
+            "additionalProperties": false
+          }
+        }
+        ```
+
+        No `strict` key means the API default — strict — applies. Arguments are guaranteed
+        to match the schema.
+
+    === "Relaxed (one optional parameter)"
+
+        ```json title="What you create"
+        {
+          "tool_name": "lookup_weather",
+          "tool_description": "Get current weather for a location",
+          "tool_parameters": [
+            { "name": "location", "type": "string", "required": true },
+            { "name": "unit", "type": "string", "enum": ["c", "f"], "required": false }
+          ]
+        }
+        ```
+
+        ```json title="What cascade sends to OpenAI"
+        {
+          "type": "function",
+          "name": "lookup_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string" },
+              "unit": { "type": "string", "enum": ["c", "f"] }
+            },
+            "required": ["location"],
+            "additionalProperties": false
+          },
+          "strict": false
+        }
+        ```
+
+        ```text title="Logged once at call start"
+        INFO  Tool 'lookup_weather': strict schema off (unit is optional). Arguments are no
+              longer guaranteed to match the schema.
+        ```
+
+        Without the `strict: false`, OpenAI rejects this schema outright — `required` must
+        list every property — and the rejection takes down every LLM turn of the call, not
+        just this tool.
+
+    In `pipeline` and `realtime` mode the same tool document produces the same schema
+    **without** the `strict` key, because the Realtime API has no such field.
+
 ### Execution Config Examples
 
 === "Webhook Tool"

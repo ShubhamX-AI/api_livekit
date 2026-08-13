@@ -266,6 +266,26 @@ stored against v3 is dropped before the call with a log line naming the models t
 is sent unchanged. On v3, `stability` also behaves as three modes — creative (`0.0`), natural
 (`0.5`), robust (`1.0`) — rather than a continuum.
 
+```json title="Valid — eleven_v3, the settings that model reads"
+{
+  "assistant_tts_model": "elevenlabs",
+  "assistant_tts_config": {
+    "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
+    "model": "eleven_v3",
+    "voice_settings": { "stability": 0.5, "similarity_boost": 0.7 }
+  }
+}
+```
+
+```text title="What a v3-rejected speed looks like in the worker log"
+WARNING  Dropping voice_settings.speed=1.2 for assistant asst_9f2: eleven_v3 has no speed
+         control. Use eleven_multilingual_v2, eleven_turbo_v2_5 or eleven_flash_v2_5 to change
+         speaking rate, or pace the delivery through the prompt.
+```
+
+The rest of `voice_settings` is forwarded unchanged — only the dropped `speed` is missing from
+what the model receives.
+
 **Sarvam `target_language_code` defaults to `en-IN`, and accepts 11 codes only.** Bulbul speaks
 `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN` —
 note `en-IN`, **not** `en-US`, which reads like a reasonable value and is not one. Anything outside
@@ -294,6 +314,28 @@ Unlike a bad language code, a bad speaker is **not** substituted: the call ends 
 with one log line naming the valid speakers. Substituting would answer the call in a voice nobody
 chose. (Before this check the Sarvam plugin's own `ValueError` escaped the factory and killed the
 job with a traceback instead.)
+
+```json title="Valid"
+{
+  "assistant_tts_model": "sarvam",
+  "assistant_tts_config": {
+    "speaker": "shubh",
+    "target_language_code": "hi-IN",
+    "pace": 1.0
+  }
+}
+```
+
+```text title="What a v2 speaker looks like in the worker log"
+ERROR  Sarvam speaker 'anushka' is not available on bulbul:v3 for assistant asst_9f2 —
+       bulbul:v3 speakers are: aayan, aditya, advait, amelia, amit, ashutosh, dev, ishita,
+       kabir, kavitha, kavya, manan, neha, pooja, priya, rahul, ratan, ritu, rohan, roopa,
+       rupali, shreya, shruti, shubh, simran, sophia, suhani, sumit, tanya, varun.
+       Update assistant_tts_config.speaker.
+```
+
+The call then ends the same way any missing-key or bad-provider config does: one `ERROR` line,
+no audio, nothing raised.
 
 **Unknown keys are rejected.** Every TTS config block — and the nested ElevenLabs `voice_settings` —
 is strict: an unrecognised key returns `422` rather than being silently dropped. The same is true of

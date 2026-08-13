@@ -179,6 +179,21 @@ Update an existing assistant. Only send fields you want to change.
 - The mode rules are re-checked against the **stored** assistant, not just the request. A PATCH that switches mode is judged on the merged result, so `{"assistant_mode": "cascade"}` against a row that still holds `provider: "gemini"` or a non-allowlisted `model` returns `400` — send the corrected `assistant_llm_config` in the same request.
 - `assistant_llm_config.model` is validated per mode: an OpenAI realtime ID in `pipeline`/`realtime`, an allowlisted chat model in `cascade`. Gemini realtime model IDs are not validated.
 - In `cascade` mode, `temperature`, `reasoning_effort` and `verbosity` are validated **against the model** — including the model already stored, so a PATCH that changes only the model is rejected (`400`) when a knob on the row does not fit the new one. Clear the knob in the same request. Which model reads which: [Cascade LLM knobs](../../reference/compatibility.md#cascade-llm-knobs).
+
+    ```json title="Stored assistant"
+    { "assistant_llm_config": { "model": "gpt-5-mini", "reasoning_effort": "low" } }
+    ```
+
+    ```json title="Rejected 400 — the new model cannot read the stored reasoning_effort"
+    { "assistant_llm_config": { "model": "gpt-4.1" } }
+    ```
+
+    ```json title="Accepted — clear the knob in the same request"
+    { "assistant_llm_config": { "model": "gpt-4.1", "reasoning_effort": null, "temperature": 0.3 } }
+    ```
+
+    Sending `null` clears a knob; omitting it keeps whatever the row already holds, which is
+    why the second example above fails and the third does not.
 - Unknown keys in `assistant_llm_config`, `assistant_tts_config` (including `voice_settings`) or `assistant_stt_config` return `422`.
 - When switching to `pipeline`, any stored realtime `assistant_llm_config` (e.g. Gemini keys) is automatically cleared unless you explicitly provide a new one.
 

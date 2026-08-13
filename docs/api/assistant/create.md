@@ -313,6 +313,26 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         silent. Full matrix:
         [Cascade LLM knobs](../../reference/compatibility.md#cascade-llm-knobs).
 
+        ```json title="Rejected — temperature belongs to chat models"
+        { "assistant_llm_config": { "model": "gpt-5-mini", "temperature": 0.3 } }
+        ```
+
+        ```json title="422 response"
+        {
+          "detail": [
+            {
+              "type": "value_error",
+              "loc": ["body", "assistant_llm_config"],
+              "msg": "Value error, assistant_llm_config.temperature is not supported by model 'gpt-5-mini' — reasoning models reject temperature — set reasoning_effort instead. See docs/reference/compatibility.md."
+            }
+          ]
+        }
+        ```
+
+        ```json title="Accepted — the same intent, expressed the way this model reads it"
+        { "assistant_llm_config": { "model": "gpt-5-mini", "reasoning_effort": "low" } }
+        ```
+
     **Example request** (with the new LLM generation knobs and TTS speed settings; all are optional)
 
     ```bash

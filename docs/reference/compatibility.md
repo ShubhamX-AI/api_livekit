@@ -91,6 +91,72 @@ log line is `There was an issue with your request. Please check your inputs and 
 A model outside the allowlist (a row written before it existed, or by a direct Mongo edit)
 has no known family, so its knobs are forwarded untouched rather than guessed at.
 
+#### Worked examples
+
+Same intent, two families. Pick the knob the family reads:
+
+```json title="Reasoning model — reasoning_effort, no temperature"
+{
+  "assistant_llm_config": {
+    "model": "gpt-5-mini",
+    "reasoning_effort": "low",
+    "verbosity": "medium",
+    "max_output_tokens": 500
+  }
+}
+```
+
+```json title="Chat model — temperature, no reasoning_effort"
+{
+  "assistant_llm_config": {
+    "model": "gpt-4.1",
+    "temperature": 0.3,
+    "max_output_tokens": 500
+  }
+}
+```
+
+Send the wrong one and the assistant is never created:
+
+```json title="422 — temperature on a reasoning model"
+{
+  "detail": [
+    {
+      "type": "value_error",
+      "loc": ["body", "assistant_llm_config"],
+      "msg": "Value error, assistant_llm_config.temperature is not supported by model 'gpt-5-mini' — reasoning models reject temperature — set reasoning_effort instead. See docs/reference/compatibility.md."
+    }
+  ]
+}
+```
+
+The other two read the same way:
+
+```text
+assistant_llm_config.reasoning_effort is not supported by model 'gpt-4.1' — reasoning.effort is a reasoning-model parameter, and this is a chat model.
+assistant_llm_config.verbosity is not supported by model 'gpt-4o' — text.verbosity is a gpt-5 generation parameter.
+```
+
+An assistant created **before** these rules can still hold a mismatched knob. Nothing breaks;
+the knob is dropped at call time and the worker log says exactly what it dropped:
+
+```text
+WARNING  Dropping reasoning_effort='low' for cascade assistant asst_9f2: reasoning.effort is
+         a reasoning-model parameter, and this is a chat model. Sending it to gpt-4.1 fails
+         the LLM turn, so the call would connect and stay silent. Update the assistant to
+         clear the stale value.
+INFO     Cascade LLM built | assistant=asst_9f2 | model=gpt-4.1 | has_tools=False | knobs={'temperature': 0.4}
+```
+
+The `Cascade LLM built` line is logged for every cascade session — it is the ground truth for
+what was sent (never the API key). On a tool-incompatible model it is preceded by:
+
+```text
+INFO  Cascade assistant asst_9f2: clearing the reasoning effort the OpenAI plugin injects for
+      gpt-5.2 — that model rejects reasoning.effort while function tools are attached.
+INFO  Cascade LLM built | assistant=asst_9f2 | model=gpt-5.2 | has_tools=True | knobs=defaults
+```
+
 ---
 
 ## Mode × STT provider

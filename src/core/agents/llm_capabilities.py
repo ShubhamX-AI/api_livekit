@@ -116,16 +116,18 @@ def unsupported_knob_reason(model: str, knob: str, *, has_tools: bool = False) -
     if model not in CASCADE_MODELS:
         return None
 
+    # The reasons name the parameter and the rule, never the model: every caller already
+    # prints the model alongside, and repeating it reads as a stutter in the 422 body.
     if knob == "temperature" and model in REASONING_MODELS:
-        return f"{model} is a reasoning model and rejects temperature — set reasoning_effort instead"
+        return "reasoning models reject temperature — set reasoning_effort instead"
 
     if knob == "reasoning_effort":
         if model not in REASONING_MODELS:
-            return f"reasoning.effort is a reasoning-model parameter and {model} rejects it"
+            return "reasoning.effort is a reasoning-model parameter, and this is a chat model"
         if has_tools and model in REASONING_TOOL_INCOMPATIBLE:
-            return f"{model} rejects reasoning.effort when function tools are attached"
+            return "this model rejects reasoning.effort while function tools are attached"
 
     if knob == "verbosity" and model not in GPT5_GENERATION:
-        return f"text.verbosity is a gpt-5 parameter and {model} rejects it"
+        return "text.verbosity is a gpt-5 generation parameter"
 
     return None
