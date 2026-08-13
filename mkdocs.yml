@@ -94,6 +94,7 @@ nav:
   - Reference:
     - Models & Providers: reference/models.md
     - Compatibility Matrix: reference/compatibility.md
+    - Troubleshooting: reference/troubleshooting.md
 
   - API Reference:
     - API Response and Errors: api/errors.md

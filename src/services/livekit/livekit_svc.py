@@ -301,6 +301,99 @@ class LiveKitService:
             call_record.agent_ready_at = datetime.now(timezone.utc)
             await call_record.save()
 
+    async def _post_end_call_webhook(
+        self, url: str, payload: dict, room_name: str, webhook_config=None
+    ) -> tuple[str, Optional[dict], str]:
+        """POST the post-call payload, retrying a slow or failing receiver.
+
+        Returns `(status, response_data, message)` in the shape the ActivityLog row wants.
+
+        A receiver that answers slowly is the normal case, not a fault: most of them write
+        the payload into their own database before replying, so the read timeout is
+        generous (END_CALL_WEBHOOK_TIMEOUT, default 30s) while the connect timeout stays
+        short — an unreachable host should fail in seconds. Timeouts, transport errors,
+        429 and 5xx are retried with a 1s/2s/4s backoff; a 4xx is not, because the receiver
+        has already read the payload and decided about it.
+
+        `webhook_config` is the assistant's own `assistant_end_call_webhook`, which overrides
+        either default per assistant — the right timeout belongs to the receiver, and one
+        global value has to suit the slowest of them. Absent, or with null fields, means the
+        server default.
+
+        Failures log one line, never a traceback: the stack is always httpx's own transport
+        chain and carries nothing the exception name does not.
+        """
+        configured_timeout = getattr(webhook_config, "timeout_seconds", None)
+        configured_attempts = getattr(webhook_config, "attempts", None)
+        attempts = max(1, configured_attempts or settings.END_CALL_WEBHOOK_ATTEMPTS)
+        timeout = httpx.Timeout(
+            configured_timeout or settings.END_CALL_WEBHOOK_TIMEOUT, connect=10.0
+        )
+        last: tuple[str, Optional[dict], str] = (
+            "error",
+            None,
+            f"Failed to send post-call data to {url}: no attempt was made",
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(1, attempts + 1):
+                retryable = True
+                try:
+                    response = await client.post(url, json=payload)
+                except Exception as e:
+                    last = (
+                        "error",
+                        None,
+                        f"Failed to send post-call data to {url}: {type(e).__name__}: {e}",
+                    )
+                    logger.warning(
+                        f"End call webhook attempt {attempt}/{attempts} failed | "
+                        f"room={room_name} | url={url} | {type(e).__name__}: {e}"
+                    )
+                else:
+                    # ponytail: body truncated to 500 chars — enough to identify a
+                    # rejecting endpoint without storing arbitrary payloads in Mongo.
+                    body = (response.text or "")[:500]
+                    response_data = {"status_code": response.status_code, "body": body}
+                    if 200 <= response.status_code < 300:
+                        logger.info(
+                            f"Call details sent to end call url: {url} | room={room_name} "
+                            f"| HTTP {response.status_code} | attempt {attempt}/{attempts}"
+                        )
+                        return (
+                            "success",
+                            response_data,
+                            f"Post-call data sent to {url} (HTTP {response.status_code})",
+                        )
+                    last = (
+                        "error",
+                        response_data,
+                        (
+                            f"Webhook rejected post-call data: {url} returned "
+                            f"HTTP {response.status_code}: {body}"
+                        ),
+                    )
+                    retryable = response.status_code == 429 or response.status_code >= 500
+                    if not retryable:
+                        logger.error(
+                            f"End call webhook returned non-2xx | room={room_name} "
+                            f"| url={url} | HTTP {response.status_code} | body={body}"
+                        )
+                        return last
+                    logger.warning(
+                        f"End call webhook attempt {attempt}/{attempts} returned "
+                        f"HTTP {response.status_code} | room={room_name} | url={url}"
+                    )
+
+                if attempt < attempts:
+                    await asyncio.sleep(2 ** (attempt - 1))
+
+        logger.error(
+            f"End call webhook gave up after {attempts} attempts | room={room_name} "
+            f"| url={url} | {last[2]}"
+        )
+        return last
+
     async def send_end_call_webhook(self, room_name: str, assistant_id: Optional[str] = None, webhook_url: Optional[str] = None):
         """Send post-call details to a webhook URL.
 
@@ -364,39 +457,16 @@ class LiveKitService:
 
         log_owner = (assistant.assistant_created_by_email if assistant else None) or call_record.created_by_email or "unknown"
         start_ms = time.monotonic()
-        status = "error"
-        response_data: Optional[dict] = None
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(end_call_url, json=payload)
-                latency = int((time.monotonic() - start_ms) * 1000)
-                # ponytail: body truncated to 500 chars — enough to identify a
-                # rejecting endpoint without storing arbitrary payloads in Mongo.
-                body = (response.text or "")[:500]
-                response_data = {"status_code": response.status_code, "body": body}
-                if 200 <= response.status_code < 300:
-                    status = "success"
-                    message = f"Post-call data sent to {end_call_url} (HTTP {response.status_code})"
-                    logger.info(
-                        f"Call details sent to end call url: {end_call_url} "
-                        f"| room={room_name} | HTTP {response.status_code}"
-                    )
-                else:
-                    message = (
-                        f"Webhook rejected post-call data: {end_call_url} "
-                        f"returned HTTP {response.status_code}: {body}"
-                    )
-                    logger.error(
-                        f"End call webhook returned non-2xx | room={room_name} "
-                        f"| url={end_call_url} | HTTP {response.status_code} | body={body}"
-                    )
-        except Exception as e:
-            latency = int((time.monotonic() - start_ms) * 1000)
-            message = f"Failed to send post-call data to {end_call_url}: {str(e)}"
-            logger.error(
-                f"Failed to send call details to webhook | room={room_name} | url={end_call_url}: {e}",
-                exc_info=True,
-            )
+        # Per-assistant delivery settings, when this webhook was resolved from an assistant. A
+        # caller-supplied `webhook_url` (the passthrough trunk path) has no assistant behind it
+        # and takes the server defaults.
+        status, response_data, message = await self._post_end_call_webhook(
+            end_call_url,
+            payload,
+            room_name,
+            webhook_config=getattr(assistant, "assistant_end_call_webhook", None),
+        )
+        latency = int((time.monotonic() - start_ms) * 1000)
 
         try:
             await ActivityLog(

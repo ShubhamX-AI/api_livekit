@@ -112,7 +112,7 @@ truncation=RealtimeTruncationRetentionRatio(
 **Not sent to every model.** `session.truncation` is a GA Realtime API field, and the two
 `gpt-4o-*realtime-preview` models on the allowlist predate it — their session shape has no
 such field, and the Realtime API answers an unknown session field with an error event rather
-than ignoring it. `realtime_supports_truncation` (`src/core/agents/llm_capabilities.py`)
+than ignoring it. `realtime_supports_truncation` (`src/core/model_support/capabilities.py`)
 decides per model; a preview model runs without the cap and logs one line saying so. Use a
 `gpt-realtime*` model to get the reduction above. Semantic VAD predates the split and is sent
 to both generations.

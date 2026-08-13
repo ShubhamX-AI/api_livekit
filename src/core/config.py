@@ -78,4 +78,16 @@ class Settings:
         # Max Concurrent jobs (Number of concurrent calls)
         self.MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "12"))
 
+        # End-of-call webhook. Read timeout is generous on purpose: the receiver often
+        # writes the payload to its own database before answering, and a slow answer is
+        # normal rather than a fault. Attempts covers transport errors, timeouts, 429 and
+        # 5xx — never a 4xx, which the receiver has already decided about.
+        self.END_CALL_WEBHOOK_TIMEOUT = float(os.getenv("END_CALL_WEBHOOK_TIMEOUT", "30"))
+        self.END_CALL_WEBHOOK_ATTEMPTS = int(os.getenv("END_CALL_WEBHOOK_ATTEMPTS", "3"))
+
+        # How long assistant create/update reuses one `GET /v1/models` answer per key
+        # (src/core/model_support/openai_live.py). Lower it to notice an OpenAI model
+        # retirement sooner; 0 disables the cache and asks on every write.
+        self.OPENAI_MODEL_CACHE_TTL = float(os.getenv("OPENAI_MODEL_CACHE_TTL", "3600"))
+
 settings = Settings()

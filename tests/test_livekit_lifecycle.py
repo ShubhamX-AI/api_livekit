@@ -4,6 +4,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
+
+from src.services.livekit import livekit_svc
 from src.services.livekit.livekit_svc import LiveKitService
 from src.core.billing import calculate_billable_duration_minutes
 
@@ -319,7 +322,9 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(room_name=RoomNameField(), find_one=AsyncMock(return_value=None)),
         ), patch("src.services.livekit.livekit_svc.ActivityLog", CapturingActivityLog), patch(
             "src.services.livekit.livekit_svc.httpx.AsyncClient", FakeAsyncClient
-        ):
+        ), patch("src.services.livekit.livekit_svc.asyncio.sleep", AsyncMock()):
+            # 500 is retryable, so this exercises the give-up path; the backoff sleep is
+            # patched out to keep the suite fast.
             await svc.send_end_call_webhook(room_name="room-1", assistant_id="assistant-1")
 
         self.assertEqual(len(logged), 1)
@@ -356,6 +361,112 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
             await svc.send_end_call_webhook(room_name="room-1", assistant_id="assistant-1")
 
         self.assertEqual(logged, [])
+
+
+class ScriptedAsyncClient:
+    """httpx.AsyncClient stand-in that replays a scripted list of results per POST.
+
+    Each entry is either an exception to raise or an object with status_code/text.
+    Records how many POSTs were attempted so retry behaviour can be asserted.
+    """
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.attempts = 0
+
+    def factory(self, *args, **kwargs):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def post(self, url, json=None):
+        self.attempts += 1
+        result = self.script.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class TestEndCallWebhookRetries(unittest.IsolatedAsyncioTestCase):
+    """A slow or flaky receiver must not lose the post-call payload on the first try."""
+
+    async def _post(self, script, attempts=3):
+        svc = LiveKitService()
+        client = ScriptedAsyncClient(script)
+        with patch("src.services.livekit.livekit_svc.httpx.AsyncClient", client.factory), patch(
+            "src.services.livekit.livekit_svc.asyncio.sleep", AsyncMock()
+        ), patch.object(
+            livekit_svc.settings, "END_CALL_WEBHOOK_ATTEMPTS", attempts
+        ):
+            result = await svc._post_end_call_webhook("https://hook.example/end", {}, "room-1")
+        return result, client.attempts
+
+    async def test_read_timeout_is_retried_and_then_succeeds(self):
+        (status, response_data, _), attempts = await self._post(
+            [httpx.ReadTimeout("timed out"), SimpleNamespace(status_code=200, text="ok")]
+        )
+        self.assertEqual(status, "success")
+        self.assertEqual(response_data["status_code"], 200)
+        self.assertEqual(attempts, 2)
+
+    async def test_4xx_is_not_retried(self):
+        (status, response_data, message), attempts = await self._post(
+            [SimpleNamespace(status_code=422, text="bad payload")]
+        )
+        self.assertEqual(status, "error")
+        self.assertEqual(response_data["status_code"], 422)
+        self.assertIn("422", message)
+        self.assertEqual(attempts, 1)
+
+    async def test_5xx_is_retried_until_attempts_are_exhausted(self):
+        (status, response_data, _), attempts = await self._post(
+            [SimpleNamespace(status_code=502, text="bad gateway")] * 3
+        )
+        self.assertEqual(status, "error")
+        self.assertEqual(response_data["status_code"], 502)
+        self.assertEqual(attempts, 3)
+
+    async def test_persistent_timeout_reports_the_exception_without_a_response(self):
+        (status, response_data, message), attempts = await self._post(
+            [httpx.ReadTimeout("timed out")] * 2, attempts=2
+        )
+        self.assertEqual(status, "error")
+        self.assertIsNone(response_data)
+        self.assertIn("ReadTimeout", message)
+        self.assertEqual(attempts, 2)
+
+    async def test_the_assistant_can_override_the_attempt_count(self):
+        """The right value belongs to the receiver, not to one global setting."""
+        svc = LiveKitService()
+        client = ScriptedAsyncClient([SimpleNamespace(status_code=500, text="boom")] * 5)
+        with patch("src.services.livekit.livekit_svc.httpx.AsyncClient", client.factory), patch(
+            "src.services.livekit.livekit_svc.asyncio.sleep", AsyncMock()
+        ), patch.object(livekit_svc.settings, "END_CALL_WEBHOOK_ATTEMPTS", 3):
+            await svc._post_end_call_webhook(
+                "https://hook.example/end",
+                {},
+                "room-1",
+                webhook_config=SimpleNamespace(timeout_seconds=None, attempts=5),
+            )
+        self.assertEqual(client.attempts, 5)
+
+    async def test_a_null_override_falls_back_to_the_server_default(self):
+        svc = LiveKitService()
+        client = ScriptedAsyncClient([SimpleNamespace(status_code=500, text="boom")] * 3)
+        with patch("src.services.livekit.livekit_svc.httpx.AsyncClient", client.factory), patch(
+            "src.services.livekit.livekit_svc.asyncio.sleep", AsyncMock()
+        ), patch.object(livekit_svc.settings, "END_CALL_WEBHOOK_ATTEMPTS", 3):
+            await svc._post_end_call_webhook(
+                "https://hook.example/end",
+                {},
+                "room-1",
+                webhook_config=SimpleNamespace(timeout_seconds=None, attempts=None),
+            )
+        self.assertEqual(client.attempts, 3)
 
 
 if __name__ == "__main__":

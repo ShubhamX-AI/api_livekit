@@ -32,12 +32,18 @@ Same block lives in `CLAUDE.md` — edit both or neither.
 
 A change to models, providers or config knobs is finished only when all of these are true:
 
-- Factory code, `src/api/models/api_schemas/`, and the `validate_mode_config` rule table agree.
+- **The model list came from the API, not from memory.** Run
+  `uv run python scripts/check_model_allowlist.py` before touching any model set. OpenAI retires
+  models on its own schedule and a stale entry is indistinguishable from a working one until a
+  call goes silent — that is exactly how the three `*-chat-latest` aliases became an outage.
+- Factory code, `src/api/models/api_schemas/`, `src/core/model_support/`, and the
+  `validate_mode_config` rule table agree.
 - Tests updated and green: `uv run python -m unittest discover -s tests`.
 - Docs updated in **every** place that lists the thing you changed: `docs/reference/models.md`,
-  `docs/reference/compatibility.md`, `docs/architecture/cascade-pipeline.md`,
-  `docs/api/assistant/{create,update,index,list}.md`, plus `README.md` / `docs/features.md`
-  when the feature list changes. `grep` for a sibling provider's name to find them all.
+  `docs/reference/compatibility.md`, `docs/reference/troubleshooting.md`,
+  `docs/architecture/cascade-pipeline.md`, `docs/api/assistant/{create,update,index,list}.md`,
+  plus `README.md` / `docs/features.md` when the feature list changes. `grep` for a sibling
+  provider's name to find them all.
 - Docs build clean: `uv run mkdocs build --strict`.
 - Lint the files you touched: `uvx ruff check <paths>` — pre-existing violations live outside
   them; don't reflow unrelated files.
@@ -51,10 +57,45 @@ A change to models, providers or config knobs is finished only when all of these
 | Every config knob for create/update, examples, defaults | `docs/api/assistant/create.md`, `docs/api/assistant/update.md` |
 | Cascade mode specifics + validation rules | `docs/architecture/cascade-pipeline.md` |
 | Which mode × LLM × STT × TTS combinations are legal | `docs/reference/compatibility.md` |
-| Runtime configuration schemas + allowlists | `src/api/models/api_schemas/` (`config/llm_config.py` for both OpenAI allowlists and the per-mode rule table) |
+| What a failure looks like and which command diagnoses it | `docs/reference/troubleshooting.md` |
+| Which models/knobs/speakers exist at all | `src/core/model_support/` (dependency-free; imported by both images) |
+| Runtime configuration schemas + the per-mode rule table | `src/api/models/api_schemas/` (`config/llm_config.py`) |
+| Guards that need the stored row or a network call | `src/api/validation/assistant_guard.py` |
 | LLM / TTS / STT build logic | `src/core/agents/{llm,tts,stt}/factory.py` |
 
 If a doc disagrees with the factory code, **the factory code wins** — fix the doc.
+
+## Recent changes — the silent call, closed off (2026-08)
+
+One failure mode caused most "the assistant is broken" reports: the config is accepted, the call
+connects, OpenAI rejects **every** LLM turn, and the caller hears silence. Over the WebSocket the
+runtime uses, that rejection is `status_code=-1` with no parameter name — nothing to act on.
+
+What changed, in the order a request meets it:
+
+1. **The cascade allowlist lost five ids.** `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and
+   `gpt-5.3-chat-latest` were retired by OpenAI on 2026-06-19; `chat-latest` is a LiveKit
+   Inference gateway id (needs Cloud credentials); `gpt-oss-120b` is served by baseten/groq, not
+   `api.openai.com`. Do not restore any of them, and do not add a replacement from memory.
+2. **Two new gates that ask OpenAI** (`src/core/model_support/openai_live.py`): does the account
+   still serve the model, and will it accept this exact request (model + knobs + tool schemas)?
+   Both cached per key; both fail **open** on a network error, 401, 429 or 5xx. This is what
+   catches a `reasoning_effort` *value* a model refuses and a `service_tier` the account may not
+   use — neither is knowable from any table.
+3. **`tool_choice: "required"` needs a tool**, and `POST /tool/{attach,detach}` re-run the whole
+   guard: attaching or detaching moves both that rule and the `gpt-5.2`/`gpt-5.4*`
+   reasoning-with-tools rule.
+4. **STT/TTS model ids and Sarvam speakers are allowlisted** (`model_support/speech.py`), and a
+   provider with no key at all is refused instead of failing at job start.
+5. **Gemini Live models and realtime voices are validated.** Only three Live models exist; the
+   Gemini and OpenAI voice rosters share no names. The Gemini default moved to
+   `gemini-2.5-flash-native-audio-preview-12-2025`, because `gemini-3.1-flash-live-preview`
+   ignores `generate_reply()` after the first turn (no farewell, no silence re-prompts).
+
+Three scripts carry the diagnosis: `check_model_allowlist.py` (is our list still true),
+`audit_assistant_models.py` (which stored rows are stale), `replay_cascade_request.py <id>
+--bisect` (why OpenAI refused, over HTTPS where the error has detail). Operator-facing version:
+`docs/reference/troubleshooting.md`.
 
 ## Recent changes — the assistants' TTS + cascade LLM knobs (2026-08)
 
@@ -79,13 +120,16 @@ is absent.
 
 ### Cascade LLM (`assistant_llm_config`, mode=`cascade`, build = `openai.responses.LLM`)
 
-- `model` **must** be in `OPENAI_CASCADE_MODELS` allowlist
-  (`src/api/models/api_schemas/config/llm_config.py`); unknown → `422`. Default `gpt-4.1`.
+- `model` **must** be in `OPENAI_CASCADE_MODELS` (defined in
+  `src/core/model_support/capabilities.py`, re-exported from
+  `src/api/models/api_schemas/config/llm_config.py`); unknown → `422`. Default `gpt-4.1`. It is
+  then checked against OpenAI's own model list too — see the section above.
 - `temperature` (0–2): **ignored by reasoning models** (`gpt-5`/`gpt-5.x`) —
   they take `reasoning_effort` instead. Do not show both on a reasoning model in
   examples.
 - `reasoning_effort`: `none|minimal|low|medium|high|xhigh|max`, reasoning
-  models only.
+  models only. Which of those *values* a given model takes is per model and is checked against
+  OpenAI at create/update, not guessed here.
 - `max_output_tokens`, `service_tier`, `verbosity`, `tool_choice`,
   `parallel_tool_calls`: forwarded when set; omitted keeps SDK default.
 - Factory only forwards a knob when its config value is **non-None** (or truthy
@@ -124,9 +168,10 @@ a second one.
   text-only modality half-cascade needs on native-audio models
   (googleapis/python-genai#1780). The pipeline Gemini branch in `session.py` is gone.
   Realtime Gemini is untouched and fully supported.
-- **Two model allowlists**: `OPENAI_REALTIME_MODELS` (pipeline + realtime) and
-  `OPENAI_CASCADE_MODELS` (cascade). They do not overlap. Gemini realtime IDs stay
-  free-form on purpose.
+- **Three model allowlists** (all in `src/core/model_support/capabilities.py`):
+  `REALTIME_MODELS` (pipeline + realtime, OpenAI), `GEMINI_LIVE_MODELS` (realtime, Gemini) and
+  `OPENAI_CASCADE_MODELS` (cascade). They do not overlap. Gemini IDs are no longer free-form —
+  only three Live models exist and a chat id fails at connect with nothing naming the cause.
 - **`extra="forbid"` is now on every provider config** — all five STT shapes and all
   four TTS shapes, not just some. A typo is a `422`.
 - **Missing API keys are checked before the plugin is constructed** in *both* factories.

@@ -226,13 +226,46 @@ Content-Type: application/json
 !!! warning "Important"
 
     - Webhooks are sent when call status becomes terminal (for example `completed`, `busy`, `no_answer`, `failed`)
-    - Current runtime sends a single webhook request with a 10s timeout
+    - Delivery is retried: up to `END_CALL_WEBHOOK_ATTEMPTS` attempts (default `3`) with a 1s/2s backoff between them
+    - Each attempt allows 10s to connect and `END_CALL_WEBHOOK_TIMEOUT` seconds to answer (default `30`)
+    - Retried: connection errors, read timeouts, `429` and any `5xx`. **Not** retried: any other `4xx` — your endpoint has read the payload and rejected it, so re-sending it cannot help
+    - Because a failed attempt is retried, your endpoint must be **idempotent** — key on `data.room_name` (or `data.queue_id` for outbound) and ignore a payload you have already stored
     - Current runtime treats non-2xx HTTP status as failed delivery in runtime logging
     - Current runtime does not parse webhook response body, but records the status code and the first 500 characters of the body in the `end_call_webhook` activity log (`GET /logs?log_type=end_call_webhook&room_name=<room_name>`) for troubleshooting
-    - A single request only — non-2xx is logged, not retried
     - `recording_path` can be empty/null when recording fails after runtime retries
     - Empty `recording_path` does not block terminal webhook delivery
-    - Ensure your webhook endpoint responds quickly (< 10 seconds)
+    - A slow endpoint is tolerated, not free: every retry holds the worker's teardown path open, so answer `2xx` first and do your own processing afterwards
+
+### Per-assistant delivery settings
+
+The right timeout belongs to your endpoint, not to the platform — one endpoint answers in 80 ms,
+another writes the payload to its own database first and needs 45 seconds. Rather than moving
+the global default for everyone, set it on the assistant:
+
+```json title="POST /assistant/create or PATCH /assistant/update/{assistant_id}"
+{
+  "assistant_end_call_url": "https://your-app.example.com/hooks/lvk-call-ended",
+  "assistant_end_call_webhook": {
+    "timeout_seconds": 45,
+    "attempts": 5
+  }
+}
+```
+
+| Field | Range | Unset / `null` |
+| :--- | :--- | :--- |
+| `timeout_seconds` | `1`–`120` | server default `END_CALL_WEBHOOK_TIMEOUT` (`30`) |
+| `attempts` | `1`–`5` | server default `END_CALL_WEBHOOK_ATTEMPTS` (`3`) |
+
+On `PATCH` the object is merged with what is stored, like `assistant_interaction_config`: naming
+only `attempts` keeps your stored timeout, and sending a field as `null` returns it to the
+server default.
+
+A `webhook_url` passed directly (the passthrough-trunk path) has no assistant behind it and uses
+the server defaults.
+
+Diagnosing a webhook that did not arrive:
+[Troubleshooting](../../reference/troubleshooting.md#the-end-of-call-webhook-does-not-arrive).
     - For outbound calls, use `data.queue_id` to correlate the webhook with the original `POST /call/outbound` response. For inbound/web calls, use `data.room_name`.
     - `billable_duration_minutes` is calculated by the backend using the platform billing rule, so clients should not recompute rounding locally
 

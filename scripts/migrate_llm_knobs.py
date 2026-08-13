@@ -1,7 +1,7 @@
 """Drop cascade LLM knobs the assistant's stored model cannot read.
 
 `temperature`, `reasoning_effort` and `verbosity` are model-gated (see
-src/core/agents/llm_capabilities.py). Rows written before that gate existed can hold a
+src/core/model_support/capabilities.py). Rows written before that gate existed can hold a
 knob the model rejects — e.g. `temperature` on `gpt-5-mini`. OpenAI answers such a request
 with a 400 on *every* LLM turn, so the call connects and the assistant never speaks.
 
@@ -26,7 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-from src.core.agents.llm_capabilities import (  # noqa: E402
+from src.core.model_support.capabilities import (  # noqa: E402
     DEFAULT_CASCADE_MODEL,
     unsupported_knob_reason,
 )

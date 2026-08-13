@@ -46,6 +46,23 @@ class AssistantInteractionConfig(BaseModel):
     max_call_duration_minutes: Optional[float] = None
 
 
+class EndCallWebhookConfig(BaseModel):
+    """Per-assistant delivery settings for the end-of-call webhook.
+
+    Both fields are optional and mean "use the server default"
+    (`END_CALL_WEBHOOK_TIMEOUT` / `END_CALL_WEBHOOK_ATTEMPTS`). They exist because the right
+    values belong to the *receiver*, not to the platform: one customer's endpoint answers in
+    80 ms, another writes the payload into its own database first and needs 45 seconds, and a
+    single global timeout has to be generous enough for the slowest of them — which delays
+    every worker teardown behind the slowest customer.
+
+    Same shape as `InboundContextStrategy.timeout_seconds`, deliberately.
+    """
+
+    timeout_seconds: Optional[float] = None
+    attempts: Optional[int] = None
+
+
 class GreetingAudioConfig(BaseModel):
     """Per-assistant reference to a greeting audio from the reusable library.
 
@@ -98,6 +115,11 @@ class Assistant(Document):
     assistant_end_call_trigger_phrase: Optional[str] = None
     assistant_end_call_agent_message: Optional[str] = None
     assistant_end_call_url: Optional[str] = None
+    # Delivery tuning for the webhook posted to assistant_end_call_url. Absent or with null
+    # fields means the server defaults apply.
+    assistant_end_call_webhook: EndCallWebhookConfig = Field(
+        default_factory=EndCallWebhookConfig
+    )
     assistant_created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     assistant_updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     assistant_created_by_email: EmailStr

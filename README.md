@@ -39,6 +39,56 @@ Per-assistant provider keys live in `assistant_tts_config`, `assistant_stt_confi
 - Free-form configs are masked by key name: `GET /tool/details` and the inbound-context strategies return `****` for `authorization` / `token` / `secret` / `api_key` / `password` entries (including inside `headers`) and leave the `url` readable. Writing a `****` value back is also a `422`.
 - Filler words always call OpenAI, so an assistant's LLM key is reused there only when its LLM provider is `openai` — otherwise the system `OPENAI_API_KEY` is used (`provider_key_or_system`).
 
+## Configuration Validation
+
+The failure this platform guards hardest against has one shape: a configuration is accepted, the
+call connects, the provider rejects **every** LLM turn, and the caller hears silence until they
+hang up. Nothing looks wrong in the request, and the worker log only says
+`There was an issue with your request. Please check your inputs and try again`
+(`status_code=-1` — a WebSocket error frame with no detail).
+
+Four gates run before an assistant is stored, cheapest first:
+
+1. **Schema** (`src/api/models/api_schemas/`) — shape, ranges, enums, and the allowlisted model
+   ids for every provider: LLM, STT, TTS, Gemini Live, realtime voices, Sarvam speakers. These
+   used to be free strings, so a typo like `nova-9` stored fine and died at job start.
+2. **Mode rule table** (`validate_mode_config`) — which provider/model/STT/voice/tool
+   combinations can run in each mode. Re-checked against the **stored row** on every PATCH and
+   on tool attach/detach, because most PATCHes do not resend the mode, and attaching a tool
+   moves two of the rules.
+3. **Live model check** — one cached `GET /v1/models`: does the account still serve this model?
+   No static list can know about a retirement. Three `*-chat-latest` aliases were retired by
+   OpenAI on 2026-06-19 and every assistant holding one kept validating clean.
+4. **Config probe** (cascade only) — one 16-token Responses request carrying the exact model,
+   knobs and tool schemas. This is what catches a `reasoning_effort` *value* a model refuses and
+   a `service_tier` the account may not use. OpenAI's own message becomes the `422`.
+
+Gates 3 and 4 fail **open** on a network error, `401`, `429` or `5xx` — a provider outage must
+not make assistants un-editable. Results are cached per key and per knob combination
+(`OPENAI_MODEL_CACHE_TTL`, default 1 h), so a hundred assistants sharing one config cost one
+request.
+
+What each model, tier, voice and speaker actually accepts lives in `src/core/model_support/` —
+dependency-free, imported by both the API and the worker so the two halves cannot disagree.
+Every set is measured, never copied from a doc page: `flex` is refused on `gpt-4.1*`, `scale` is
+not an OpenAI tier at all, and `fast` works everywhere while being documented nowhere. Full
+tables: [Compatibility Matrix](docs/reference/compatibility.md).
+
+### Diagnostics
+
+| Command | Answers |
+|---|---|
+| `uv run python scripts/replay_cascade_request.py <assistant_id>` | *Why* did the provider refuse this assistant's request? Replays the exact payload over HTTPS and, when no parameter is named, bisects the knobs automatically. |
+| `uv run python scripts/check_model_allowlist.py` | Is every allowlisted model still servable by this key? Exits non-zero on drift, so it works as a pre-deploy gate. Add `--probe <model>` to test one id — `/v1/models` lists deprecated ids that answer `404`. |
+| `uv run python scripts/audit_assistant_models.py` | Which stored assistants hold a model this deployment cannot run? `--apply` clears the field so they fall back to the default. |
+
+All three are read-only unless `--apply` is passed, and none of them print an API key.
+Symptom-by-symptom guide: [Troubleshooting](docs/reference/troubleshooting.md).
+
+**Never edit a model list from memory.** OpenAI retires models on its own schedule and a stale
+entry is indistinguishable from a working one until a call goes silent — run
+`check_model_allowlist.py` first, and `--probe` anything you intend to add.
+
 ## Exotel Outbound Lifecycle
 
 - Exotel outbound API calls are queued first and return `202 Accepted` with a `queue_id`.
@@ -141,6 +191,10 @@ ENABLE_SIP_LISTENER=true   # Set "false" on api container when sip_dispatcher co
 ENABLE_DISPATCHER=true     # Set "false" on api container when sip_dispatcher container is used
 GUNICORN_WORKERS=1
 MAX_CONCURRENT_JOBS=12
+
+# End-of-call webhook delivery (see docs/api/calls/webhook.md)
+END_CALL_WEBHOOK_TIMEOUT=30   # Seconds to wait for your endpoint to answer
+END_CALL_WEBHOOK_ATTEMPTS=3   # Retries on timeout / connection error / 429 / 5xx
 
 MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
 DATABASE_NAME=livekit_db
@@ -258,7 +312,16 @@ uv run python -m scripts.backfill_billable_duration_minutes
 
 ## Documentation
 
-- MkDocs source lives in `docs/`.
+- MkDocs source lives in `docs/`. The same markdown is served to coding agents over MCP at
+  `/mcp` (`src/api/mcp_docs.py`), so a new page under `docs/` is discoverable by both humans and
+  agents with no extra wiring.
+- Start here for behaviour questions:
+  - [Models & Providers](docs/reference/models.md) — every model, knob and default, and what
+    changes if you change it
+  - [Compatibility Matrix](docs/reference/compatibility.md) — which mode × provider × model ×
+    voice × tier combinations are legal, with the measured tables
+  - [Troubleshooting](docs/reference/troubleshooting.md) — symptom → cause → the command that
+    proves it
 - Build docs site:
 
 ```bash
@@ -308,7 +371,7 @@ Two axes: **mode** (`assistant_mode`) = how many models are in the loop, **provi
 - `realtime` mode — LLM speaks its own audio, no external TTS:
   - Requires `assistant_llm_config`
   - `assistant_llm_config.provider` defaults to `gemini`; set `openai` for OpenAI realtime audio
-  - `voice`/`model`/`api_key` override defaults (Gemini `Puck`/`gemini-3.1-flash-live-preview`, OpenAI `marin`/`gpt-realtime-1.5`)
+  - `voice`/`model`/`api_key` override defaults (Gemini `Puck`/`gemini-2.5-flash-native-audio-preview-12-2025`, OpenAI `marin`/`gpt-realtime-1.5`); both `model` and `voice` are validated per vendor
   - Ignores `assistant_tts_model` and `assistant_tts_config` at runtime
   - When `assistant_interaction_config.speaks_first=true`, the assistant also sends the configured start instruction as the first response through the realtime conversation path
 - `cascade` mode — a true three-stage STT → LLM → TTS pipeline (`docs/architecture/cascade-pipeline.md`):
@@ -374,7 +437,7 @@ api_livekit/
 ├── assets/
 │   └── audio/
 ├── docs/                  # MkDocs source
-├── scripts/               # migration/backfill one-offs
+├── scripts/               # migration/backfill one-offs + the three diagnostics below
 ├── tests/
 ├── src/
 │   ├── api/
@@ -383,6 +446,8 @@ api_livekit/
 │   │   ├── models/
 │   │   │   ├── api_schemas/           # Pydantic request/response schemas + validators, split by domain
 │   │   │   └── response_models.py
+│   │   ├── validation/
+│   │   │   └── assistant_guard.py     # guards needing the stored row or a provider call
 │   │   ├── routes/
 │   │   │   ├── assistant.py
 │   │   │   ├── call.py
@@ -420,6 +485,12 @@ api_livekit/
 │   │   │   │   └── silero_vad.onnx    # local VAD weights (livekit-local-inference)
 │   │   │   └── tts/
 │   │   │       └── factory.py         # TTS factory + Sarvam WS keepalive
+│   │   ├── model_support/             # dependency-free: what each model/provider accepts
+│   │   │   ├── capabilities.py        # LLM model sets + which knobs each one reads
+│   │   │   ├── speech.py              # STT/TTS model sets + Sarvam speaker roster
+│   │   │   ├── openai_live.py         # asks OpenAI what it serves / accepts (config time)
+│   │   │   ├── payload.py             # the Responses request body the runtime sends
+│   │   │   └── tool_schema.py         # one tool document → one OpenAI function schema
 │   │   ├── providers/
 │   │   │   ├── __init__.py
 │   │   │   └── keys.py                # provider key registry + masking helpers

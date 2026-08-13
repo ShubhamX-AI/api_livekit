@@ -12,6 +12,7 @@ from src.api.models.api_schemas import (
     NativeSTTConfig,
     UpdateAssistant,
 )
+from src.api.validation import effective_value
 from src.api.routes.assistant import (
     get_assistant_details,
     merge_interaction_config,
@@ -37,6 +38,18 @@ class QueryField:
 
 
 class TestAssistantRoute(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # The update route asks OpenAI two things: whether it still serves the model, and
+        # whether it accepts this exact request. Both stubbed here so the suite never touches
+        # the network — the gates themselves are covered by tests/test_live_model_check.py.
+        for target in (
+            "src.api.validation.assistant_guard.unavailable_model_reason",
+            "src.api.validation.assistant_guard.rejected_config_reason",
+        ):
+            patcher = patch(target, AsyncMock(return_value=None))
+            self.addCleanup(patcher.stop)
+            patcher.start()
+
     async def test_update_assistant_merges_partial_interaction_config(self):
         request = UpdateAssistant(
             assistant_interaction_config={
@@ -226,13 +239,50 @@ class TestAssistantRoute(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class TestEffectiveValue(unittest.TestCase):
+    """Every guard has to resolve "the PATCH's value, else the row's" the same way.
+
+    This used to be hand-rolled at four call sites with three different mechanics, which is how
+    a newly guarded field ends up checked in one place and missed in the others.
+    """
+
+    def setUp(self):
+        self.assistant = SimpleNamespace(
+            assistant_tts_model="cartesia", tool_ids=["t1"], assistant_end_call_enabled=True
+        )
+
+    def test_the_patch_wins_when_it_names_the_field(self):
+        self.assertEqual(
+            effective_value(self.assistant, {"assistant_tts_model": "sarvam"}, "assistant_tts_model"),
+            "sarvam",
+        )
+
+    def test_the_stored_value_stands_when_the_patch_omits_it(self):
+        self.assertEqual(
+            effective_value(self.assistant, {}, "assistant_tts_model"), "cartesia"
+        )
+
+    def test_an_explicit_null_clears_rather_than_falling_back(self):
+        """Key presence, not truthiness — a null is the documented way to clear a field."""
+        self.assertIsNone(
+            effective_value(self.assistant, {"assistant_tts_model": None}, "assistant_tts_model")
+        )
+
+    def test_an_empty_list_is_a_value_not_an_absence(self):
+        """Detaching the last tool must read as "no tools", not as "keep the stored ones"."""
+        self.assertEqual(effective_value(self.assistant, {"tool_ids": []}, "tool_ids"), [])
+
+    def test_a_field_absent_from_both_is_none(self):
+        self.assertIsNone(effective_value(self.assistant, {}, "assistant_stt_model"))
+
+
 class TestMaskedKeyGuard(unittest.TestCase):
     """A masked key read from GET /details must never be writable back."""
 
     def test_masked_tts_key_rejected_for_every_provider(self):
         configs = {
             "cartesia": {"voice_id": "v1"},
-            "sarvam": {"speaker": "anushka"},
+            "sarvam": {"speaker": "shubh"},
             "elevenlabs": {"voice_id": "v1"},
             "mistral": {"voice_id": "v1"},
         }
@@ -273,7 +323,7 @@ class TestMaskedKeyGuard(unittest.TestCase):
     def test_omitted_keys_accepted(self):
         request = UpdateAssistant(
             assistant_tts_model="sarvam",
-            assistant_tts_config={"speaker": "anushka"},
+            assistant_tts_config={"speaker": "shubh"},
         )
         self.assertIsNone(request.assistant_tts_config.api_key)
 

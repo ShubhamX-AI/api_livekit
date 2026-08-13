@@ -3,7 +3,15 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from src.api.models.api_schemas import (
     CreateAssistant,
     UpdateAssistant,
-    validate_mode_config,
+)
+from src.api.validation import (
+    effective_llm_config,
+    effective_value,
+    enforce_openai_config,
+    enforce_provider_keys,
+    enforce_stored_mode_constraints,
+    resolve_probe_tools,
+    will_attach_tools,
 )
 from src.core.providers.keys import mask_assistant_keys, redact_text
 from src.api.models.response_models import apiResponse
@@ -52,60 +60,6 @@ async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
         raise HTTPException(status_code=404, detail="Audio asset not found")
 
 
-def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str | None) -> None:
-    """Apply the per-mode provider/model/STT rules against the *effective* assistant.
-
-    The schema validator can only see the request, and its rules fire only when the
-    request names the mode — but most PATCHes touch a field or two without resending it.
-    So the stored row has to be merged in and re-checked here. Without this the update is
-    accepted and the assistant then fails to start with no signal at update time
-    (create_llm/create_stt return None and the job just ends).
-
-    The rule table itself lives in one place — validate_mode_config() — so the request
-    path and this path can never drift apart.
-    """
-    effective_mode = new_mode or getattr(assistant, "assistant_mode", None)
-    if effective_mode not in ("pipeline", "cascade", "realtime"):
-        return
-
-    # Request values win over stored ones, key by key: a PATCH that changes only `model`
-    # must still be judged against the provider already on the row.
-    stored_llm = getattr(assistant, "assistant_llm_config", None) or {}
-    if "assistant_llm_config" in update_data:
-        # Already merged over the stored row by the caller (merge_llm_config), or explicitly
-        # null to clear it — the realtime→pipeline switch does that. Either way what sits in
-        # update_data is the complete config the write will store, so falling back to the row
-        # here would resurrect a knob the operator just cleared with a null.
-        stored_llm = {}
-    requested_llm = update_data.get("assistant_llm_config") or {}
-
-    def effective(key):
-        # Key presence, not truthiness: a PATCH that sets a knob to null clears it, and
-        # falling back to the stored value there would re-validate something the operator
-        # just removed.
-        return requested_llm[key] if key in requested_llm else stored_llm.get(key)
-
-    effective_llm = SimpleNamespace(
-        provider=effective("provider"),
-        model=effective("model"),
-        # The generation knobs are model-gated (see llm_capabilities), so a PATCH that
-        # changes only the model has to be judged against the knobs already on the row.
-        temperature=effective("temperature"),
-        reasoning_effort=effective("reasoning_effort"),
-        verbosity=effective("verbosity"),
-    )
-    effective_stt = update_data.get("assistant_stt_model") or getattr(
-        assistant, "assistant_stt_model", None
-    )
-
-    try:
-        validate_mode_config(effective_mode, effective_llm, effective_stt)
-    except ValueError as e:
-        # 400 (not 422): the request itself is well-formed — it is the combination with
-        # what is already stored that cannot run.
-        raise HTTPException(status_code=400, detail=redact_text(str(e)))
-
-
 # Create new assistant
 @router.post("/create")
 async def create_assistant(
@@ -122,6 +76,34 @@ async def create_assistant(
     greeting_audio = assistant_data.get("assistant_greeting_audio") or {}
     if greeting_audio.get("audio_id"):
         await validate_owned_audio(greeting_audio["audio_id"], current_user)
+
+    # The offline rules ran inside the schema. These two ask OpenAI what no local list can
+    # know: whether it still serves the model, and whether it accepts this exact request.
+    # A new assistant has no tool_ids yet, so end_call is the only tool that can be present —
+    # /assistant/attach-tools re-runs the same guard when tools arrive.
+    enforce_provider_keys(
+        assistant_data.get("assistant_mode"),
+        assistant_data.get("assistant_stt_model"),
+        assistant_data.get("assistant_stt_config"),
+        assistant_data.get("assistant_tts_model"),
+        assistant_data.get("assistant_tts_config"),
+        status_code=422,
+    )
+
+    probe_assistant = SimpleNamespace(
+        tool_ids=[],
+        assistant_end_call_enabled=assistant_data.get("assistant_end_call_enabled", False),
+    )
+    await enforce_openai_config(
+        assistant_data.get("assistant_mode"),
+        assistant_data.get("assistant_llm_config"),
+        status_code=422,
+        tools=await resolve_probe_tools(
+            probe_assistant,
+            strict_schemas=assistant_data.get("assistant_mode") == "cascade",
+        ),
+        has_tools=will_attach_tools(probe_assistant),
+    )
 
     try:
         logger.info(f"Inserting assistant into database")
@@ -176,6 +158,15 @@ async def update_assistant(
             update_data["assistant_interaction_config"],
         )
 
+    # Webhook delivery settings: same partial-update contract as the interaction config, so a
+    # PATCH naming only `attempts` keeps the stored timeout. A field sent as null stays null,
+    # which is how "fall back to the server default" is expressed.
+    if "assistant_end_call_webhook" in update_data:
+        update_data["assistant_end_call_webhook"] = merge_interaction_config(
+            assistant.assistant_end_call_webhook,
+            update_data["assistant_end_call_webhook"],
+        )
+
     # Greeting audio: merge with existing, then validate the referenced asset.
     if "assistant_greeting_audio" in update_data:
         merged_greeting = merge_interaction_config(
@@ -211,6 +202,28 @@ async def update_assistant(
         )
 
     enforce_stored_mode_constraints(assistant, update_data, new_mode)
+    # 400, matching enforce_stored_mode_constraints: the request on its own is well-formed,
+    # and the value being judged may have come from the stored row rather than this PATCH.
+    effective_mode = new_mode or assistant.assistant_mode
+    # Both stages judged against the effective row: switching TTS provider without sending a
+    # key has to be checked against the key the row already holds, and against the server's.
+    enforce_provider_keys(
+        effective_mode,
+        effective_value(assistant, update_data, "assistant_stt_model"),
+        effective_value(assistant, update_data, "assistant_stt_config"),
+        effective_value(assistant, update_data, "assistant_tts_model"),
+        effective_value(assistant, update_data, "assistant_tts_config"),
+        status_code=400,
+    )
+    await enforce_openai_config(
+        effective_mode,
+        effective_llm_config(assistant, update_data),
+        status_code=400,
+        tools=await resolve_probe_tools(
+            assistant, update_data, strict_schemas=effective_mode == "cascade"
+        ),
+        has_tools=will_attach_tools(assistant, update_data),
+    )
 
     logger.info(f"Updating assistant {assistant_id}")
     update_data.update(
