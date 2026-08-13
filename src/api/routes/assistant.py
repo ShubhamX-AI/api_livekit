@@ -22,6 +22,25 @@ def merge_interaction_config(base, overrides: dict) -> dict:
     return {**base_dict, **overrides}
 
 
+def merge_llm_config(base, overrides: dict) -> dict:
+    """Merge a PATCH's `assistant_llm_config` over the stored one, dropping cleared keys.
+
+    Same partial-update contract as `assistant_interaction_config`: an omitted key keeps
+    whatever the row holds, and an explicit null removes it. Removing rather than storing
+    `None` matters for the model-gated knobs — `create_llm` and the validator both test key
+    presence, so a lingering `temperature: null` would read as "set" to a future reader even
+    though nothing is sent to OpenAI.
+
+    Replacing the whole subdocument instead (what `$set` does on its own) meant a PATCH of
+    `{"model": "gpt-4.1"}` silently dropped `provider` and `api_key`, while
+    `enforce_stored_mode_constraints` still judged the request against the values that write
+    was about to delete.
+    """
+    base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base or {})
+    merged = {**base_dict, **overrides}
+    return {k: v for k, v in merged.items() if v is not None}
+
+
 async def validate_owned_audio(audio_id: str, current_user: APIKey) -> None:
     """Ensure the audio asset exists, is active, and belongs to the caller."""
     asset = await AudioAsset.find_one(
@@ -52,9 +71,11 @@ def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str 
     # Request values win over stored ones, key by key: a PATCH that changes only `model`
     # must still be judged against the provider already on the row.
     stored_llm = getattr(assistant, "assistant_llm_config", None) or {}
-    # An explicit null clears the stored config (the realtime→pipeline switch above does
-    # this), so nothing from the old row should be merged in.
-    if "assistant_llm_config" in update_data and update_data["assistant_llm_config"] is None:
+    if "assistant_llm_config" in update_data:
+        # Already merged over the stored row by the caller (merge_llm_config), or explicitly
+        # null to clear it — the realtime→pipeline switch does that. Either way what sits in
+        # update_data is the complete config the write will store, so falling back to the row
+        # here would resurrect a knob the operator just cleared with a null.
         stored_llm = {}
     requested_llm = update_data.get("assistant_llm_config") or {}
 
@@ -177,6 +198,17 @@ async def update_assistant(
         # Clear stale realtime llm_config only when actually leaving realtime mode
         if assistant.assistant_mode == "realtime" and "assistant_llm_config" not in update_data:
             update_data["assistant_llm_config"] = None
+
+    # Partial LLM config: merge over the stored dict so a PATCH naming one key does not drop
+    # the rest. Leaving realtime mode is the one exception — the stored config there is a
+    # Gemini one (voice, Gemini api_key) that must not survive under an OpenAI provider, and
+    # the guard above already documents it as cleared.
+    leaving_realtime = assistant.assistant_mode == "realtime" and new_mode in ("pipeline", "cascade")
+    if update_data.get("assistant_llm_config") is not None and not leaving_realtime:
+        update_data["assistant_llm_config"] = merge_llm_config(
+            assistant.assistant_llm_config,
+            update_data["assistant_llm_config"],
+        )
 
     enforce_stored_mode_constraints(assistant, update_data, new_mode)
 

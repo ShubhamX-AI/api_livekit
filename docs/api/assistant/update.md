@@ -194,6 +194,14 @@ Update an existing assistant. Only send fields you want to change.
 
     Sending `null` clears a knob; omitting it keeps whatever the row already holds, which is
     why the second example above fails and the third does not.
+- `assistant_llm_config` is **merged** with the stored one, key by key — the same partial-update
+  contract as `assistant_interaction_config`. A PATCH naming only `model` keeps the stored
+  `provider`, `api_key` and knobs; it does not replace the object. `null` on a key removes it.
+  Leaving `realtime` mode is the one exception: the stored Gemini config is replaced outright, not
+  merged, so a Gemini `voice` or key cannot survive under `provider: "openai"`.
+- To clear a knob left on many assistants at once (e.g. a `temperature` stored before the
+  model gate existed), run `uv run python scripts/migrate_llm_knobs.py` — dry run by default,
+  `--apply` to write.
 - Unknown keys in `assistant_llm_config`, `assistant_tts_config` (including `voice_settings`) or `assistant_stt_config` return `422`.
 - When switching to `pipeline`, any stored realtime `assistant_llm_config` (e.g. Gemini keys) is automatically cleared unless you explicitly provide a new one.
 

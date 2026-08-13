@@ -176,7 +176,7 @@ All read in `src/core/config.py` (`Settings`). Beyond `ENABLE_SIP_LISTENER` / `E
 
 ## One-off scripts
 
-`scripts/` holds migration/backfill jobs (e.g. `migrate_assistants.py`, `migrate_stt_config.py`, `backfill_call_records.py`, `backfill_billable_duration_minutes.py`). Run with `uv run python scripts/<name>.py`.
+`scripts/` holds migration/backfill jobs (e.g. `migrate_assistants.py`, `migrate_stt_config.py`, `backfill_call_records.py`, `backfill_billable_duration_minutes.py`, `migrate_llm_knobs.py`). Run with `uv run python scripts/<name>.py`.
 
 `migrate_stt_config.py` runs in two passes: default copies the legacy `assistant_interaction_config.user_stt_provider` / `.stt_api_key` into `assistant_stt_model` / `assistant_stt_config` (safe before deploy), `--unset` removes the old keys (after deploy is verified).
 

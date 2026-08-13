@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from src.api.models.api_schemas import (
@@ -14,6 +15,7 @@ from src.api.models.api_schemas import (
 from src.api.routes.assistant import (
     get_assistant_details,
     merge_interaction_config,
+    merge_llm_config,
     update_assistant,
 )
 from src.core.agents.stt.factory import resolve_stt
@@ -82,6 +84,101 @@ class TestAssistantRoute(unittest.IsolatedAsyncioTestCase):
             update_doc["assistant_interaction_config"]["thinking_sound_enabled"],
             False,
         )
+
+    async def _patch_llm_config(self, stored_llm, requested_llm, **stored):
+        """Run PATCH /update with a stored llm_config and return the written $set doc."""
+        request = UpdateAssistant(assistant_llm_config=requested_llm, **stored.pop("request", {}))
+        assistant = SimpleNamespace(
+            assistant_mode=stored.pop("assistant_mode", "cascade"),
+            assistant_llm_config=stored_llm,
+            assistant_stt_model=stored.pop("assistant_stt_model", "sarvam"),
+            assistant_tts_model=stored.pop("assistant_tts_model", "cartesia"),
+            assistant_interaction_config=AssistantInteractionConfig(),
+            update=AsyncMock(),
+            **stored,
+        )
+        assistant_model = SimpleNamespace(
+            assistant_id=QueryField(),
+            assistant_created_by_email=QueryField(),
+            find_one=AsyncMock(return_value=assistant),
+        )
+
+        with patch("src.api.routes.assistant.Assistant", assistant_model):
+            await update_assistant(
+                assistant_id="assistant-1",
+                request=request,
+                current_user=SimpleNamespace(user_email="user@example.com"),
+            )
+        return assistant.update.await_args.args[0]["$set"]["assistant_llm_config"]
+
+    async def test_update_assistant_merges_partial_llm_config(self):
+        """A PATCH naming one key must not drop provider, api_key or the other knobs."""
+        merged = await self._patch_llm_config(
+            {
+                "provider": "openai",
+                "model": "gpt-5-mini",
+                "api_key": "sk-stored-12345678",
+                "reasoning_effort": "low",
+                "max_output_tokens": 512,
+            },
+            {"model": "gpt-5-nano"},
+        )
+
+        self.assertEqual(
+            merged,
+            {
+                "provider": "openai",
+                "model": "gpt-5-nano",
+                "api_key": "sk-stored-12345678",
+                "reasoning_effort": "low",
+                "max_output_tokens": 512,
+            },
+        )
+
+    async def test_update_assistant_null_clears_a_stale_knob(self):
+        """The documented way out of a knob the new model rejects: send it as null."""
+        merged = await self._patch_llm_config(
+            {"provider": "openai", "model": "gpt-4.1", "temperature": 0.7},
+            {"model": "gpt-5-mini", "temperature": None},
+        )
+
+        self.assertNotIn("temperature", merged)
+        self.assertEqual(merged["model"], "gpt-5-mini")
+
+    async def test_update_assistant_rejects_a_stale_knob_left_in_place(self):
+        """Omitting the knob keeps it, so the model switch is still refused — with a reason."""
+        with self.assertRaises(HTTPException) as ctx:
+            await self._patch_llm_config(
+                {"provider": "openai", "model": "gpt-4.1", "temperature": 0.7},
+                {"model": "gpt-5-mini"},
+            )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("temperature", ctx.exception.detail)
+
+    async def test_leaving_realtime_replaces_llm_config_instead_of_merging(self):
+        """A stored Gemini voice/key must not survive under an OpenAI provider."""
+        merged = await self._patch_llm_config(
+            {"provider": "gemini", "model": "gemini-3.1-flash-live-preview", "voice": "Puck", "api_key": "goog-123456789"},
+            {"provider": "openai", "model": "gpt-4.1"},
+            assistant_mode="realtime",
+            request={"assistant_mode": "cascade"},
+        )
+
+        self.assertEqual(merged, {"provider": "openai", "model": "gpt-4.1"})
+
+    def test_merge_llm_config_drops_cleared_keys(self):
+        merged = merge_llm_config(
+            {"provider": "openai", "model": "gpt-5-mini", "verbosity": "low"},
+            {"verbosity": None, "reasoning_effort": "high"},
+        )
+
+        self.assertEqual(
+            merged,
+            {"provider": "openai", "model": "gpt-5-mini", "reasoning_effort": "high"},
+        )
+        # A row that has never held an llm_config still merges cleanly.
+        self.assertEqual(merge_llm_config(None, {"model": "gpt-4.1"}), {"model": "gpt-4.1"})
 
     def test_merge_interaction_config_accepts_model_or_dict(self):
         merged_from_model = merge_interaction_config(

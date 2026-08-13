@@ -4,7 +4,9 @@ Cascade is the true STT -> LLM -> TTS pipeline (assistant_mode="cascade"). These
 tests cover the parts that decide what actually gets built, without touching the network.
 """
 
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -22,6 +24,9 @@ from src.core.agents.llm import create_llm
 from src.core.agents.stt import create_stt
 from src.core.agents.usage import summarize_usage
 from src.core.db.db_schemas import UsageRecord
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "scripts"))
+from migrate_llm_knobs import stale_knobs  # noqa: E402
 
 
 def make_assistant(preferred_languages=None, **overrides):
@@ -1483,6 +1488,30 @@ class TestSummarizeUsage(unittest.TestCase):
         )
         self.assertIsNone(metered["llm_model"])
         self.assertEqual(metered["tts_characters_count"], 0)
+
+
+class TestStaleKnobBackfill(unittest.TestCase):
+    """scripts/migrate_llm_knobs.py — which stored knobs the backfill would clear."""
+
+    def test_reports_only_the_knobs_the_stored_model_rejects(self):
+        reasons = stale_knobs(
+            {"model": "gpt-5-mini", "temperature": 0.7, "reasoning_effort": "low"}
+        )
+        self.assertEqual(list(reasons), ["temperature"])
+        self.assertIn("reject temperature", reasons["temperature"])
+
+    def test_clean_config_is_left_alone(self):
+        self.assertEqual(stale_knobs({"model": "gpt-4.1", "temperature": 0.7}), {})
+        self.assertEqual(stale_knobs({"model": "gpt-5-mini", "verbosity": "low"}), {})
+        self.assertEqual(stale_knobs({}), {})
+
+    def test_unset_model_is_judged_as_the_cascade_default(self):
+        """No model on the row means gpt-4.1 at call time, so reasoning_effort is stale."""
+        self.assertEqual(list(stale_knobs({"reasoning_effort": "low"})), ["reasoning_effort"])
+
+    def test_unknown_model_is_never_guessed_at(self):
+        """Same rule as the validator: a model outside the allowlist keeps every knob."""
+        self.assertEqual(stale_knobs({"model": "gpt-9-turbo", "temperature": 0.7}), {})
 
 
 if __name__ == "__main__":

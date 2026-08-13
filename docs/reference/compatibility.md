@@ -91,6 +91,11 @@ log line is `There was an issue with your request. Please check your inputs and 
 A model outside the allowlist (a row written before it existed, or by a direct Mongo edit)
 has no known family, so its knobs are forwarded untouched rather than guessed at.
 
+Assistants written *before* this gate existed can still hold a knob their model rejects. Calls
+run — `create_llm` drops it and logs which one — but every PATCH to that assistant is refused
+with a `400` until the knob is cleared, because the rules are re-checked against the merged row.
+`uv run python scripts/migrate_llm_knobs.py` lists them (`--apply` to clear them).
+
 #### Worked examples
 
 Same intent, two families. Pick the knob the family reads:
