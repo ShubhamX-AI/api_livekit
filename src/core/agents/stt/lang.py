@@ -23,6 +23,9 @@ from typing import get_args
 
 from livekit.plugins.cartesia.models import STTLanguages as _CartesiaSTTLanguages
 from livekit.plugins.sarvam.stt import MODEL_CONFIGS as _SARVAM_STT_MODELS
+from livekit.plugins.sarvam.tts import (
+    MODEL_SPEAKER_COMPATIBILITY as _SARVAM_TTS_SPEAKERS,
+)
 from livekit.plugins.sarvam.tts import SarvamTTSLanguages as _SarvamTTSLanguages
 
 from src.core.logger import logger
@@ -125,6 +128,38 @@ def validate_sarvam_language(model: str | None, code: str | None, *, assistant_i
     return SARVAM_AUTO
 
 
+def sarvam_speakers(model: str) -> list[str] | None:
+    """The speakers this Bulbul model can use, or None when the plugin has no list for it."""
+    speakers = _SARVAM_TTS_SPEAKERS.get(model)
+    return sorted(speakers["all"]) if speakers else None
+
+
+def validate_sarvam_speaker(model: str, speaker: str | None, *, assistant_id: str) -> str | None:
+    """Return the speaker when this Bulbul model can speak it, else None with one error.
+
+    Third variant of the same trap, and the worst of them. The speaker roster is **per
+    model version** and the two generations share nobody: all seven bulbul:v2 speakers
+    (anushka, manisha, vidya, arya, abhilash, karun, hitesh) are rejected by the v3 model
+    this platform pins. The plugin then *raises* `ValueError` in its constructor, which —
+    unlike a language code — escapes create_tts and entrypoint() entirely, so the job dies
+    with a traceback instead of the one-line log every other config error produces.
+
+    None means "cannot build this TTS": there is no sane fallback. Falling back to some
+    other voice would answer the call in a voice nobody chose, which is worse than a clear
+    failure for the one field whose entire purpose is picking the voice.
+    """
+    allowed = sarvam_speakers(model)
+    if allowed is None or (speaker and speaker.lower() in allowed):
+        # Unknown model: leave it to the plugin, which knows its own roster better.
+        return speaker
+    logger.error(
+        f"Sarvam speaker {speaker!r} is not available on {model} for assistant "
+        f"{assistant_id} — {model} speakers are: {', '.join(allowed)}. "
+        "Update assistant_tts_config.speaker."
+    )
+    return None
+
+
 def validate_sarvam_mode(model: str | None, mode: str | None, *, assistant_id: str) -> str | None:
     """Return a Sarvam transcription mode safe to construct with, or None to leave it unset.
 
@@ -179,4 +214,10 @@ if __name__ == "__main__":
     assert validate_sarvam_mode("saaras:v3", "codemix", assistant_id="t") == "codemix"
     assert validate_sarvam_mode("saarika:v2.5", "codemix", assistant_id="t") is None
     assert validate_sarvam_mode("saaras:v2.5", "codemix", assistant_id="t") is None
+    # TTS speakers are per generation, and the two generations overlap in nothing: every
+    # bulbul:v2 speaker is a job-killing ValueError on bulbul:v3.
+    assert validate_sarvam_speaker("bulbul:v3", "shubh", assistant_id="t") == "shubh"
+    assert validate_sarvam_speaker("bulbul:v3", "anushka", assistant_id="t") is None
+    assert validate_sarvam_speaker("bulbul:v2", "anushka", assistant_id="t") == "anushka"
+    assert not set(sarvam_speakers("bulbul:v2")) & set(sarvam_speakers("bulbul:v3"))
     print("ok")

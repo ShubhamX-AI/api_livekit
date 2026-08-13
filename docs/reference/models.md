@@ -24,8 +24,19 @@ Both modes route through a realtime model — `pipeline` uses it in text-only mo
 OpenAI realtime additionally runs fixed turn-taking params not exposed to the API: `TurnDetection(type="semantic_vad", eagerness="high", create_response=True, interrupt_response=False)`, and
 `RealtimeTruncationRetentionRatio(retention_ratio=0.75, post_instructions=8000)`.
 
+The truncation half is **sent only to the `gpt-realtime*` line**. `session.truncation` is a GA
+Realtime API field that `gpt-4o-realtime-preview` and `gpt-4o-mini-realtime-preview` do not have,
+and the API errors on an unknown session field instead of ignoring it. On those two models the
+session runs without the context cap and logs one line saying so — see
+[Runtime Modes → LLM Context Truncation](../architecture/runtime-modes.md#llm-context-truncation).
+
 Native user-transcription (`assistant_stt_model="native"`, pipeline mode only) uses OpenAI
 `gpt-4o-mini-transcribe` regardless of which realtime provider is selected.
+
+In `realtime` mode both vendors transcribe the caller: OpenAI is given
+`gpt-4o-mini-transcribe` explicitly, and Gemini transcribes with its own model because the
+Google plugin enables `input_audio_transcription` whenever the argument is omitted. Neither
+needs `assistant_stt_model` — that field is ignored in this mode.
 
 ## Cascade LLM (`cascade` mode only)
 
@@ -37,40 +48,50 @@ chat-completions, same `@function_tool` contract. Configured via `assistant_llm_
 | `provider` | `openai` only — any other value is rejected | `openai` |
 | `model` | one of the documented model IDs below — **validated against the allowlist at creation/update time** | `gpt-4.1` |
 | `api_key` | string | falls back to system `OPENAI_API_KEY` |
-| `temperature` | `0.0`–`2.0` | SDK default (`0.8`) |
+| `temperature` | `0.0`–`2.0` — **chat models only** | SDK default (`0.8`) |
 | `max_output_tokens` | positive int | unset (model default) |
-| `reasoning_effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | unset |
+| `reasoning_effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — **reasoning models only** | unset |
 | `service_tier` | `auto`, `default`, `flex`, `scale`, `priority` | unset |
-| `verbosity` | `low`, `medium`, `high` | unset |
+| `verbosity` | `low`, `medium`, `high` — **gpt-5 generation only** | unset |
 | `tool_choice` | `auto`, `required`, `none` | unset |
 | `parallel_tool_calls` | bool | unset |
 
+Three of those knobs are model-gated; sending one to a model that does not read it is a
+`400` from OpenAI on **every** turn of the call, not a warning. Pairing a knob with a model
+that rejects it is a `422` at create/update. Full matrix:
+[Compatibility Matrix → Cascade LLM knobs](compatibility.md#cascade-llm-knobs).
+
 ### Documented models
 
-| Model | Notes |
-|---|---|
-| `gpt-4.1` | default; general-purpose text model |
-| `gpt-4.1-mini`, `gpt-4.1-nano` | cheaper, faster text models |
-| `gpt-4o`, `gpt-4o-mini` | multimodal legacy chat models |
-| `gpt-5` | reasoning model — ignores `temperature`, uses `reasoning_effort` |
-| `gpt-5-mini`, `gpt-5-nano` | reasoning models, smaller + cheaper |
-| `gpt-5.1`, `gpt-5.1-chat-latest` | reasoning models |
-| `gpt-5.2`, `gpt-5.2-chat-latest` | reasoning models |
-| `gpt-5.3-chat-latest` | reasoning model |
-| `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` | reasoning models |
-| `gpt-5.5` | reasoning model |
-| `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | reasoning models |
-| `chat-latest` | auto-follows the latest `gpt-5.x-chat` snapshot |
-| `gpt-oss-120b` | open-weight model, non-reasoning |
+| Model | Family | Notes |
+|---|---|---|
+| `gpt-4.1` | chat | default; general-purpose text model |
+| `gpt-4.1-mini`, `gpt-4.1-nano` | chat | cheaper, faster text models |
+| `gpt-4o`, `gpt-4o-mini` | chat | multimodal legacy chat models |
+| `gpt-5` | reasoning | rejects `temperature`, takes `reasoning_effort` |
+| `gpt-5-mini`, `gpt-5-nano` | reasoning | smaller + cheaper |
+| `gpt-5.1` | reasoning | |
+| `gpt-5.2` | reasoning | rejects `reasoning_effort` **when tools are attached** |
+| `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` | reasoning | same tool restriction as `gpt-5.2` |
+| `gpt-5.5` | reasoning | |
+| `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | reasoning | |
+| `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest`, `gpt-5.3-chat-latest` | chat | gpt-5 generation **chat** snapshots: `temperature` yes, `reasoning_effort` no |
+| `chat-latest` | chat | auto-follows the latest `gpt-5.x-chat` snapshot |
+| `gpt-oss-120b` | chat | open-weight model, non-reasoning |
 
-**Reasoning-model rule:** the `gpt-5`/`gpt-5.x` line rejects `temperature` and prefers
-`reasoning_effort`. `temperature` is ignored there; send `reasoning_effort` instead.
+**Reasoning-model rule:** reasoning models reject `temperature` and take `reasoning_effort`;
+chat models are the reverse. The `*-chat-latest` aliases sit inside the gpt-5 generation but
+are **chat** models — they read `verbosity` but not `reasoning_effort`. The families are
+listed per model in `src/core/agents/llm_capabilities.py`, which both the API validator and
+the runtime factory read; a prefix such as "starts with gpt-5" gets the aliases wrong.
 
 ### On the allowlist
 
 The mode validator (`validate_mode_config` in `src/api/models/api_schemas/config/llm_config.py`) rejects
 any `model` outside the table above with a `422`. When OpenAI ships a new model, add it to
-`OPENAI_CASCADE_MODELS` in that file and to the table above.
+`REASONING_MODELS` or `CHAT_MODELS` in `src/core/agents/llm_capabilities.py` — that split is
+the allowlist (`OPENAI_CASCADE_MODELS`) *and* decides which knobs the model accepts — then to
+the table above.
 
 The pipeline and realtime modes have their own, separate allowlist (`OPENAI_REALTIME_MODELS`) of
 OpenAI **realtime** model IDs — the two sets do not overlap, and sending a chat model such as
@@ -226,8 +247,8 @@ except ElevenLabs** (which now accepts a `model` key). Synthesis params are conf
 | Provider | Model (default) | Required config | Configurable synthesis params |
 |---|---|---|---|
 | `cartesia` | `sonic-3` (fixed) | `voice_id` | `language` (default `en`), `speed` (float `0`–`3`, default `1.0`), `volume` (default `1.0`), `emotion`, `pronunciation_dict_id` |
-| `sarvam` | `bulbul:v3` (fixed) | `speaker` | `target_language_code` (default `en-IN`), `pace` (`0.3`–`3.0`, default `1.0`), `speech_sample_rate` (one of `8000`/`16000`/`22050`/`24000`/`32000`/`44100`/`48000`, default `24000`), `temperature` (`0.01`–`2.0`, default `0.3`) |
-| `elevenlabs` | `eleven_v3` (default) | `voice_id` | `model` (`eleven_v3`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`), `voice_settings` (`stability`, `similarity_boost`, `style`, `speed`, `use_speaker_boost`); non-streaming (HTTP chunked) |
+| `sarvam` | `bulbul:v3` (fixed) | `speaker` — **v3 roster only**, see below | `target_language_code` (default `en-IN`), `pace` (`0.3`–`3.0`, default `1.0`), `speech_sample_rate` (one of `8000`/`16000`/`22050`/`24000`/`32000`/`44100`/`48000`, default `24000`), `temperature` (`0.01`–`2.0`, default `0.3`) |
+| `elevenlabs` | `eleven_v3` (default) | `voice_id` | `model` (`eleven_v3`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`), `voice_settings` (`stability`, `similarity_boost`, `style`, `speed` — **not on v3**, `use_speaker_boost`); non-streaming (HTTP chunked) |
 | `mistral` | `voxtral-mini-tts-2603` (fixed) | `voice_id` | `response_format="opus"`, non-streaming |
 
 All four accept an optional `api_key`, falling back to the matching system key
@@ -237,6 +258,14 @@ Speed is therefore **configurable per assistant** for Cartesia, Sarvam and Eleve
 providers whose SDK exposes a rate knob). See each tab in [create](../api/assistant/create.md) for
 valid ranges.
 
+**ElevenLabs `speed` does not apply to `eleven_v3`**, which is the default model here — v3 has no
+speed control at all
+([ElevenLabs docs](https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech)). A `speed`
+stored against v3 is dropped before the call with a log line naming the models that do support it
+(`eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`); the rest of `voice_settings`
+is sent unchanged. On v3, `stability` also behaves as three modes — creative (`0.0`), natural
+(`0.5`), robust (`1.0`) — rather than a continuum.
+
 **Sarvam `target_language_code` defaults to `en-IN`, and accepts 11 codes only.** Bulbul speaks
 `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN` —
 note `en-IN`, **not** `en-US`, which reads like a reasonable value and is not one. Anything outside
@@ -245,6 +274,26 @@ the list is logged and replaced with `en-IN` rather than failing every synthesis
 factory fallback and synthesized Bengali for every assistant that left the field out. Assistants
 created before this fix have `bn-IN` written into their stored config — send the field explicitly to
 correct them.)
+
+**Cartesia's model is fixed at `sonic-3`** and has no config field. It is the newest ID the
+installed plugin knows; `sonic-3.5` is a [LiveKit Inference](https://docs.livekit.io/agents/models/inference.md)
+gateway model, and Inference needs LiveKit Cloud credentials this deployment does not use. The
+`emotion` and `pronunciation_dict_id` params are sonic-3-only, and `speed` must be numeric there
+(the `"slow"`/`"fast"` presets belong to the older models and are rejected by the plugin), so making
+the model configurable means gating those three per model.
+
+**Sarvam `speaker` must come from the bulbul:v3 roster.** The two Bulbul generations share no
+speaker at all, so every v2 name — `anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`,
+`hitesh` — is invalid on the v3 model this platform pins. The v3 speakers are:
+
+`aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`,
+`kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`,
+`shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`.
+
+Unlike a bad language code, a bad speaker is **not** substituted: the call ends before it starts,
+with one log line naming the valid speakers. Substituting would answer the call in a voice nobody
+chose. (Before this check the Sarvam plugin's own `ValueError` escaped the factory and killed the
+job with a traceback instead.)
 
 **Unknown keys are rejected.** Every TTS config block — and the nested ElevenLabs `voice_settings` —
 is strict: an unrecognised key returns `422` rather than being silently dropped. The same is true of

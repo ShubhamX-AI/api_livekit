@@ -475,12 +475,12 @@ class TestCreateLLM(unittest.TestCase):
         )
 
     def test_generation_knobs_forwarded(self):
+        """The knobs a reasoning model reads. Temperature is not one of them — see below."""
         llm = create_llm(
             make_assistant(
                 assistant_llm_config={
                     "api_key": "k",
                     "model": "gpt-5-mini",
-                    "temperature": 0.2,
                     "max_output_tokens": 400,
                     "reasoning_effort": "medium",
                     "service_tier": "flex",
@@ -491,13 +491,183 @@ class TestCreateLLM(unittest.TestCase):
             )
         )
         opts = llm._opts
-        self.assertEqual(opts.temperature, 0.2)
         self.assertEqual(opts.max_output_tokens, 400)
         self.assertEqual(opts.service_tier, "flex")
         self.assertEqual(opts.verbosity, "low")
         self.assertEqual(opts.tool_choice, "required")
         self.assertEqual(opts.parallel_tool_calls, False)
         self.assertEqual(opts.reasoning.effort, "medium")
+
+    def test_temperature_forwarded_on_a_non_reasoning_model(self):
+        llm = create_llm(
+            make_assistant(
+                assistant_llm_config={
+                    "api_key": "k",
+                    "model": "gpt-4.1",
+                    "temperature": 0.2,
+                }
+            )
+        )
+        self.assertEqual(llm._opts.temperature, 0.2)
+
+    def test_reasoning_effort_dropped_on_a_model_that_rejects_it(self):
+        """The failure this gate exists for.
+
+        An effort set on gpt-5 and left behind by a switch to gpt-4.1 used to be forwarded
+        verbatim. OpenAI answers 400 ("Unsupported parameter: 'reasoning.effort' is not
+        supported with this model"), the plugin raises it non-retryable inside
+        _llm_inference_task, and it does so on every turn — the assistant answers the call
+        and never speaks.
+        """
+        from livekit.agents.types import NOT_GIVEN
+
+        llm = create_llm(
+            make_assistant(
+                assistant_llm_config={
+                    "api_key": "k",
+                    "model": "gpt-4.1",
+                    "reasoning_effort": "low",
+                    "temperature": 0.4,
+                }
+            )
+        )
+        self.assertIs(llm._opts.reasoning, NOT_GIVEN)
+        # The knob the model does read is untouched by the drop.
+        self.assertEqual(llm._opts.temperature, 0.4)
+
+    def test_temperature_dropped_on_a_reasoning_model(self):
+        """The mirror image: temperature stored, then the model switched to gpt-5."""
+        from livekit.agents.types import NOT_GIVEN
+
+        llm = create_llm(
+            make_assistant(
+                assistant_llm_config={
+                    "api_key": "k",
+                    "model": "gpt-5",
+                    "temperature": 0.4,
+                    "reasoning_effort": "low",
+                }
+            )
+        )
+        self.assertIs(llm._opts.temperature, NOT_GIVEN)
+        self.assertEqual(llm._opts.reasoning.effort, "low")
+
+    def test_verbosity_is_gated_to_the_gpt5_generation(self):
+        """`text.verbosity` is a gpt-5 parameter. chat-latest follows a gpt-5.x snapshot."""
+        from livekit.agents.types import NOT_GIVEN
+
+        def verbosity_for(model):
+            llm = create_llm(
+                make_assistant(
+                    assistant_llm_config={
+                        "api_key": "k",
+                        "model": model,
+                        "verbosity": "low",
+                    }
+                )
+            )
+            return llm._opts.verbosity
+
+        self.assertEqual(verbosity_for("gpt-5.4"), "low")
+        self.assertEqual(verbosity_for("chat-latest"), "low")
+        self.assertIs(verbosity_for("gpt-4.1"), NOT_GIVEN)
+        self.assertIs(verbosity_for("gpt-oss-120b"), NOT_GIVEN)
+
+    def test_chat_latest_is_not_a_reasoning_model(self):
+        """A prefix test read `gpt-5.2-chat-latest` as gpt-5 and sent it reasoning.effort.
+
+        The chat aliases track a gpt-5.x *chat* snapshot: they reject reasoning.effort and
+        accept temperature, the opposite of the reasoning models they sit next to.
+        """
+        from livekit.agents.types import NOT_GIVEN
+
+        llm = create_llm(
+            make_assistant(
+                assistant_llm_config={
+                    "api_key": "k",
+                    "model": "gpt-5.2-chat-latest",
+                    "reasoning_effort": "low",
+                    "temperature": 0.4,
+                }
+            )
+        )
+        self.assertIs(llm._opts.reasoning, NOT_GIVEN)
+        self.assertEqual(llm._opts.temperature, 0.4)
+
+    def test_reasoning_dropped_when_tools_make_the_model_reject_it(self):
+        """gpt-5.2 / gpt-5.4* refuse reasoning.effort while function tools are attached."""
+        from livekit.agents.types import NOT_GIVEN
+
+        config = {"api_key": "k", "model": "gpt-5.2", "reasoning_effort": "high"}
+        with_tools = create_llm(make_assistant(assistant_llm_config=config), has_tools=True)
+        self.assertIs(with_tools._opts.reasoning, NOT_GIVEN)
+        # Same assistant, no tools: the knob is legal and must survive.
+        without_tools = create_llm(make_assistant(assistant_llm_config=config))
+        self.assertEqual(without_tools._opts.reasoning.effort, "high")
+
+    def test_plugin_injected_reasoning_is_cleared_when_tools_are_attached(self):
+        """The failure the logs showed, and the one config filtering cannot reach.
+
+        openai.responses.LLM injects Reasoning(effort="none") for gpt-5.2 when the caller
+        passes none, so an assistant with an empty config still sent reasoning.effort with
+        its tools and got a 400 on every turn ("There was an issue with your request").
+        """
+        from livekit.agents.types import NOT_GIVEN
+
+        bare = {"api_key": "k", "model": "gpt-5.2"}
+        # What the plugin does on its own — if this stops being true, the workaround below
+        # is dead code and can go.
+        self.assertEqual(create_llm(make_assistant(assistant_llm_config=bare))._opts.reasoning.effort, "none")
+        with_tools = create_llm(make_assistant(assistant_llm_config=bare), has_tools=True)
+        self.assertIs(with_tools._opts.reasoning, NOT_GIVEN)
+
+    def test_a_compatible_reasoning_model_keeps_its_effort_with_tools(self):
+        """Only gpt-5.2/gpt-5.4* are tool-incompatible; gpt-5 itself is unaffected."""
+        llm = create_llm(
+            make_assistant(
+                assistant_llm_config={
+                    "api_key": "k",
+                    "model": "gpt-5",
+                    "reasoning_effort": "medium",
+                }
+            ),
+            has_tools=True,
+        )
+        self.assertEqual(llm._opts.reasoning.effort, "medium")
+
+    def test_built_llm_is_logged_without_the_api_key(self):
+        """A Responses 400 arrives with no detail, so the knobs must be in our own log."""
+        with mock.patch("src.core.agents.llm.factory.logger") as log:
+            create_llm(
+                make_assistant(
+                    assistant_llm_config={
+                        "api_key": "sk-secret",
+                        "model": "gpt-4.1",
+                        "temperature": 0.4,
+                    }
+                )
+            )
+        logged = str(log.info.call_args)
+        self.assertIn("gpt-4.1", logged)
+        self.assertIn("temperature", logged)
+        self.assertNotIn("sk-secret", logged)
+
+    def test_dropping_a_knob_says_which_one_and_why(self):
+        """A silent drop is its own debugging problem — the log has to name the pair."""
+        with mock.patch("src.core.agents.llm.factory.logger") as log:
+            create_llm(
+                make_assistant(
+                    assistant_llm_config={
+                        "api_key": "k",
+                        "model": "gpt-4.1",
+                        "reasoning_effort": "low",
+                    }
+                )
+            )
+        message = log.warning.call_args[0][0]
+        self.assertIn("reasoning_effort", message)
+        self.assertIn("gpt-4.1", message)
+        self.assertIn("assistant-1", message)
 
     def test_omitted_knobs_keep_defaults(self):
         llm = create_llm(make_assistant(assistant_llm_config={"api_key": "k"}))
@@ -593,12 +763,12 @@ class TestCascadeSchemaRules(unittest.TestCase):
             )
 
     def test_cascade_accepts_llm_generation_knobs(self):
+        """Knobs a reasoning model reads. Temperature is not one of them — next test."""
         request = CreateAssistant(
             **self.BASE,
             assistant_stt_model="sarvam",
             assistant_llm_config={
                 "model": "gpt-5-mini",
-                "temperature": 0.3,
                 "max_output_tokens": 512,
                 "reasoning_effort": "low",
                 "service_tier": "flex",
@@ -608,9 +778,44 @@ class TestCascadeSchemaRules(unittest.TestCase):
             },
         )
         cfg = request.assistant_llm_config
-        self.assertEqual(cfg.temperature, 0.3)
         self.assertEqual(cfg.max_output_tokens, 512)
         self.assertEqual(cfg.reasoning_effort, "low")
+        self.assertEqual(cfg.verbosity, "medium")
+
+    def test_cascade_accepts_temperature_on_a_chat_model(self):
+        request = CreateAssistant(
+            **self.BASE,
+            assistant_stt_model="sarvam",
+            assistant_llm_config={"model": "gpt-4.1", "temperature": 0.3},
+        )
+        self.assertEqual(request.assistant_llm_config.temperature, 0.3)
+
+    def test_cascade_rejects_a_knob_the_model_cannot_read(self):
+        """Store-then-fail is the trap: the knob used to be accepted here and only killed
+        the call later, as an opaque OpenAI 400 on every LLM turn."""
+        bad_pairs = [
+            {"model": "gpt-5-mini", "temperature": 0.3},  # reasoning models reject it
+            {"model": "gpt-4.1", "reasoning_effort": "low"},  # chat models reject it
+            {"model": "gpt-5.2-chat-latest", "reasoning_effort": "low"},  # chat alias
+            {"model": "gpt-4o", "verbosity": "low"},  # gpt-5 generation only
+        ]
+        for llm_config in bad_pairs:
+            with self.subTest(llm_config=llm_config):
+                with self.assertRaises(ValidationError):
+                    CreateAssistant(
+                        **self.BASE,
+                        assistant_stt_model="sarvam",
+                        assistant_llm_config=llm_config,
+                    )
+
+    def test_cascade_knob_rules_use_the_default_model_when_none_is_set(self):
+        """No model means gpt-4.1, so the knobs are judged against gpt-4.1."""
+        with self.assertRaises(ValidationError):
+            CreateAssistant(
+                **self.BASE,
+                assistant_stt_model="sarvam",
+                assistant_llm_config={"reasoning_effort": "low"},
+            )
 
     def test_cascade_rejects_unknown_llm_config_key(self):
         with self.assertRaises(ValidationError):
@@ -823,6 +1028,8 @@ class TestCreateTTS(unittest.TestCase):
         self.assertIs(tts._opts.voice_settings, NOT_GIVEN)
 
     def test_elevenlabs_present_voice_settings_is_forwarded(self):
+        """Model pinned deliberately: `speed` is dropped on the default v3 model, which has
+        no speed control (see TestElevenLabsSpeedGuard)."""
         from src.core.agents.tts.factory import create_tts
 
         tts = create_tts(
@@ -831,6 +1038,7 @@ class TestCreateTTS(unittest.TestCase):
                 assistant_tts_config={
                     "voice_id": "v",
                     "api_key": "k-key",
+                    "model": "eleven_multilingual_v2",
                     "voice_settings": {
                         "stability": 0.7,
                         "similarity_boost": 0.8,
@@ -1017,6 +1225,81 @@ class TestSarvamTTSLanguageGuard(unittest.TestCase):
 
     def test_unset_code_falls_back_to_en_in(self):
         self.assertEqual(self._tts(target_language_code=None)._opts.target_language_code, "en-IN")
+
+
+class TestSarvamTTSSpeakerGuard(unittest.TestCase):
+    """The speaker roster is per Bulbul generation, and the plugin raises on a mismatch.
+
+    Unlike a bad language code, that exception escapes create_tts and entrypoint(): the job
+    dies with a traceback and the caller hears nothing at all.
+    """
+
+    def _tts(self, speaker):
+        from src.core.agents.tts.factory import create_tts
+
+        return create_tts(
+            SimpleNamespace(
+                assistant_id="assistant-1",
+                assistant_tts_model="sarvam",
+                assistant_tts_config={"api_key": "k", "speaker": speaker},
+            )
+        )
+
+    def test_a_v3_speaker_is_forwarded(self):
+        self.assertEqual(self._tts("shubh")._opts.speaker, "shubh")
+
+    def test_a_v2_speaker_is_refused_without_raising(self):
+        # 'anushka' is the plugin's own bulbul:v2 default, so it is the likeliest stale value.
+        self.assertIsNone(self._tts("anushka"))
+
+    def test_an_unknown_speaker_is_refused_without_raising(self):
+        self.assertIsNone(self._tts("not-a-speaker"))
+
+    def test_the_refusal_names_the_valid_speakers(self):
+        with mock.patch("src.core.agents.stt.lang.logger") as log:
+            self._tts("anushka")
+        message = log.error.call_args[0][0]
+        self.assertIn("anushka", message)
+        self.assertIn("shubh", message)  # one of the speakers that would work
+        self.assertIn("assistant-1", message)
+
+
+class TestElevenLabsSpeedGuard(unittest.TestCase):
+    """`speed` is not a v3 knob, and v3 is this platform's default ElevenLabs model."""
+
+    def _tts(self, model, **voice_settings):
+        from src.core.agents.tts.factory import create_tts
+
+        return create_tts(
+            SimpleNamespace(
+                assistant_id="assistant-1",
+                assistant_tts_model="elevenlabs",
+                assistant_tts_config={
+                    "api_key": "k",
+                    "voice_id": "v1",
+                    "model": model,
+                    "voice_settings": {"stability": 0.4, **voice_settings},
+                },
+            )
+        )
+
+    def test_speed_is_dropped_on_v3(self):
+        opts = self._tts("eleven_v3", speed=1.2)._opts
+        self.assertIsNone(opts.voice_settings.speed)
+        # The settings the model does read are untouched by the drop.
+        self.assertEqual(opts.voice_settings.stability, 0.4)
+
+    def test_speed_survives_on_a_model_that_has_it(self):
+        opts = self._tts("eleven_multilingual_v2", speed=1.2)._opts
+        self.assertEqual(opts.voice_settings.speed, 1.2)
+
+    def test_the_drop_names_the_model_and_the_alternatives(self):
+        with mock.patch("src.core.agents.tts.factory.logger") as log:
+            self._tts("eleven_v3", speed=1.2)
+        message = log.warning.call_args[0][0]
+        self.assertIn("eleven_v3", message)
+        self.assertIn("assistant-1", message)
+        self.assertIn("eleven_multilingual_v2", message)
 
 
 class TestSarvamTTSRanges(unittest.TestCase):

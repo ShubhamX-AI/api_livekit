@@ -57,9 +57,21 @@ def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str 
     if "assistant_llm_config" in update_data and update_data["assistant_llm_config"] is None:
         stored_llm = {}
     requested_llm = update_data.get("assistant_llm_config") or {}
+
+    def effective(key):
+        # Key presence, not truthiness: a PATCH that sets a knob to null clears it, and
+        # falling back to the stored value there would re-validate something the operator
+        # just removed.
+        return requested_llm[key] if key in requested_llm else stored_llm.get(key)
+
     effective_llm = SimpleNamespace(
-        provider=requested_llm.get("provider") or stored_llm.get("provider"),
-        model=requested_llm.get("model") or stored_llm.get("model"),
+        provider=effective("provider"),
+        model=effective("model"),
+        # The generation knobs are model-gated (see llm_capabilities), so a PATCH that
+        # changes only the model has to be judged against the knobs already on the row.
+        temperature=effective("temperature"),
+        reasoning_effort=effective("reasoning_effort"),
+        verbosity=effective("verbosity"),
     )
     effective_stt = update_data.get("assistant_stt_model") or getattr(
         assistant, "assistant_stt_model", None

@@ -246,16 +246,16 @@ chat-completions, and the same `@function_tool` contract, so DB-backed tools wor
 | `provider` | `openai` | Only `openai` is supported in cascade |
 | `model` | `gpt-4.1` | Must be one of the documented OpenAI models — validated at creation/update. List in [Models & Providers](../reference/models.md#cascade-llm-cascade-mode-only) |
 | `api_key` | system `OPENAI_API_KEY` | per-assistant override |
-| `temperature` | SDK default (`0.8`) | `0`–`2`. **Ignored by reasoning models** (`gpt-5.x`) |
+| `temperature` | SDK default (`0.8`) | `0`–`2`. **Chat models only** — reasoning models reject it |
 | `max_output_tokens` | model default | cap on output tokens |
-| `reasoning_effort` | unset | `none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`. Reasoning models only |
+| `reasoning_effort` | unset | `none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`. **Reasoning models only**, and not on `gpt-5.2`/`gpt-5.4*` while tools are attached |
 | `service_tier` | unset | `auto`/`default`/`flex`/`scale`/`priority` |
-| `verbosity` | unset | `low`/`medium`/`high` |
+| `verbosity` | unset | `low`/`medium`/`high`. **gpt-5 generation only** (`text.verbosity`) |
 | `tool_choice` | unset | `auto`/`required`/`none` |
 | `parallel_tool_calls` | unset | allow multiple tool calls in one response |
 
-The model list is a **curated allowlist** (`OPENAI_CASCADE_MODELS` in
-`src/api/models/api_schemas/config/llm_config.py`), enforced by the mode validator. This replaced the old
+The model list is a **curated allowlist** (`OPENAI_CASCADE_MODELS`, sourced from the model
+table in `src/core/agents/llm_capabilities.py`), enforced by the mode validator. This replaced the old
 free-form string: an unknown model now fails fast at assistant creation with a `422` listing the
 supported IDs, instead of failing at the first API call. The realtime/pipeline modes keep the
 free-form model field because they accept realtime model IDs (`gpt-realtime-1.5`, Gemini) that do
@@ -264,6 +264,39 @@ not overlap with the cascade set.
 These knobs map onto `openai.responses.LLM` constructor args — they are the Responses-API param
 surface, not the LiveKit Inference `extra_kwargs` surface. `temperature` and `top_p` are
 mutually exclusive on the Responses API; only `temperature` is exposed.
+
+### Model-gated knobs
+
+The three marked above are not "supported everywhere, ignored where irrelevant". OpenAI
+answers a knob the model cannot read with a `400`, the Responses plugin raises that as a
+non-retryable `APIStatusError` inside `_llm_inference_task`, and it does so on every turn —
+the assistant answers the call, greets nobody and never speaks. The only visible symptom over
+the WebSocket transport is `There was an issue with your request. Please check your inputs and
+try again`, with no mention of which parameter was at fault.
+
+So the pairing is checked twice, from one table (`src/core/agents/llm_capabilities.py`):
+
+- **at the API** — `validate_mode_config` rejects an impossible pairing with a `422`, so it
+  is never stored;
+- **at call time** — `create_llm` drops a knob the current model cannot read and logs which
+  one and why. A stored config outlives the model it was written for: set `reasoning_effort`
+  on `gpt-5`, later switch the assistant to `gpt-4.1`, and the effort stays on the row.
+
+Two cases the table exists to get right, both of which a "starts with gpt-5" test gets wrong:
+
+- **`*-chat-latest` are chat models.** They sit inside the gpt-5 generation, so they read
+  `text.verbosity`, but they are not reasoning models: `temperature` yes, `reasoning_effort`
+  no.
+- **`gpt-5.2` / `gpt-5.4*` reject reasoning effort once function tools are attached.** The
+  OpenAI plugin injects a default `Reasoning(effort=...)` for those models when the caller
+  passes none, so even an empty `assistant_llm_config` sent one; the SDK's own guard for this
+  never fires on the Responses path (it filters the key `reasoning_effort`, while the
+  Responses payload key is `reasoning`, and it is called without the tool list). `create_llm`
+  therefore clears the option after construction when `has_tools=True` — `session.py` passes
+  that from the fully-built tool list, DB tools plus the built-in `end_call`.
+
+Every cascade session logs one `Cascade LLM built | assistant=… | model=… | has_tools=… |
+knobs=…` line (never the API key). That line is what a Responses `400` should be read against.
 
 ## TTS stage
 

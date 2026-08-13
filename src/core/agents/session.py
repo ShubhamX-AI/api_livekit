@@ -36,6 +36,7 @@ from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import log_missing_strategy, resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL, create_llm
+from src.core.agents.llm_capabilities import realtime_supports_truncation
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
 from src.core.agents.stt import (
     FinalCoalescer,
@@ -338,6 +339,10 @@ async def entrypoint(ctx: JobContext):
                 user_email=assistant.assistant_created_by_email,
                 room_name=room_name,
                 assistant_id=assistant_id,
+                # Only cascade talks to the Responses API, which is where `strict` on a
+                # function tool means anything. The Realtime API has no such field and
+                # errors on the unknown key.
+                strict_schemas=is_cascade,
             )
             logger.info(f"Loaded {len(tools)} tool(s) for assistant {assistant.assistant_id}")
         except Exception as e:
@@ -592,6 +597,28 @@ async def entrypoint(ctx: JobContext):
     )
     _native_transcription = AudioTranscription(model="gpt-4o-mini-transcribe", prompt=_stt_prompt)
 
+    # Shared by the two OpenAI realtime branches (full realtime and half-cascade).
+    _openai_realtime_model = llm_config.get("model") or "gpt-realtime-1.5"
+    # `session.truncation` is a GA Realtime API field. The older gpt-4o-*realtime-preview
+    # models — still on the allowlist, so still reachable — do not carry it in their session
+    # shape, and an unknown session field comes back as an error event rather than being
+    # ignored. None omits the field entirely (the plugin only sends it when non-None).
+    _realtime_truncation = (
+        RealtimeTruncationRetentionRatio(
+            type="retention_ratio",
+            retention_ratio=0.75,
+            token_limits=TokenLimits(post_instructions=8000),
+        )
+        if realtime_supports_truncation(_openai_realtime_model)
+        else None
+    )
+    if _realtime_truncation is None and not is_cascade and realtime_provider == "openai":
+        logger.info(
+            "Realtime model %s predates session.truncation — running without it "
+            "(context is truncated by the API's own default instead).",
+            _openai_realtime_model,
+        )
+
     # Set in the cascade branch only: the plugin STT that becomes the session's own
     # first stage. The other two modes leave it None (their LLM owns transcription).
     cascade_stt = None
@@ -600,7 +627,10 @@ async def entrypoint(ctx: JobContext):
         # True pipeline: three independent stages, each separately metered and swappable.
         # Nothing here is a RealtimeModel, so there is no server-side VAD and no
         # self-transcription — turn detection and STT are the session's own job.
-        llm = create_llm(assistant)
+        # has_tools decides one knob the LLM cannot be built without knowing: gpt-5.2 and
+        # gpt-5.4* reject reasoning.effort while function tools are attached. `tools` is
+        # complete by here — DB tools loaded above, end_call appended with them.
+        llm = create_llm(assistant, has_tools=bool(tools))
         if llm is None:
             return
         if not is_text_only:
@@ -626,7 +656,7 @@ async def entrypoint(ctx: JobContext):
             )
         elif realtime_provider == "openai":
             llm = realtime.RealtimeModel(
-                model=llm_config.get("model", "gpt-realtime-1.5"),
+                model=_openai_realtime_model,
                 voice=llm_config.get("voice", "marin"),
                 modalities=["audio"],
                 # Sarvam never runs in full realtime mode, so the model always transcribes.
@@ -638,11 +668,7 @@ async def entrypoint(ctx: JobContext):
                     create_response=True,
                     interrupt_response=False,
                 ),
-                truncation=RealtimeTruncationRetentionRatio(
-                    type="retention_ratio",
-                    retention_ratio=0.75,
-                    token_limits=TokenLimits(post_instructions=8000),
-                ),
+                truncation=_realtime_truncation,
                 api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
             )
         else:
@@ -672,7 +698,7 @@ async def entrypoint(ctx: JobContext):
 
         if realtime_provider == "openai":
             llm = realtime.RealtimeModel(
-                model=llm_config.get("model", "gpt-realtime-1.5"),
+                model=_openai_realtime_model,
                 input_audio_transcription=None if _use_sarvam_stt else _native_transcription,
                 input_audio_noise_reduction=_noise_reduction,
                 turn_detection=TurnDetection(
@@ -682,11 +708,7 @@ async def entrypoint(ctx: JobContext):
                     interrupt_response=False,  # Don't interrupt LLM response mid-generation; let it finish and handle turn-taking in the agent logic instead
                 ),
                 modalities=["text"],
-                truncation=RealtimeTruncationRetentionRatio(
-                    type="retention_ratio",
-                    retention_ratio=0.75,
-                    token_limits=TokenLimits(post_instructions=8000),
-                ),
+                truncation=_realtime_truncation,
                 api_key=llm_config.get("api_key") or settings.OPENAI_API_KEY,
             )
         else:

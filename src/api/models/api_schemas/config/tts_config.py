@@ -27,7 +27,10 @@ class SarvamTTSConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["sarvam"] = "sarvam"
-    speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier")
+    # Not a Literal: the roster is the plugin's (livekit.plugins.sarvam), which the API
+    # container does not install, and it grows with each Bulbul release. Validated at call
+    # time instead — see core/agents/stt/lang.py::validate_sarvam_speaker.
+    speaker: str = Field(..., max_length=30, description="Sarvam speaker identifier, from the bulbul:v3 roster (shubh, ritu, rahul, pooja, amit, kavya, … — 30 in all; see docs/reference/models.md). The bulbul:v2 names (anushka, manisha, vidya, arya, abhilash, karun, hitesh) are not valid on v3 and stop the call at start.")
     # Default is None, not a language: the field is always serialized, so any concrete
     # default here would silently override the factory fallback ("en-IN", see
     # src/core/agents/tts/factory.py) for every assistant that omits it.
@@ -47,7 +50,7 @@ class ElevenLabsVoiceSettings(BaseModel):
     stability: Optional[float] = Field(None, ge=0.0, le=1.0, description="Voice stability (0–1). Higher = more consistent, lower = more expressive.")
     similarity_boost: Optional[float] = Field(None, ge=0.0, le=1.0, description="How closely output matches the voice (0–1). Higher = more similar but may add artifacts.")
     style: Optional[float] = Field(None, ge=0.0, le=1.0, description="Style strength of the voice (0–1).")
-    speed: Optional[float] = Field(None, ge=0.25, le=4.0, description="Speaking speed multiplier (0.25–4.0).")
+    speed: Optional[float] = Field(None, ge=0.25, le=4.0, description="Speaking speed multiplier (0.25–4.0). Not a v3 knob: on eleven_v3 (the default model) it is dropped before the call with a log line — switch to eleven_multilingual_v2, eleven_turbo_v2_5 or eleven_flash_v2_5 to change speaking rate.")
     use_speaker_boost: Optional[bool] = Field(None, description="Boost speaker clarity and target-speaker similarity.")
 
 

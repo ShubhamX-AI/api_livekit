@@ -27,6 +27,27 @@ Define a new tool that can be used by your assistants.
 | `required`    | boolean | No       | Whether the parameter is mandatory (default: `true`).           |
 | `enum`        | array   | No       | Allowed values (only for string types).                         |
 
+!!! note "Strict schemas, and what turns them off"
+    This applies to **`cascade` mode only** — that is the mode whose LLM validates tool
+    schemas. In `pipeline` and `realtime` mode the same tool is sent to the Realtime API,
+    which has no strict mode; the notes below change nothing there.
+
+    In cascade, OpenAI validates a tool's schema strictly by default: every parameter must be
+    required, and every `object` and `array` must be fully described. A tool whose parameters
+    are all required scalars (`string`, `number`, `boolean`) is sent strict, so the model's
+    arguments are guaranteed to match it.
+
+    A tool loses that guarantee — the runtime sends `strict: false` for it, and logs which
+    parameter caused it — when it has any **optional** parameter, or any `object` / `array`
+    parameter (this API has no way to describe an object's fields or an array's items, and
+    strict mode requires both). The tool still works; the model may just pass arguments the
+    schema does not describe. Prefer required scalar parameters, and flatten an object into
+    separate fields, when you want the strict guarantee.
+
+    Keep `tool_name` at 64 characters or fewer. The field accepts 100, but OpenAI rejects
+    anything longer than 64 — such a tool is skipped at call time (logged), and the rest of
+    the assistant's tools still load.
+
 ### Execution Config Examples
 
 === "Webhook Tool"

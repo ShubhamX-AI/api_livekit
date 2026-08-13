@@ -56,8 +56,40 @@ talks to a different API.
 | `cascade` | `OPENAI_CASCADE_MODELS` — the 22 chat models listed in [Models & Providers](models.md#cascade-llm-cascade-mode-only) | `422` |
 
 Gemini Live model IDs are left free-form on purpose: Google ships new ones frequently and an
-allowlist would reject them the day they land. Both OpenAI allowlists live in
-`src/api/models/api_schemas/config/llm_config.py` — add new IDs there, and update this page.
+allowlist would reject them the day they land. The realtime allowlist lives in
+`src/api/models/api_schemas/config/llm_config.py`; the cascade one is the model table in
+`src/core/agents/llm_capabilities.py` — add new IDs there, and update this page.
+
+### Cascade LLM knobs
+
+Three of the `assistant_llm_config` generation knobs are model-gated. This is not the
+"stored but ignored" kind of mismatch further down the page: OpenAI answers a knob the model
+cannot read with a `400`, and the Responses plugin raises it as a non-retryable error inside
+the LLM turn — **on every turn**. The call connects, the caller hears silence, and the only
+log line is `There was an issue with your request. Please check your inputs and try again`.
+
+| Knob | Chat models (`gpt-4.1*`, `gpt-4o*`, `*-chat-latest`, `chat-latest`, `gpt-oss-120b`) | Reasoning models (`gpt-5`, `gpt-5-mini/nano`, `gpt-5.1`, `gpt-5.2`, `gpt-5.4*`, `gpt-5.5`, `gpt-5.6-*`) |
+|---|---|---|
+| `temperature` | :white_check_mark: | :no_entry: `422` — use `reasoning_effort` |
+| `reasoning_effort` | :no_entry: `422` | :white_check_mark: — except `gpt-5.2` / `gpt-5.4*`, see below |
+| `verbosity` | :white_check_mark: on the gpt-5 generation (`*-chat-latest`, `chat-latest`); :no_entry: `422` on `gpt-4.1*` / `gpt-4o*` / `gpt-oss-120b` | :white_check_mark: |
+| `max_output_tokens`, `service_tier`, `tool_choice`, `parallel_tool_calls` | :white_check_mark: | :white_check_mark: |
+
+!!! warning "`gpt-5.2` and `gpt-5.4*` reject reasoning effort when tools are attached"
+    Those models refuse `reasoning.effort` in any request carrying function tools — and an
+    assistant has tools whenever it has `tool_ids` or `assistant_end_call_enabled`. Worse,
+    the OpenAI plugin sets a default effort **by itself** on those models, so an assistant
+    with an empty `assistant_llm_config` hit this too. `create_llm` now clears it before the
+    call (`src/core/agents/llm/factory.py`) and logs one line when it does. Nothing to
+    configure; a `reasoning_effort` you set explicitly is dropped with a warning instead.
+
+!!! note "`*-chat-latest` are chat models"
+    `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest` track gpt-5.x
+    **chat** snapshots. They take `temperature` and `verbosity` but reject `reasoning_effort`
+    — the opposite of the reasoning models whose names they resemble.
+
+A model outside the allowlist (a row written before it existed, or by a direct Mongo edit)
+has no known family, so its knobs are forwarded untouched rather than guessed at.
 
 ---
 
@@ -154,16 +186,17 @@ What a wrong combination actually looks like, in order of how early you find out
 
 | Symptom | Cause | Where |
 |---|---|---|
-| `422 Unprocessable Entity` at create, or at update when the request names `assistant_mode` | The rule table in `validate_mode_config` — bad provider, bad model for the mode, `native` STT in cascade, missing TTS pair | `src/api/models/api_schemas/config/llm_config.py` |
+| `422 Unprocessable Entity` at create, or at update when the request names `assistant_mode` | The rule table in `validate_mode_config` — bad provider, bad model for the mode, `native` STT in cascade, missing TTS pair, or a generation knob the cascade model cannot read | `src/api/models/api_schemas/config/llm_config.py` |
 | `400 Bad Request` at update | The request is well-formed, but merged with what is already stored it produces an unrunnable assistant — e.g. `{"assistant_mode": "cascade"}` on a row holding `provider: "gemini"` or a non-allowlisted model | `enforce_stored_mode_constraints` in `src/api/routes/assistant.py` |
 | Call connects, transcripts appear, but a knob you set does nothing | The field is ignored in this mode | [Config keys ignored per mode](#config-keys-ignored-per-mode) |
 | Call connects, transcripts appear, but from a different engine than you chose | Cascade-only STT in pipeline mode, or a plugin STT with no API key — both degrade to `native` and log a warning | `resolve_stt`, `src/core/agents/stt/factory.py` |
 | Call never starts. No error to the caller, one `ERROR` line in the worker log | A factory returned `None` and `entrypoint()` returned early: missing STT key in cascade, missing TTS key, unsupported TTS model, unsupported cascade LLM provider | `create_stt` / `create_tts` / `create_llm` |
-| Call runs but produces no user transcripts | `realtime` + `gemini`: no `input_audio_transcription` is configured on the Gemini Live session | `src/core/agents/session.py` |
+| Call runs but produces no user transcripts | `pipeline` + Sarvam tap whose key fails to authenticate — the tap disables the model's own transcription, so nothing writes transcripts. (`realtime` + `gemini` is **not** on this list any more: the Google plugin turns on `input_audio_transcription` by default, so leaving it unset is what enables it.) | `resolve_stt`, `src/core/agents/stt/factory.py` |
+| Cascade call connects, then total silence. Worker log repeats `Error in _llm_inference_task ... APIStatusError: 'There was an issue with your request'` on every turn | OpenAI rejected the request shape. A knob the model cannot read (see [Cascade LLM knobs](#cascade-llm-knobs)) or a tool schema it refuses. The WebSocket error frame carries no detail, so read the `Cascade LLM built \| ... \| knobs=` line logged at session start to see exactly what was sent | `src/core/agents/llm/factory.py`, `src/core/agents/tool_builder.py` |
 | Worker log: `Unknown assistant_mode '<x>' — treating as 'pipeline'` | `assistant_mode` was written outside the API (migration, direct Mongo edit). The DB field is a plain string with no enum. | `src/core/agents/session.py` |
 
-Every one of these except the last two is now caught at the API. The remaining two are provider
-limitations, not configuration errors.
+Everything above the last two rows is caught at the API. The remaining two are a provider
+limitation and a hand-edited database row, not configuration errors.
 
 ---
 

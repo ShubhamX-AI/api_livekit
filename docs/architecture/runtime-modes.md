@@ -109,6 +109,14 @@ truncation=RealtimeTruncationRetentionRatio(
 
 **Observed impact.** Token count dropped from ~55,000 to ~7,300 on a 2-minute call — an 87% reduction.
 
+**Not sent to every model.** `session.truncation` is a GA Realtime API field, and the two
+`gpt-4o-*realtime-preview` models on the allowlist predate it — their session shape has no
+such field, and the Realtime API answers an unknown session field with an error event rather
+than ignoring it. `realtime_supports_truncation` (`src/core/agents/llm_capabilities.py`)
+decides per model; a preview model runs without the cap and logs one line saying so. Use a
+`gpt-realtime*` model to get the reduction above. Semantic VAD predates the split and is sent
+to both generations.
+
 ### Sarvam TTS WebSocket Keepalive
 
 **Problem.** Sarvam TTS uses a WebSocket connection pool (`ConnectionPool`, `max_session_duration=3600`). However, the Sarvam server closes idle TCP connections after ~5 seconds of inactivity. Without intervention, every turn that has a gap longer than 5 seconds triggers a full TCP reconnect and Sarvam session handshake before audio synthesis can start — adding 300–800 ms of latency before the first audio frame.

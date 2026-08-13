@@ -96,7 +96,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
-        | `speaker` | string | Yes | Sarvam speaker identifier. |
+        | `speaker` | string | Yes | Sarvam speaker identifier, from the **bulbul:v3** roster: `aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`, `kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`, `shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`. The older bulbul:v2 names (`anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`, `hitesh`) do **not** work — the call ends at start with a log line listing the valid speakers. |
         | `target_language_code` | string | No | BCP-47 code, and only one of the 11 Bulbul speaks: `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN`. Note `en-IN`, **not** `en-US` — anything outside the list is rejected and falls back to `en-IN`. Default: `en-IN`. |
         | `pace` | number | No | Speaking pace multiplier, `0.3`–`3.0`. Default: `1.0` (`>1.0` faster, `<1.0` slower). |
         | `speech_sample_rate` | number | No | Output sample rate in Hz. One of `8000`, `16000`, `22050`, `24000`, `32000`, `44100`, `48000` — other values are rejected. Default: `24000`; use `8000` only for narrowband telephony. |
@@ -109,7 +109,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | :--- | :--- | :--- | :--- |
         | `voice_id` | string | Yes | ElevenLabs voice ID. |
         | `model` | string | No | TTS model. Default: `eleven_v3`. Also `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`. |
-        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. |
+        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. **`speed` has no effect on `eleven_v3`** (the default model) — it is dropped before the call and logged; pick `eleven_multilingual_v2`, `eleven_turbo_v2_5` or `eleven_flash_v2_5` if you need to change the speaking rate. On v3, `stability` reads as three modes: `0.0` creative, `0.5` natural, `1.0` robust. |
         | `api_key` | string | No | Optional ElevenLabs API key. Falls back to system `ELEVENLABS_API_KEY`. |
 
     === "Mistral"
@@ -294,16 +294,24 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
     | `provider` | string | No | Must be `openai` (the default when unset). Any other value is rejected. |
     | `model` | string | No | One of the documented OpenAI models. Default: `gpt-4.1`. Full list and knobs: [Models & Providers](../../reference/models.md#cascade-llm-cascade-mode-only). |
     | `api_key` | string | No | Falls back to system `OPENAI_API_KEY`. |
-    | `temperature` | number | No | Sampling temperature `0`–`2`. Higher = more random. **Ignored by reasoning models** (`gpt-5.x`). |
+    | `temperature` | number | No | Sampling temperature `0`–`2`. Higher = more random. **Chat models only** — sending it with a reasoning model (`gpt-5`, `gpt-5.x`) is a `422`. |
     | `max_output_tokens` | integer | No | Cap on the number of output tokens in the response. |
-    | `reasoning_effort` | string | No | Reasoning depth: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. **Reasoning models only** (`gpt-5`, `gpt-5.x`). |
+    | `reasoning_effort` | string | No | Reasoning depth: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. **Reasoning models only** — a `422` on `gpt-4.1`/`gpt-4o` and on the `*-chat-latest` aliases, which are chat models. |
     | `service_tier` | string | No | OpenAI processing/billing tier: `auto`, `default`, `flex`, `scale`, `priority`. |
-    | `verbosity` | string | No | Constrains response length: `low`, `medium`, `high`. |
+    | `verbosity` | string | No | Constrains response length: `low`, `medium`, `high`. **gpt-5 generation only** (including `*-chat-latest`); a `422` on `gpt-4.1`/`gpt-4o`/`gpt-oss-120b`. |
     | `tool_choice` | string | No | Tool usage: `auto`, `required`, `none`. |
     | `parallel_tool_calls` | boolean | No | Allow multiple tool calls in one response. |
 
     `voice` is ignored — the TTS provider owns the voice in this mode. Any unknown key in
     `assistant_llm_config` is rejected with `422`.
+
+    !!! warning "The three model-gated knobs are checked against the model"
+        `temperature`, `reasoning_effort` and `verbosity` are rejected with a `422` when the
+        chosen `model` cannot read them (with no `model`, they are checked against the default
+        `gpt-4.1`). This is deliberately strict: OpenAI answers such a request with a `400` on
+        **every** LLM turn, which shows up as a call that connects and then stays completely
+        silent. Full matrix:
+        [Cascade LLM knobs](../../reference/compatibility.md#cascade-llm-knobs).
 
     **Example request** (with the new LLM generation knobs and TTS speed settings; all are optional)
 
@@ -343,10 +351,11 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
       }'
     ```
 
-    > **Note on the example above:** `gpt-5-mini` is a *reasoning* model, which ignores
-    > `temperature` — so the example sends `reasoning_effort` instead. For a **non-reasoning**
-    > model (like the default `gpt-4.1`), do the opposite: send `temperature` and drop
-    > `reasoning_effort`. Both are optional — omit whichever your model family does not use.
+    > **Note on the example above:** `gpt-5-mini` is a *reasoning* model, which rejects
+    > `temperature` — so the example sends `reasoning_effort` instead. For a **chat** model
+    > (like the default `gpt-4.1`), do the opposite: send `temperature` and drop
+    > `reasoning_effort`; sending the wrong one for the family is a `422`. Both are optional —
+    > omit whichever your model family does not use.
 
     **Example request — Deepgram STT**
 

@@ -2,6 +2,11 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.agents.llm_capabilities import (
+    CASCADE_MODELS,
+    DEFAULT_CASCADE_MODEL,
+    unsupported_knob_reason,
+)
 from src.core.providers.keys import ProviderApiKey
 
 # ── Runtime mode ────────────────────────────────────
@@ -24,34 +29,13 @@ def reject_retired_mode_key(data: dict) -> None:
 # field is shared with the realtime/pipeline modes (which use realtime model IDs
 # like "gpt-realtime-1.5" or Gemini), so the allowlist is enforced only inside the
 # cascade validator rather than as a Literal on the shared field — that would
-# reject realtime model names. Keep this list in sync with
-# docs/architecture/cascade-pipeline.md when OpenAI ships new models.
-OPENAI_CASCADE_MODELS = frozenset(
-    {
-        "gpt-4.1",
-        "gpt-4.1-mini",
-        "gpt-4.1-nano",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-5",
-        "gpt-5-mini",
-        "gpt-5-nano",
-        "gpt-5.1",
-        "gpt-5.1-chat-latest",
-        "gpt-5.2",
-        "gpt-5.2-chat-latest",
-        "gpt-5.3-chat-latest",
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5.4-nano",
-        "gpt-5.5",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.6-luna",
-        "chat-latest",
-        "gpt-oss-120b",
-    }
-)
+# reject realtime model names.
+#
+# The list itself lives in core/agents/llm_capabilities.py, split by family, because the
+# same split decides which generation knobs each model accepts. Adding a model there is
+# what adds it here. Keep both in sync with docs/architecture/cascade-pipeline.md and
+# docs/reference/compatibility.md when OpenAI ships new models.
+OPENAI_CASCADE_MODELS = CASCADE_MODELS
 
 # ── OpenAI realtime models (pipeline + realtime modes) ──
 # Pipeline and realtime both build an `openai.realtime.RealtimeModel`, which only speaks
@@ -68,9 +52,13 @@ OPENAI_REALTIME_MODELS = frozenset(
     }
 )
 
-# The gpt-5.x line (and gpt-5.1+) are reasoning models: they reject temperature,
-# top_p and the penalties, and use reasoning_effort instead. Used to guide users
-# and to keep configs safe. Matches openai.types.Reasoning.effort.
+# Reasoning models take reasoning_effort and reject temperature, top_p and the penalties.
+# Which models those are lives in core/agents/llm_capabilities.py. Values match
+# openai.types.Reasoning.effort.
+#
+# The value set here is model-independent; the pairing with the selected model is checked
+# below by _validate_cascade_knobs, and again at call time by the factory — a stored config
+# outlives the model it was written for.
 REASONING_EFFORT = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 _SERVICE_TIERS = Literal["auto", "default", "flex", "scale", "priority"]
 _VERBOSITY = Literal["low", "medium", "high"]
@@ -89,11 +77,11 @@ class AssistantLLMConfig(BaseModel):
     # Generation knobs. These are applied to the cascade LLM (openai.responses.LLM);
     # they are harmless (ignored) in the realtime/pipeline modes. See
     # docs/api/assistant/index.md and the OpenAI LLM docs for valid values.
-    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature (0–2). Higher is more random. Ignored by reasoning models (gpt-5.x). Only one of temperature or top_p may be set (responses API uses temperature).")
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature (0–2). Higher is more random. Reasoning models (gpt-5.x) reject it, so it is dropped before the call on those; set reasoning_effort instead. Only one of temperature or top_p may be set (responses API uses temperature).")
     max_output_tokens: Optional[int] = Field(None, gt=0, description="Cap on output tokens for the response (responses API `max_output_tokens`).")
-    reasoning_effort: Optional[REASONING_EFFORT] = Field(None, description="Reasoning depth. Only applied to reasoning models (gpt-5, gpt-5.x). Ignored elsewhere.")
+    reasoning_effort: Optional[REASONING_EFFORT] = Field(None, description="Reasoning depth. A gpt-5 parameter: older models reject it, so it is dropped before the call on anything outside the gpt-5 line rather than sent and failed.")
     service_tier: Optional[_SERVICE_TIERS] = Field(None, description="OpenAI processing/billing tier: auto, default, flex, scale, priority.")
-    verbosity: Optional[_VERBOSITY] = Field(None, description="Constrains response verbosity: low, medium, high.")
+    verbosity: Optional[_VERBOSITY] = Field(None, description="Constrains response verbosity: low, medium, high. A gpt-5 parameter (`text.verbosity`), dropped before the call on older models — chat-latest counts as gpt-5 here.")
     tool_choice: Optional[_RESPONSES_TOOL_CHOICE] = Field(None, description="How the model uses tools in cascade mode: auto, required or none.")
     parallel_tool_calls: Optional[bool] = Field(None, description="Allow the model to make multiple tool calls in a single response.")
 
@@ -110,6 +98,26 @@ PIPELINE_GEMINI_ERROR = (
     "native-audio models. Use assistant_mode 'realtime' for Gemini, or provider "
     "'openai' in pipeline mode. See docs/reference/compatibility.md."
 )
+
+
+def _validate_cascade_knobs(llm_config, model) -> None:
+    """Reject a generation knob the chosen cascade model cannot read.
+
+    Without this the knob was accepted, stored, and then dropped (or worse, sent and 400'd)
+    at call time — the operator saw a config field that did nothing. `has_tools` stays False
+    here on purpose: whether function tools are attached is a property of the session, not
+    of the config, so the tool-incompatible reasoning pairing is caught by the factory.
+    """
+    for knob in ("temperature", "reasoning_effort", "verbosity"):
+        value = getattr(llm_config, knob, None)
+        if value is None:
+            continue
+        reason = unsupported_knob_reason(model, knob)
+        if reason:
+            raise ValueError(
+                f"assistant_llm_config.{knob} is not supported by model '{model}' — {reason}. "
+                "See docs/reference/compatibility.md."
+            )
 
 
 def validate_mode_config(mode, llm_config, stt_model) -> None:
@@ -145,6 +153,8 @@ def validate_mode_config(mode, llm_config, stt_model) -> None:
                 "must be one of the documented OpenAI models: "
                 f"{', '.join(sorted(OPENAI_CASCADE_MODELS))}."
             )
+        if llm_config is not None:
+            _validate_cascade_knobs(llm_config, model or DEFAULT_CASCADE_MODEL)
         return
 
     if mode == "pipeline":

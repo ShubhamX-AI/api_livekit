@@ -29,6 +29,7 @@ LLM, STT and TTS are actually valid lives in the
 - In `realtime` mode, Gemini fields still have defaults: `provider="gemini"`, `model="gemini-3.1-flash-live-preview"`, `voice="Puck"`. `assistant_llm_config.api_key` overrides the system `GOOGLE_API_KEY`.
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
 - `assistant_mode="cascade"` requires `assistant_tts_model` + `assistant_tts_config`; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` rejected); `assistant_llm_config.provider` must be `openai` or unset.
+- In `cascade` mode, `temperature`, `reasoning_effort` and `verbosity` are only accepted on models that read them (reasoning models take `reasoning_effort`, chat models take `temperature`, `verbosity` is gpt-5 generation only) — a mismatch is a `422`, because OpenAI rejects such a request on every LLM turn and the call goes silent. [Cascade LLM knobs](../../reference/compatibility.md#cascade-llm-knobs).
 - `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
 - `assistant_interaction_config.speaks_first` works in all three modes.
 - Unknown keys inside `assistant_llm_config`, `assistant_tts_config` or `assistant_stt_config` are rejected with `422` rather than ignored.

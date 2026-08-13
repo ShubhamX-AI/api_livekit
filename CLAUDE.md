@@ -111,6 +111,7 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | TTS factory (cartesia/sarvam/elevenlabs/mistral) | `src/core/agents/tts/factory.py` |
 | STT resolver (native/sarvam) + cascade STT builder (sarvam/cartesia/deepgram/elevenlabs/openai) | `src/core/agents/stt/factory.py` |
 | LLM factory (cascade only, OpenAI) | `src/core/agents/llm/factory.py` |
+| Cascade model families + which knobs each accepts | `src/core/agents/llm_capabilities.py` |
 | Per-component usage folding (`session.usage` → `UsageRecord`) | `src/core/agents/usage.py` |
 | Sarvam parallel STT tap (pipeline mode only) | `src/core/agents/stt/sarvam_parallel.py` |
 | Tool loader (DB-backed function tools) | `src/core/agents/tool_builder.py` |
@@ -137,6 +138,8 @@ STT providers: `sarvam` (default — Saras v3), `native` (the conversational LLM
 LLM: `src/core/agents/llm/factory.py::create_llm` — cascade only. The other two modes build a `RealtimeModel` inline in `session.py`.
 
 **Mode/provider validation:** one rule table, `validate_mode_config` in `src/api/models/api_schemas/config/llm_config.py`, covering all three modes (allowlists `OPENAI_REALTIME_MODELS` for pipeline/realtime, `OPENAI_CASCADE_MODELS` for cascade). The request path calls it from the Create/Update schema validators; `enforce_stored_mode_constraints` in `src/api/routes/assistant.py` re-runs the same table against the stored row merged with the PATCH, so a mode switch cannot land an unrunnable combination. User-facing matrix: `docs/reference/compatibility.md`.
+
+**Cascade LLM knobs are model-gated.** `temperature`, `reasoning_effort` and `verbosity` are only accepted by some models, and OpenAI answers a wrong pairing with a 400 on *every* LLM turn (the call connects and stays silent). The families and the rule live in `src/core/agents/llm_capabilities.py` — spelled out per model, never matched by prefix, because `gpt-5.2-chat-latest` is a chat model. That module is imported by both the API validator (422 at create/update) and `create_llm` (drops a stale knob at call time), so it must stay dependency-free: the control image has no `livekit-agents`, the agent image has no FastAPI. `create_llm` also clears the reasoning effort the OpenAI plugin injects by itself on `gpt-5.2`/`gpt-5.4*` when function tools are attached — hence `create_llm(assistant, has_tools=...)`.
 
 **Self-hosted constraint:** `inference.STT/LLM/TTS` (the LiveKit Inference gateway), `inference.TurnDetector(version="v1")` and `interruption={"mode":"adaptive"}` all require LiveKit Cloud credentials and must not be used. `inference.VAD(model="silero")` and `inference.TurnDetector(version="v1-mini")` are fully local (weights ship in `livekit-local-inference`, a core SDK dep) and are what cascade uses.
 
