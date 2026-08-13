@@ -558,7 +558,7 @@ class TestCreateLLM(unittest.TestCase):
         self.assertEqual(llm._opts.reasoning.effort, "low")
 
     def test_verbosity_is_gated_to_the_gpt5_generation(self):
-        """`text.verbosity` is a gpt-5 parameter. chat-latest follows a gpt-5.x snapshot."""
+        """`text.verbosity` is a gpt-5 parameter; the gpt-4 line rejects it."""
         from livekit.agents.types import NOT_GIVEN
 
         def verbosity_for(model):
@@ -574,29 +574,28 @@ class TestCreateLLM(unittest.TestCase):
             return llm._opts.verbosity
 
         self.assertEqual(verbosity_for("gpt-5.4"), "low")
-        self.assertEqual(verbosity_for("chat-latest"), "low")
+        self.assertEqual(verbosity_for("gpt-5.6-sol"), "low")
         self.assertIs(verbosity_for("gpt-4.1"), NOT_GIVEN)
-        self.assertIs(verbosity_for("gpt-oss-120b"), NOT_GIVEN)
+        self.assertIs(verbosity_for("gpt-4o-mini"), NOT_GIVEN)
 
-    def test_chat_latest_is_not_a_reasoning_model(self):
-        """A prefix test read `gpt-5.2-chat-latest` as gpt-5 and sent it reasoning.effort.
+    def test_knobs_on_an_unknown_model_are_forwarded_untouched(self):
+        """An off-allowlist model gets no guessing — its knobs go through as written.
 
-        The chat aliases track a gpt-5.x *chat* snapshot: they reject reasoning.effort and
-        accept temperature, the opposite of the reasoning models they sit next to.
+        This is the documented behaviour of `unsupported_knob_reason` for a model outside
+        `CASCADE_MODELS`: a row written before the allowlist, or by a direct DB edit, is not
+        second-guessed. It also covers a model that has since been retired — nothing can be
+        salvaged there anyway, because OpenAI rejects the turn on the model id alone. The
+        retired `*-chat-latest` aliases are the live example.
         """
-        from livekit.agents.types import NOT_GIVEN
-
         llm = create_llm(
             make_assistant(
                 assistant_llm_config={
                     "api_key": "k",
                     "model": "gpt-5.2-chat-latest",
-                    "reasoning_effort": "low",
                     "temperature": 0.4,
                 }
             )
         )
-        self.assertIs(llm._opts.reasoning, NOT_GIVEN)
         self.assertEqual(llm._opts.temperature, 0.4)
 
     def test_reasoning_dropped_when_tools_make_the_model_reject_it(self):
@@ -686,6 +685,50 @@ class TestCreateLLM(unittest.TestCase):
     def test_missing_key_rejected(self):
         with mock.patch("src.core.agents.llm.factory.settings.OPENAI_API_KEY", ""):
             self.assertIsNone(create_llm(make_assistant(assistant_llm_config={})))
+
+    def test_an_off_allowlist_model_warns_and_still_builds(self):
+        """The likeliest reason a cascade call connects and never speaks gets a log line.
+
+        Refusing to build would end the job just as silently, and the row is already stored —
+        so the LLM is built and the warning names the audit script. The API is what prevents
+        such a model being stored in the first place.
+        """
+        with self.assertLogs("app", level="WARNING") as logs:
+            llm = create_llm(
+                make_assistant(
+                    assistant_llm_config={"api_key": "k", "model": "gpt-5.2-chat-latest"}
+                )
+            )
+        self.assertIsNotNone(llm)
+        joined = "\n".join(logs.output)
+        self.assertIn("gpt-5.2-chat-latest", joined)
+        self.assertIn("audit_assistant_models.py", joined)
+
+    def test_an_allowlisted_model_does_not_warn(self):
+        with mock.patch("src.core.agents.llm.factory.logger") as log:
+            create_llm(make_assistant(assistant_llm_config={"api_key": "k", "model": "gpt-4.1"}))
+        log.warning.assert_not_called()
+
+    def test_a_constructor_failure_returns_none_instead_of_raising(self):
+        """Every other config error here ends the job through `return None`; so does this one.
+
+        A raise would escape entrypoint() and kill the job with a traceback — same outcome for
+        the caller, much worse for whoever reads the log.
+        """
+        with mock.patch(
+            "src.core.agents.llm.factory.openai.responses.LLM",
+            side_effect=TypeError("unexpected keyword argument 'verbosity'"),
+        ):
+            self.assertIsNone(
+                create_llm(make_assistant(assistant_llm_config={"api_key": "k"}))
+            )
+
+    def test_the_built_llm_log_line_names_the_replay_command(self):
+        """The line someone reads after a failed call should hand them the next step."""
+        with self.assertLogs("app", level="INFO") as logs:
+            create_llm(make_assistant(assistant_llm_config={"api_key": "k"}))
+        joined = "\n".join(logs.output)
+        self.assertIn("replay_cascade_request.py", joined)
 
 
 class TestCascadeSchemaRules(unittest.TestCase):
@@ -778,7 +821,7 @@ class TestCascadeSchemaRules(unittest.TestCase):
                 "reasoning_effort": "low",
                 "service_tier": "flex",
                 "verbosity": "medium",
-                "tool_choice": "required",
+                "tool_choice": "auto",
                 "parallel_tool_calls": False,
             },
         )
@@ -786,6 +829,85 @@ class TestCascadeSchemaRules(unittest.TestCase):
         self.assertEqual(cfg.max_output_tokens, 512)
         self.assertEqual(cfg.reasoning_effort, "low")
         self.assertEqual(cfg.verbosity, "medium")
+
+    def test_tool_choice_required_needs_a_tool_to_choose(self):
+        """`required` with an empty tool list is a 400 from OpenAI on every turn.
+
+        Which is the silent-call shape again: the call connects, the assistant never speaks.
+        A fresh assistant has no `tool_ids` yet, so end_call is the only tool it can have at
+        creation — /assistant/attach-tools re-checks this when real tools arrive.
+        """
+        with self.assertRaises(ValidationError) as ctx:
+            CreateAssistant(
+                **self.BASE,
+                assistant_stt_model="sarvam",
+                assistant_llm_config={"model": "gpt-4.1", "tool_choice": "required"},
+            )
+        self.assertIn("tool_choice", str(ctx.exception))
+        self.assertIn("needs at least one tool", str(ctx.exception))
+
+    def test_tool_choice_required_is_accepted_when_end_call_is_enabled(self):
+        request = CreateAssistant(
+            **self.BASE,
+            assistant_stt_model="sarvam",
+            assistant_llm_config={"model": "gpt-4.1", "tool_choice": "required"},
+            assistant_end_call_enabled=True,
+            assistant_end_call_trigger_phrase="that's all, bye",
+            assistant_end_call_agent_message="Thank you, goodbye.",
+        )
+        self.assertEqual(request.assistant_llm_config.tool_choice, "required")
+
+    def test_flex_service_tier_is_rejected_on_a_non_gpt5_model(self):
+        """Measured: gpt-4.1-nano + flex is a 400 on every turn, with no parameter named.
+
+        That is the config that produced the silent calls this guard exists for. `flex` is a
+        gpt-5 generation tier; OpenAI refuses it elsewhere, and on nano it refuses it without
+        saying which parameter was wrong.
+        """
+        with self.assertRaises(ValidationError) as ctx:
+            CreateAssistant(
+                **self.BASE,
+                assistant_stt_model="sarvam",
+                assistant_llm_config={"model": "gpt-4.1-nano", "service_tier": "flex"},
+            )
+        self.assertIn("service_tier", str(ctx.exception))
+        self.assertIn("gpt-5 generation tier", str(ctx.exception))
+
+    def test_flex_service_tier_is_accepted_on_the_gpt5_line(self):
+        request = CreateAssistant(
+            **self.BASE,
+            assistant_stt_model="sarvam",
+            assistant_llm_config={"model": "gpt-5-mini", "service_tier": "flex"},
+        )
+        self.assertEqual(request.assistant_llm_config.service_tier, "flex")
+
+    def test_tiers_that_work_everywhere_are_accepted(self):
+        for tier in ("auto", "default", "fast", "priority"):
+            with self.subTest(tier=tier):
+                request = CreateAssistant(
+                    **self.BASE,
+                    assistant_stt_model="sarvam",
+                    assistant_llm_config={"model": "gpt-4.1-nano", "service_tier": tier},
+                )
+                self.assertEqual(request.assistant_llm_config.service_tier, tier)
+
+    def test_scale_is_not_an_openai_tier_at_all(self):
+        """OpenAI: "Invalid value: 'scale'. Supported values are: auto, default, fast, flex, priority"."""
+        with self.assertRaises(ValidationError):
+            CreateAssistant(
+                **self.BASE,
+                assistant_stt_model="sarvam",
+                assistant_llm_config={"model": "gpt-5-mini", "service_tier": "scale"},
+            )
+
+    def test_tool_choice_none_is_fine_without_tools(self):
+        """'none' is the legitimate way to say "do not call tools" — nothing to choose from."""
+        request = CreateAssistant(
+            **self.BASE,
+            assistant_stt_model="sarvam",
+            assistant_llm_config={"model": "gpt-4.1", "tool_choice": "none"},
+        )
+        self.assertEqual(request.assistant_llm_config.tool_choice, "none")
 
     def test_cascade_accepts_temperature_on_a_chat_model(self):
         request = CreateAssistant(

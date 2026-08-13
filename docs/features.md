@@ -18,6 +18,7 @@ Complete inventory of what this platform provides.
 - **Max call duration cap** — per-assistant hard ceiling (minutes); assistant speaks a farewell and tears down cleanly when reached; defaults to 30 minutes platform-wide
 - **End-call tool** — assistant can trigger call termination on a configurable phrase and deliver a final message
 - **Assistant CRUD** — create, read, update, delete, and list assistants via REST API
+- **Configuration cannot silence a call** — four gates run before an assistant is stored: the request schema, the mode/provider rule table (re-checked against the stored row on every PATCH and every tool attach/detach), a live check that OpenAI still serves the chosen model, and one short probe asking OpenAI whether it accepts this exact request. A knob value, tool schema or retired model that would fail on every LLM turn is a `422` with the provider's own message instead of a call that connects to silence — see [Troubleshooting](reference/troubleshooting.md)
 
 ---
 
@@ -36,6 +37,7 @@ table in [Models & Providers](reference/models.md#tts).
 
 - Per-assistant TTS config; API key override per assistant
 - Unknown config keys are rejected with `422` rather than silently dropped
+- Model ids, voices and Sarvam speakers are allowlisted per provider — a typo is a `422`, not a call that connects and then fails
 - TTS humanization prompting guides for all three major providers (Sarvam, Cartesia, ElevenLabs) included in documentation
 
 ---

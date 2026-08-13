@@ -1,8 +1,23 @@
 from typing import Annotated, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.model_support.speech import unsupported_speech_model_reason
 from src.core.providers.keys import ProviderApiKey
+
+
+def check_stt_model(provider: str, value: str | None) -> str | None:
+    """Reject a model id the provider does not have.
+
+    These fields used to be free strings with only a length cap, so `nova-9` or `saaras:v4`
+    was stored happily and then failed at call start — `create_stt` returns None, the job ends,
+    and the caller hears nothing. The accepted sets live in `core/model_support/speech.py`,
+    kept honest against the installed plugins by `tests/test_speech_models.py`.
+    """
+    reason = unsupported_speech_model_reason(provider, value, stage="stt")
+    if reason:
+        raise ValueError(f"{reason}. See docs/reference/models.md.")
+    return value
 
 
 # ── STT Config sub-models ──────────────────────────
@@ -23,6 +38,11 @@ class SarvamSTTConfig(BaseModel):
     mode: str = Field("codemix", max_length=20, description="Transcription mode (saaras:v3 only): codemix (default — keeps code-switching intact), transcribe, translate, verbatim or translit")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Sarvam API key for the parallel STT tap (optional, falls back to system SARVAM_API_KEY). Distinct from assistant_tts_config.api_key, which belongs to the selected TTS provider.")
 
+    @field_validator("model", mode="after")
+    @classmethod
+    def _model_is_real(cls, value):
+        return check_stt_model("sarvam", value)
+
 
 class CartesiaSTTConfig(BaseModel):
     """Cascade mode only. Cartesia STT cannot auto-detect, so language is always fixed."""
@@ -33,6 +53,11 @@ class CartesiaSTTConfig(BaseModel):
     model: str = Field("ink-whisper", max_length=40, description="ink-whisper (43 languages, one at a time) or ink-2 (English only)")
     language: Optional[str] = Field(None, max_length=10, description="Fixed language code, ISO 639-1 ('en', 'hi') — NOT BCP-47; 'en-US' is rejected and ignored. Cartesia STT has no auto-detect, so omitting this means English. Use Sarvam or Deepgram nova-3 for multilingual calls.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Cartesia API key (optional, falls back to system CARTESIA_API_KEY). Distinct from assistant_tts_config.api_key.")
+
+    @field_validator("model", mode="after")
+    @classmethod
+    def _model_is_real(cls, value):
+        return check_stt_model("cartesia", value)
 
 
 class DeepgramSTTConfig(BaseModel):
@@ -47,6 +72,11 @@ class DeepgramSTTConfig(BaseModel):
     keyterm: Optional[Union[str, List[str]]] = Field(None, max_length=200, description="One or more terms to boost recognition (nova-3 / flux). Nova-2 uses keywords instead.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Deepgram API key (optional, falls back to system DEEPGRAM_API_KEY).")
 
+    @field_validator("model", mode="after")
+    @classmethod
+    def _model_is_real(cls, value):
+        return check_stt_model("deepgram", value)
+
 
 class ElevenLabsSTTConfig(BaseModel):
     """Cascade mode only. Scribe v2 Real-Time auto-detects unless language_code pins a language."""
@@ -58,6 +88,11 @@ class ElevenLabsSTTConfig(BaseModel):
     language_code: Optional[str] = Field(None, max_length=10, description="ISO 639-3 language code ('eng', 'hin', 'ben') — NOT BCP-47 and NOT ISO 639-1. Scribe closes the connection with '1008 invalid_request' on anything else, so an unrecognized code is rejected and ignored here instead. Omit to auto-detect among ~190 languages, which is what this provider is for; setting it disables auto-detect.")
     no_verbatim: bool = Field(False, description="Strips filler words, false starts and disfluencies from the transcript for cleaner output.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="ElevenLabs API key for the STT stage (optional, falls back to system ELEVENLABS_API_KEY, the same variable the TTS stage uses). Distinct from assistant_tts_config.api_key, which belongs to whichever provider the TTS stage selected.")
+
+    @field_validator("model", mode="after")
+    @classmethod
+    def _model_is_real(cls, value):
+        return check_stt_model("elevenlabs", value)
 
 
 class OpenAISTTConfig(BaseModel):
@@ -73,6 +108,11 @@ class OpenAISTTConfig(BaseModel):
     noise_reduction_type: Optional[Literal["near_field", "far_field"]] = Field(None, description="Server-side noise reduction: 'near_field' for headsets, 'far_field' for speakerphone/room mics. Omit for none.")
     use_realtime: bool = Field(True, description="Stream over the realtime transcription WebSocket (interim results, low latency). Set false to use the batch REST transcription API — cheaper, but adds a full utterance of latency per turn.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="OpenAI API key for the STT stage (optional, falls back to system OPENAI_API_KEY — the same variable the cascade LLM uses). Distinct from assistant_tts_config.api_key.")
+
+    @field_validator("model", mode="after")
+    @classmethod
+    def _model_is_real(cls, value):
+        return check_stt_model("openai", value)
 
 
 STTConfig = Annotated[

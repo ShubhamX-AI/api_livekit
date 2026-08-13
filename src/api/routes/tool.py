@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from src.api.models.api_schemas import CreateTool, UpdateTool, AttachToolsRequest
 from src.api.models.response_models import apiResponse
+from src.api.validation import enforce_tool_change
 from src.core.db.db_schemas import Tool, Assistant, APIKey
 from src.api.dependencies import get_current_user
 from src.core.logger import logger
@@ -224,7 +225,16 @@ async def attach_tools(
     # Merge: add new tool_ids without duplicates
     existing = set(assistant.tool_ids)
     new_ids = [tid for tid in request.tool_ids if tid not in existing]
-    assistant.tool_ids = assistant.tool_ids + new_ids
+    merged_ids = assistant.tool_ids + new_ids
+
+    # Attaching a tool changes what OpenAI will accept, so the same guard the assistant
+    # routes use has to run here too. Two ways this endpoint could otherwise break a working
+    # assistant: `gpt-5.2` and `gpt-5.4*` reject `reasoning.effort` once function tools are
+    # present, and a tool schema the Responses API refuses kills every LLM turn — either way
+    # the next call connects and the assistant never speaks.
+    await enforce_tool_change(assistant, merged_ids)
+
+    assistant.tool_ids = merged_ids
     assistant.assistant_updated_at = datetime.now(timezone.utc)
     assistant.assistant_updated_by_email = current_user.user_email
     await assistant.save()
@@ -257,7 +267,13 @@ async def detach_tools(
         raise HTTPException(status_code=404, detail="Assistant not found")
 
     detach_set = set(request.tool_ids)
-    assistant.tool_ids = [tid for tid in assistant.tool_ids if tid not in detach_set]
+    remaining_ids = [tid for tid in assistant.tool_ids if tid not in detach_set]
+
+    # Detaching can break a config too: `tool_choice: "required"` with nothing left to call is
+    # a 400 from OpenAI on every turn.
+    await enforce_tool_change(assistant, remaining_ids)
+
+    assistant.tool_ids = remaining_ids
     assistant.assistant_updated_at = datetime.now(timezone.utc)
     assistant.assistant_updated_by_email = current_user.user_email
     await assistant.save()

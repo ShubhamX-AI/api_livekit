@@ -25,6 +25,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 | `assistant_end_call_trigger_phrase` | string | Conditional | Required if `assistant_end_call_enabled=true`. |
 | `assistant_end_call_agent_message` | string | Conditional | Required if `assistant_end_call_enabled=true`. |
 | `assistant_end_call_url` | string | No | Webhook URL for call-ended payload. |
+| `assistant_end_call_webhook` | object | No | Delivery tuning for that webhook: `timeout_seconds` (1–120) and `attempts` (1–5). Each falls back to the server default when omitted or `null` (`END_CALL_WEBHOOK_TIMEOUT`, 30s; `END_CALL_WEBHOOK_ATTEMPTS`, 3). Raise the timeout when your endpoint stores the payload before replying. See [End-Call Webhook](../calls/webhook.md). |
 
 ---
 
@@ -96,7 +97,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
-        | `speaker` | string | Yes | Sarvam speaker identifier, from the **bulbul:v3** roster: `aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`, `kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`, `shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`. The older bulbul:v2 names (`anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`, `hitesh`) do **not** work — the call ends at start with a log line listing the valid speakers. |
+        | `speaker` | string | Yes | Sarvam speaker identifier, from the **bulbul:v3** roster: `aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`, `kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`, `shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`. The older bulbul:v2 names (`anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`, `hitesh`) are rejected with a `422`: v2 and v3 share no speaker names, and the Sarvam plugin raises on a speaker its model cannot use, which used to end the call at start. |
         | `target_language_code` | string | No | BCP-47 code, and only one of the 11 Bulbul speaks: `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN`. Note `en-IN`, **not** `en-US` — anything outside the list is rejected and falls back to `en-IN`. Default: `en-IN`. |
         | `pace` | number | No | Speaking pace multiplier, `0.3`–`3.0`. Default: `1.0` (`>1.0` faster, `<1.0` slower). |
         | `speech_sample_rate` | number | No | Output sample rate in Hz. One of `8000`, `16000`, `22050`, `24000`, `32000`, `44100`, `48000` — other values are rejected. Default: `24000`; use `8000` only for narrowband telephony. |
@@ -171,7 +172,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
     | Field | Type | Required | Description |
     | :--- | :--- | :--- | :--- |
     | `provider` | string | No | LLM vendor for audio-out realtime. `gemini` (default) or `openai`. |
-    | `model` | string | No | Provider model. Gemini default: `gemini-3.1-flash-live-preview`; OpenAI default: `gpt-realtime-1.5`. |
+    | `model` | string | No | Provider model, **validated**. Gemini: one of `gemini-2.5-flash-native-audio-preview-12-2025` (default), `gemini-live-2.5-flash-native-audio`, `gemini-3.1-flash-live-preview` — a Gemini *chat* id such as `gemini-2.5-flash` is a `422`. OpenAI: a realtime id, default `gpt-realtime-1.5`. |
     | `voice` | string | No | Voice for the audio-out model. Gemini default: `Puck`; OpenAI default: `marin`. |
     | `api_key` | string | No | Optional per-assistant provider key. Falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY`. |
 
@@ -200,7 +201,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         "assistant_mode": "realtime",
         "assistant_llm_config": {
           "provider": "gemini",
-          "model": "gemini-3.1-flash-live-preview",
+          "model": "gemini-2.5-flash-native-audio-preview-12-2025",
           "voice": "Puck"
         }
       }'
@@ -296,10 +297,10 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
     | `api_key` | string | No | Falls back to system `OPENAI_API_KEY`. |
     | `temperature` | number | No | Sampling temperature `0`–`2`. Higher = more random. **Chat models only** — sending it with a reasoning model (`gpt-5`, `gpt-5.x`) is a `422`. |
     | `max_output_tokens` | integer | No | Cap on the number of output tokens in the response. |
-    | `reasoning_effort` | string | No | Reasoning depth: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. **Reasoning models only** — a `422` on `gpt-4.1`/`gpt-4o` and on the `*-chat-latest` aliases, which are chat models. |
-    | `service_tier` | string | No | OpenAI processing/billing tier: `auto`, `default`, `flex`, `scale`, `priority`. |
-    | `verbosity` | string | No | Constrains response length: `low`, `medium`, `high`. **gpt-5 generation only** (including `*-chat-latest`); a `422` on `gpt-4.1`/`gpt-4o`/`gpt-oss-120b`. |
-    | `tool_choice` | string | No | Tool usage: `auto`, `required`, `none`. |
+    | `reasoning_effort` | string | No | Reasoning depth: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. **Reasoning models only** — a `422` on `gpt-4.1`/`gpt-4o`. Which *values* a given reasoning model accepts is checked against OpenAI, not guessed: a value it refuses is also a `422`, quoting OpenAI's message. |
+    | `service_tier` | string | No | OpenAI processing/billing tier: `auto`, `default`, `fast`, `flex`, `priority`. `auto`, `default`, `fast` and `priority` work on every model. **`flex` is gpt-5 generation only** — on `gpt-4.1`/`gpt-4.1-nano` it is a `422` here, because OpenAI refuses it with a `400` on every turn and on nano does not even name the parameter, which is how an assistant ends up answering calls in silence. `scale` is not an OpenAI tier and is no longer accepted. Leave unset unless you have a reason. Full measured table: [Compatibility Matrix](../../reference/compatibility.md#service_tier-measured). |
+    | `verbosity` | string | No | Constrains response length: `low`, `medium`, `high`. **gpt-5 generation only**; a `422` on `gpt-4.1`/`gpt-4o`. |
+    | `tool_choice` | string | No | Tool usage: `auto`, `required`, `none`. `required` needs at least one tool — with no `tool_ids` and `assistant_end_call_enabled: false` it is a `422`, because OpenAI rejects a forced tool choice with an empty tool list on every turn. |
     | `parallel_tool_calls` | boolean | No | Allow multiple tool calls in one response. |
 
     `voice` is ignored — the TTS provider owns the voice in this mode. Any unknown key in
@@ -332,6 +333,24 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         ```json title="Accepted — the same intent, expressed the way this model reads it"
         { "assistant_llm_config": { "model": "gpt-5-mini", "reasoning_effort": "low" } }
         ```
+
+    !!! warning "The model is checked against OpenAI, not only against our list"
+        Passing the allowlist is not enough. Create and update also ask OpenAI whether the
+        account still serves the model, because a list cannot know about a retirement — three
+        `*-chat-latest` aliases were retired on 2026-06-19 and every assistant holding one kept
+        validating clean and then answered calls with silence.
+
+        ```json title="422 — the account cannot serve this model"
+        {
+          "detail": "assistant_llm_config.model 'gpt-5.2-chat-latest' cannot be used — the OpenAI account for this key does not serve it. Either the model has been retired by OpenAI or this account has no access to it. Pick a model the account serves — `uv run python scripts/check_model_allowlist.py` lists them. Storing it would produce a call that connects and then stays silent, because OpenAI rejects every turn."
+        }
+        ```
+
+        In cascade mode one further check runs: a single short Responses request carrying this
+        exact model, these knobs and this assistant's tool schemas. If OpenAI refuses it, its
+        own message comes back as the `422` — see
+        [Cascade LLM knobs](../../reference/compatibility.md#cascade-llm-knobs). If OpenAI
+        cannot be reached, both checks are skipped and the write proceeds.
 
     **Example request** (with the new LLM generation knobs and TTS speed settings; all are optional)
 

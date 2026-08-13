@@ -17,8 +17,8 @@ Both modes route through a realtime model — `pipeline` uses it in text-only mo
 | Field | Values | Default |
 |---|---|---|
 | `provider` | `openai` in `pipeline` mode (`gemini` is rejected — see [Compatibility Matrix](compatibility.md#mode-llm-provider)); `gemini` or `openai` in `realtime` mode | `gemini` in `realtime` mode, `openai` in `pipeline` mode |
-| `model` | OpenAI: one of `OPENAI_REALTIME_MODELS` (validated). Gemini: any Live model string (not validated) | `gemini-3.1-flash-live-preview` (gemini), `gpt-realtime-1.5` (openai) |
-| `voice` | provider voice name | `Puck` (gemini), `marin` (openai). **Honored only in `realtime` mode** — `pipeline` mode emits text, so voice is meaningless there and the field is silently ignored. |
+| `model` | **Both validated.** OpenAI: one of `REALTIME_MODELS`. Gemini: one of the three `GEMINI_LIVE_MODELS` — the Live API is a much smaller set than the Gemini chat models, and a chat id such as `gemini-2.5-flash` opens a socket the API then closes | `gemini-2.5-flash-native-audio-preview-12-2025` (gemini), `gpt-realtime-1.5` (openai) |
+| `voice` | Validated per vendor: the 30-name Gemini Live roster for `gemini`; for `openai`, anything that is not a Gemini name | `Puck` (gemini), `marin` (openai). **Honored only in `realtime` mode** — `pipeline` mode emits text, so voice is meaningless there and the field is silently ignored. |
 | `api_key` | string | falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY` |
 
 OpenAI realtime additionally runs fixed turn-taking params not exposed to the API: `TurnDetection(type="semantic_vad", eagerness="high", create_response=True, interrupt_response=False)`, and
@@ -26,9 +26,18 @@ OpenAI realtime additionally runs fixed turn-taking params not exposed to the AP
 
 The truncation half is **sent only to the `gpt-realtime*` line**. `session.truncation` is a GA
 Realtime API field that `gpt-4o-realtime-preview` and `gpt-4o-mini-realtime-preview` do not have,
-and the API errors on an unknown session field instead of ignoring it. On those two models the
-session runs without the context cap and logs one line saying so — see
+and the API errors on an unknown session field instead of ignoring it. Those two are also no
+longer accepted at all — probed on 2026-08-13, the account does not serve either — but a stored
+row can still hold one, so the rule remains. See
 [Runtime Modes → LLM Context Truncation](../architecture/runtime-modes.md#llm-context-truncation).
+
+!!! warning "The Gemini default moved off `gemini-3.1-flash-live-preview`"
+    3.1 restricts `send_client_content` to initial history seeding: after the first model turn it
+    ignores `generate_reply()`, `update_instructions()` and `update_chat_ctx()`. On this platform
+    that silently disables the **max-duration farewell** and **silence re-prompts** — the greeting
+    still works, because it is sent as realtime *input*. The default is therefore
+    `gemini-2.5-flash-native-audio-preview-12-2025`, where all three work. 3.1 is still
+    selectable and logs a warning naming what will not be spoken.
 
 Native user-transcription (`assistant_stt_model="native"`, pipeline mode only) uses OpenAI
 `gpt-4o-mini-transcribe` regardless of which realtime provider is selected.
@@ -51,7 +60,7 @@ chat-completions, same `@function_tool` contract. Configured via `assistant_llm_
 | `temperature` | `0.0`–`2.0` — **chat models only** | SDK default (`0.8`) |
 | `max_output_tokens` | positive int | unset (model default) |
 | `reasoning_effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — **reasoning models only** | unset |
-| `service_tier` | `auto`, `default`, `flex`, `scale`, `priority` | unset |
+| `service_tier` | `auto`, `default`, `fast`, `priority` — all models. `flex` — **gpt-5 generation only**. `scale` is not an OpenAI tier and is rejected. [Measured table](compatibility.md#service_tier-measured) | unset (recommended) |
 | `verbosity` | `low`, `medium`, `high` — **gpt-5 generation only** | unset |
 | `tool_choice` | `auto`, `required`, `none` | unset |
 | `parallel_tool_calls` | bool | unset |
@@ -75,27 +84,64 @@ that rejects it is a `422` at create/update. Full matrix:
 | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` | reasoning | same tool restriction as `gpt-5.2` |
 | `gpt-5.5` | reasoning | |
 | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | reasoning | |
-| `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest`, `gpt-5.3-chat-latest` | chat | gpt-5 generation **chat** snapshots: `temperature` yes, `reasoning_effort` no |
-| `chat-latest` | chat | auto-follows the latest `gpt-5.x-chat` snapshot |
-| `gpt-oss-120b` | chat | open-weight model, non-reasoning |
 
 **Reasoning-model rule:** reasoning models reject `temperature` and take `reasoning_effort`;
-chat models are the reverse. The `*-chat-latest` aliases sit inside the gpt-5 generation but
-are **chat** models — they read `verbosity` but not `reasoning_effort`. The families are
-listed per model in `src/core/agents/llm_capabilities.py`, which both the API validator and
-the runtime factory read; a prefix such as "starts with gpt-5" gets the aliases wrong.
+chat models are the reverse. The families are listed per model in
+`src/core/model_support/capabilities.py`, which both the API validator and the runtime factory
+read. Membership is spelled out, never matched by prefix: `gpt-5.2-chat-latest` started with
+"gpt-5" and was a chat model, and a prefix test sent it `reasoning.effort` anyway.
+
+!!! danger "Removed from the allowlist: the `*-chat-latest` aliases and `gpt-oss-120b`"
+
+    `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest` were **retired by
+    OpenAI on 2026-06-19**. Probed on 2026-08-13 they answer `404 Model not found` — even though
+    `GET /v1/models` still *lists* them, which is why the listing alone is never evidence.
+    `gpt-oss-120b` is served by baseten and groq, not by `api.openai.com`.
+
+    An assistant still holding one of these answers calls with **silence**: OpenAI rejects
+    every LLM turn on the model id alone. Find them with
+    `uv run python scripts/audit_assistant_models.py`, and see
+    [Troubleshooting → The silent call](troubleshooting.md).
+
+!!! note "`chat-latest` works, and is still not allowlisted"
+    Probed on 2026-08-13, `chat-latest` answers HTTP 200 on the direct API — it is a real model,
+    not a gateway-only id. It is left off the allowlist because it fits **neither** family and
+    would need its own: it *rejects* `temperature` like a reasoning model, and accepts
+    `reasoning_effort` and `verbosity` with the single value `medium` (anything else is a `400`).
+    No assistant currently uses it. If you want it, it can be added with those constraints
+    encoded — the knob-value half is already caught by the config probe.
 
 ### On the allowlist
 
-The mode validator (`validate_mode_config` in `src/api/models/api_schemas/config/llm_config.py`) rejects
-any `model` outside the table above with a `422`. When OpenAI ships a new model, add it to
-`REASONING_MODELS` or `CHAT_MODELS` in `src/core/agents/llm_capabilities.py` — that split is
-the allowlist (`OPENAI_CASCADE_MODELS`) *and* decides which knobs the model accepts — then to
-the table above.
+Two gates, in order.
 
-The pipeline and realtime modes have their own, separate allowlist (`OPENAI_REALTIME_MODELS`) of
+**The static allowlist.** `validate_mode_config` in
+`src/api/models/api_schemas/config/llm_config.py` rejects any `model` outside the table above
+with a `422`. When OpenAI ships a new model, add it to `REASONING_MODELS` or `CHAT_MODELS` in
+`src/core/model_support/capabilities.py` — that split is the allowlist
+(`OPENAI_CASCADE_MODELS`) *and* decides which knobs the model accepts — then to the table
+above.
+
+**The live check.** No static list can know that OpenAI retired something last week, which is
+exactly how the aliases above became a live outage. So create and update also ask OpenAI
+whether the account still serves the model (`GET /v1/models`, cached per key for
+`OPENAI_MODEL_CACHE_TTL`, default 1 hour) and answer `422`/`400` if not. If OpenAI cannot be
+reached the write is **allowed** — an OpenAI outage must not make assistants un-editable.
+
+!!! warning "Never edit a model list from memory"
+
+    ```bash
+    uv run python scripts/check_model_allowlist.py
+    ```
+
+    Diffs every allowlisted id against what your account actually serves, names what to remove
+    and what could be added, and exits non-zero on any mismatch. Run it before editing a list
+    and after every `livekit-agents` bump.
+
+The pipeline and realtime modes have their own, separate allowlist (`REALTIME_MODELS`) of
 OpenAI **realtime** model IDs — the two sets do not overlap, and sending a chat model such as
-`gpt-4.1` in pipeline mode is a `422`. Gemini realtime model IDs stay free-form. Full table:
+`gpt-4.1` in pipeline mode is a `422`. Gemini Live IDs have their own list (`GEMINI_LIVE_MODELS`)
+and are validated too. Full table:
 [Compatibility Matrix → Model IDs](compatibility.md#model-ids).
 
 ## STT
@@ -103,6 +149,21 @@ OpenAI **realtime** model IDs — the two sets do not overlap, and sending a cha
 `assistant_stt_model` + `assistant_stt_config`. Two different code paths read the same fields:
 `resolve_stt` (pipeline mode's parallel Sarvam tap) and `create_stt` (cascade's session STT stage) — they
 don't always agree, see the quirks below.
+
+!!! note "`model` is allowlisted per provider"
+    The `model` field in every STT and TTS config is checked against that provider's real model
+    set (`src/core/model_support/speech.py`) and a value outside it is a `422`:
+
+    ```json
+    { "detail": "'deepgram' does not have a STT model called 'nova-9' — choose one of: base, flux-general-en, flux-general-multi, nova, nova-2, … See docs/reference/models.md." }
+    ```
+
+    These fields used to accept any string under 40 characters, so a typo was stored happily and
+    then ended the job at call start — `create_stt` returns `None`, the session never starts, and
+    the caller hears nothing. The sets are checked against the installed plugins' own definitions
+    by `tests/test_speech_models.py`, so a LiveKit SDK upgrade that renames a model fails the test
+    suite instead of a call. A provider whose model is **pinned** in the factory (Cartesia TTS,
+    Sarvam TTS, Mistral) takes no `model` field at all.
 
 | Provider | Valid in | Model default | Other config |
 |---|---|---|---|

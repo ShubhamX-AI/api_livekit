@@ -27,7 +27,7 @@ then fix whichever doc is wrong.
 | Provider | `pipeline` | `realtime` | `cascade` |
 |---|---|---|---|
 | `openai` | :white_check_mark: `gpt-realtime-1.5` in text-only modality, external TTS speaks | :white_check_mark: `gpt-realtime-1.5` speaks its own audio | :white_check_mark: `openai.responses.LLM` (a plain chat model) |
-| `gemini` | :no_entry: rejected | :white_check_mark: `gemini-3.1-flash-live-preview`, handles STT+LLM+TTS | :no_entry: rejected |
+| `gemini` | :no_entry: rejected | :white_check_mark: `gemini-2.5-flash-native-audio-preview-12-2025` (default), handles STT+LLM+TTS | :no_entry: rejected |
 | omitted | :white_check_mark: defaults to `openai` | :white_check_mark: defaults to `gemini` | :white_check_mark: defaults to `openai` |
 
 !!! warning "Gemini is realtime-only"
@@ -50,15 +50,41 @@ talks to a different API.
 
 | Mode | Accepted models | On anything else |
 |---|---|---|
-| `pipeline` | `OPENAI_REALTIME_MODELS` — `gpt-realtime`, `gpt-realtime-1.5`, `gpt-realtime-mini`, `gpt-4o-realtime-preview`, `gpt-4o-mini-realtime-preview` | `422`. A chat model such as `gpt-4.1` belongs to cascade mode. |
-| `realtime` + `openai` | same `OPENAI_REALTIME_MODELS` list | `422` |
-| `realtime` + `gemini` | any string — deliberately unvalidated | accepted; a bad ID fails when the session connects |
-| `cascade` | `OPENAI_CASCADE_MODELS` — the 22 chat models listed in [Models & Providers](models.md#cascade-llm-cascade-mode-only) | `422` |
+| `pipeline` | `REALTIME_MODELS` — `gpt-realtime`, `gpt-realtime-1.5`, `gpt-realtime-2`, `gpt-realtime-2025-08-28`, `gpt-realtime-mini` | `422`. A chat model such as `gpt-4.1` belongs to cascade mode. |
+| `realtime` + `openai` | same `REALTIME_MODELS` list | `422` |
+| `realtime` + `gemini` | `GEMINI_LIVE_MODELS` — `gemini-2.5-flash-native-audio-preview-12-2025` (default), `gemini-live-2.5-flash-native-audio`, `gemini-3.1-flash-live-preview` | `422` |
+| `cascade` | `OPENAI_CASCADE_MODELS` — the chat and reasoning models listed in [Models & Providers](models.md#cascade-llm-cascade-mode-only) | `422` |
 
-Gemini Live model IDs are left free-form on purpose: Google ships new ones frequently and an
-allowlist would reject them the day they land. The realtime allowlist lives in
-`src/api/models/api_schemas/config/llm_config.py`; the cascade one is the model table in
-`src/core/agents/llm_capabilities.py` — add new IDs there, and update this page.
+Gemini Live model IDs **are** validated, against the installed plugin's own list. The Live API
+is a much smaller and slower-moving set than the Gemini chat models, and a chat id such as
+`gemini-2.5-flash` is not refused by the plugin — it opens a socket the API then closes, and the
+job ends with no audio and nothing naming the cause.
+
+The older `gpt-4o-realtime-preview` / `gpt-4o-mini-realtime-preview` pair is **no longer
+accepted**: measured on 2026-08-13, the account does not serve either, so storing one produced a
+session that could not connect. They are still named in the code, because the
+`session.truncation` rule is asked about stored rows too and those two predate that field.
+
+Every list lives in `src/core/model_support/capabilities.py`. `REALTIME_TRUNCATION_MODELS` is
+*derived* from the realtime list rather than restated, because a restated copy drifted: it named
+two models the API allowlist rejected, making both entries unreachable.
+
+Beyond these lists, create/update asks OpenAI whether the account still serves the model —
+see [Models & Providers → On the allowlist](models.md#on-the-allowlist).
+
+### Realtime voices
+
+`assistant_llm_config.voice` is one field shared by two providers whose rosters have nothing in
+common, so the mistake it catches is switching provider and leaving the voice behind.
+
+| Provider | Accepted | On anything else |
+|---|---|---|
+| `gemini` | the 30 Gemini Live voices (`Puck` (default), `Kore`, `Zephyr`, `Charon`, …) | `422` — closed set in the installed plugin |
+| `openai` | any name that is **not** a Gemini voice (`marin` (default), `cedar`, `alloy`, …) | `422` only for a Gemini name |
+
+Asymmetric on purpose: Gemini's roster is a closed `Literal` in the SDK, so a name outside it
+cannot work. OpenAI ships realtime voices without a corresponding SDK list, so an unrecognised
+name is allowed through rather than blocking a voice released this morning.
 
 ### Cascade LLM knobs
 
@@ -68,12 +94,65 @@ cannot read with a `400`, and the Responses plugin raises it as a non-retryable 
 the LLM turn — **on every turn**. The call connects, the caller hears silence, and the only
 log line is `There was an issue with your request. Please check your inputs and try again`.
 
-| Knob | Chat models (`gpt-4.1*`, `gpt-4o*`, `*-chat-latest`, `chat-latest`, `gpt-oss-120b`) | Reasoning models (`gpt-5`, `gpt-5-mini/nano`, `gpt-5.1`, `gpt-5.2`, `gpt-5.4*`, `gpt-5.5`, `gpt-5.6-*`) |
+| Knob | Chat models (`gpt-4.1*`, `gpt-4o*`) | Reasoning models (`gpt-5`, `gpt-5-mini/nano`, `gpt-5.1`, `gpt-5.2`, `gpt-5.4*`, `gpt-5.5`, `gpt-5.6-*`) |
 |---|---|---|
 | `temperature` | :white_check_mark: | :no_entry: `422` — use `reasoning_effort` |
-| `reasoning_effort` | :no_entry: `422` | :white_check_mark: — except `gpt-5.2` / `gpt-5.4*`, see below |
-| `verbosity` | :white_check_mark: on the gpt-5 generation (`*-chat-latest`, `chat-latest`); :no_entry: `422` on `gpt-4.1*` / `gpt-4o*` / `gpt-oss-120b` | :white_check_mark: |
-| `max_output_tokens`, `service_tier`, `tool_choice`, `parallel_tool_calls` | :white_check_mark: | :white_check_mark: |
+| `reasoning_effort` | :no_entry: `422` | :white_check_mark: — except `gpt-5.2` / `gpt-5.4*` with tools, see below |
+| `verbosity` | :no_entry: `422` — a gpt-5 generation parameter | :white_check_mark: |
+| `max_output_tokens`, `parallel_tool_calls` | :white_check_mark: | :white_check_mark: |
+| `tool_choice` | :white_check_mark:, but `"required"` needs at least one tool | same |
+| `service_tier` | `auto`/`default`/`fast`/`priority` :white_check_mark:; `flex` :no_entry: `422` (gpt-5 only) | all five :white_check_mark: |
+
+
+### `service_tier`, measured
+
+Not copied from a doc page — probed against the API on 2026-08-13
+(`scripts/check_model_allowlist.py --probe <model>` runs the same request):
+
+| Tier | `gpt-4.1` | `gpt-4.1-nano` | `gpt-5-mini` | `chat-latest` | Verdict |
+|---|---|---|---|---|---|
+| unset | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | **what most assistants should use** |
+| `auto` | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | accepted |
+| `default` | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | accepted |
+| `fast` | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | accepted — undocumented by OpenAI, works everywhere |
+| `priority` | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | accepted (account entitlement) |
+| `flex` | :no_entry: `400` | :no_entry: `400` | :white_check_mark: | :no_entry: `400` | **gpt-5 generation only → `422`** |
+| `scale` | :no_entry: `400` | :no_entry: `400` | :no_entry: `400` | :no_entry: `400` | **not an OpenAI tier — removed from the API** |
+
+`flex` on a non-gpt-5 model is now a `422` at create/update. It is the exact config that produced
+the silent calls this documentation exists for, and it is nastier than it looks: on `gpt-4.1` the
+refusal says `Invalid service_tier argument`, but on `gpt-4.1-nano` it says only
+`There was an issue with your request. Please check your inputs and try again` — no parameter
+name. Same fault, two messages, one of them useless.
+
+`scale` was in this platform's accepted values and can never have worked: OpenAI answers
+`Invalid value: 'scale'. Supported values are: 'auto', 'default', 'fast', 'flex', and 'priority'`
+for every model.
+
+One thing still cannot be settled by any table, and is checked by asking OpenAI once when the
+assistant is saved: which `reasoning_effort` **values** a model takes. OpenAI's own docs say only
+that "some models support only a subset" of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+`max` — and `chat-latest`, for example, accepts `medium` and nothing else.
+
+The check is one short Responses request (16 output tokens, `store: false`) carrying the exact
+model, knobs and tool schemas, cached per (key, model, knob combination). A refusal is returned
+verbatim, so the `422` says what OpenAI said:
+
+```json
+{
+  "detail": "OpenAI rejected this configuration for model 'gpt-5-mini': Unsupported value: 'reasoning.effort' does not support 'none' with this model. (param: reasoning.effort). Stored as-is it would fail on every LLM turn, so the call would connect and the assistant would never speak. See docs/reference/troubleshooting.md."
+}
+```
+
+If OpenAI cannot be reached, or answers `401`/`429`/`5xx`, the write is **allowed**: none of
+those say anything about the configuration.
+
+!!! warning "`tool_choice: \"required\"` needs something to choose from"
+    A forced tool choice with an empty tool list is a `400` from OpenAI on every turn. An
+    assistant has tools when it has `tool_ids` or `assistant_end_call_enabled`, so this is
+    checked at create, at update, **and** on `POST /tool/attach/...` and
+    `POST /tool/detach/...` — detaching the last tool can break a stored config just as easily
+    as attaching the first.
 
 !!! warning "`gpt-5.2` and `gpt-5.4*` reject reasoning effort when tools are attached"
     Those models refuse `reasoning.effort` in any request carrying function tools — and an
@@ -83,10 +162,13 @@ log line is `There was an issue with your request. Please check your inputs and 
     call (`src/core/agents/llm/factory.py`) and logs one line when it does. Nothing to
     configure; a `reasoning_effort` you set explicitly is dropped with a warning instead.
 
-!!! note "`*-chat-latest` are chat models"
-    `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest` track gpt-5.x
-    **chat** snapshots. They take `temperature` and `verbosity` but reject `reasoning_effort`
-    — the opposite of the reasoning models whose names they resemble.
+!!! danger "The `*-chat-latest` aliases are retired"
+    `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and `gpt-5.3-chat-latest` were retired by
+    OpenAI on **2026-06-19** and are off the allowlist, together with `chat-latest` (a LiveKit
+    Inference gateway id needing Cloud credentials) and `gpt-oss-120b` (served by baseten and
+    groq, not by `api.openai.com`). An assistant still holding one answers calls with silence.
+    See [Models & Providers](models.md#documented-models) and
+    [Troubleshooting](troubleshooting.md).
 
 A model outside the allowlist (a row written before it existed, or by a direct Mongo edit)
 has no known family, so its knobs are forwarded untouched rather than guessed at.

@@ -95,9 +95,11 @@ Built by `create_stt` in `src/core/agents/stt/factory.py`. All providers stream 
 | `ELEVENLABS_API_KEY` | `elevenlabs` | ElevenLabs is STT **and** TTS — one key serves both |
 | `OPENAI_API_KEY` | `openai` | the same variable the cascade LLM stage reads |
 
-If both the per-assistant `api_key` and the system key are missing, `create_stt` returns
-`None` and the cascade job **aborts** with a logged error — it does **not** silently fall back
-or swap providers. (Separately, selecting a cascade-only provider — cartesia / deepgram /
+If both the per-assistant `api_key` and the system key are missing, the assistant is **refused at
+create/update** with a `422`/`400` naming the missing environment variable — the stage cannot
+authenticate, so the call would connect to silence. Should a stored row still reach the runtime
+without a key (written before this check existed), `create_stt` returns `None` and the cascade job
+**aborts** with a logged error — it does **not** silently fall back or swap providers. (Separately, selecting a cascade-only provider — cartesia / deepgram /
 elevenlabs — in `pipeline` mode runs no tap; the conversation LLM self-transcribes, the
 provider is ignored and a warning is logged. `openai` collapses to the same self-transcription
 without a warning, because there is nothing to lose: same vendor, same model.)
@@ -249,17 +251,22 @@ chat-completions, and the same `@function_tool` contract, so DB-backed tools wor
 | `temperature` | SDK default (`0.8`) | `0`–`2`. **Chat models only** — reasoning models reject it |
 | `max_output_tokens` | model default | cap on output tokens |
 | `reasoning_effort` | unset | `none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`. **Reasoning models only**, and not on `gpt-5.2`/`gpt-5.4*` while tools are attached |
-| `service_tier` | unset | `auto`/`default`/`flex`/`scale`/`priority` |
+| `service_tier` | unset | `auto`/`default`/`fast`/`priority` on any model; `flex` on the gpt-5 line only. `scale` is not an OpenAI tier — [measured](../reference/compatibility.md#service_tier-measured) |
 | `verbosity` | unset | `low`/`medium`/`high`. **gpt-5 generation only** (`text.verbosity`) |
 | `tool_choice` | unset | `auto`/`required`/`none` |
 | `parallel_tool_calls` | unset | allow multiple tool calls in one response |
 
 The model list is a **curated allowlist** (`OPENAI_CASCADE_MODELS`, sourced from the model
-table in `src/core/agents/llm_capabilities.py`), enforced by the mode validator. This replaced the old
+table in `src/core/model_support/capabilities.py`), enforced by the mode validator. This replaced the old
 free-form string: an unknown model now fails fast at assistant creation with a `422` listing the
-supported IDs, instead of failing at the first API call. The realtime/pipeline modes keep the
-free-form model field because they accept realtime model IDs (`gpt-realtime-1.5`, Gemini) that do
-not overlap with the cascade set.
+supported IDs, instead of failing at the first API call. The realtime/pipeline modes have their
+own separate lists (`REALTIME_MODELS`, `GEMINI_LIVE_MODELS`) — every mode's model field is
+allowlisted now, they simply do not share a list because they talk to different APIs.
+
+Passing the allowlist is necessary, not sufficient. Cascade creates and updates also ask OpenAI
+two things no local list can answer: whether the account still serves the model, and whether it
+accepts this exact request (model + knobs + tool schemas) — one 16-token probe whose refusal
+becomes the `422`. See [Compatibility Matrix](../reference/compatibility.md#cascade-llm-knobs).
 
 These knobs map onto `openai.responses.LLM` constructor args — they are the Responses-API param
 surface, not the LiveKit Inference `extra_kwargs` surface. `temperature` and `top_p` are
@@ -274,7 +281,7 @@ the assistant answers the call, greets nobody and never speaks. The only visible
 the WebSocket transport is `There was an issue with your request. Please check your inputs and
 try again`, with no mention of which parameter was at fault.
 
-So the pairing is checked twice, from one table (`src/core/agents/llm_capabilities.py`):
+So the pairing is checked twice, from one table (`src/core/model_support/capabilities.py`):
 
 - **at the API** — `validate_mode_config` rejects an impossible pairing with a `422`, so it
   is never stored;
@@ -284,9 +291,11 @@ So the pairing is checked twice, from one table (`src/core/agents/llm_capabiliti
 
 Two cases the table exists to get right, both of which a "starts with gpt-5" test gets wrong:
 
-- **`*-chat-latest` are chat models.** They sit inside the gpt-5 generation, so they read
-  `text.verbosity`, but they are not reasoning models: `temperature` yes, `reasoning_effort`
-  no.
+- **A `gpt-5.x-chat-latest` alias was a chat model.** It sat inside the gpt-5 generation, so it
+  read `text.verbosity`, but it was not a reasoning model: `temperature` yes,
+  `reasoning_effort` no. All three aliases were retired by OpenAI on 2026-06-19 and are off the
+  allowlist now — the case is kept here because it is why membership is spelled out per model
+  rather than matched by prefix, and OpenAI can ship another chat alias at any time.
 - **`gpt-5.2` / `gpt-5.4*` reject reasoning effort once function tools are attached.** The
   OpenAI plugin injects a default `Reasoning(effort=...)` for those models when the caller
   passes none, so even an empty `assistant_llm_config` sent one; the SDK's own guard for this

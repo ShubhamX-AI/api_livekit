@@ -47,3 +47,29 @@ class GreetingAudioSchema(BaseModel):
 class UpdateGreetingAudioSchema(BaseModel):
     enabled: Optional[bool] = Field(None, description="Toggle the recorded greeting on or off.")
     audio_id: Optional[str] = Field(None, description="Attach a different audio asset, or null to detach.")
+
+
+# ── End-call webhook delivery sub-models ──────────────────
+# Both fields are per-assistant overrides of the server defaults (END_CALL_WEBHOOK_TIMEOUT,
+# END_CALL_WEBHOOK_ATTEMPTS). They belong to the receiver rather than to the platform: one
+# endpoint answers in 80 ms, another writes the payload to its own database first and needs 45
+# seconds, and one global timeout has to be generous enough for the slowest of them.
+#
+# Bounds, not free numbers: every attempt holds the worker's teardown path open, so the product
+# of timeout and attempts is how long a dead endpoint can occupy it.
+_WEBHOOK_TIMEOUT_FIELD = dict(ge=1.0, le=120.0)
+_WEBHOOK_ATTEMPTS_FIELD = dict(ge=1, le=5)
+
+
+class EndCallWebhookSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timeout_seconds: Optional[float] = Field(None, **_WEBHOOK_TIMEOUT_FIELD, description="Seconds to wait for your endpoint to answer, 1–120. Unset uses the server default (END_CALL_WEBHOOK_TIMEOUT, 30s). Raise it if your endpoint stores the payload before replying; lower it if you answer immediately and want a failed delivery detected sooner.")
+    attempts: Optional[int] = Field(None, **_WEBHOOK_ATTEMPTS_FIELD, description="How many times to try delivery, 1–5. Unset uses the server default (END_CALL_WEBHOOK_ATTEMPTS, 3). Retries happen on connection errors, read timeouts, 429 and 5xx — never on another 4xx. Your endpoint must be idempotent: key on data.room_name.")
+
+
+class UpdateEndCallWebhookSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timeout_seconds: Optional[float] = Field(None, **_WEBHOOK_TIMEOUT_FIELD, description="Change the per-assistant webhook timeout, or send null to fall back to the server default.")
+    attempts: Optional[int] = Field(None, **_WEBHOOK_ATTEMPTS_FIELD, description="Change the per-assistant attempt count, or send null to fall back to the server default.")

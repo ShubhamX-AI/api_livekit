@@ -10,7 +10,8 @@ from livekit.agents.types import NOT_GIVEN
 from livekit.plugins import openai
 from openai.types import Reasoning
 
-from src.core.agents.llm_capabilities import (
+from src.core.model_support.capabilities import (
+    CASCADE_MODELS,
     DEFAULT_CASCADE_MODEL,
     PLUGIN_INJECTS_REASONING,
     REASONING_TOOL_INCOMPATIBLE,
@@ -21,7 +22,7 @@ from src.core.logger import logger
 
 # Kept as a plain string default, not a Literal. OpenAI ships models monthly and a
 # Literal would mean a deploy per model; the supported set is documented instead
-# (docs/architecture/cascade-pipeline.md). It lives in llm_capabilities so the API
+# (docs/architecture/cascade-pipeline.md). It lives in model_support.capabilities so the API
 # validator can check the knobs against the model the call will actually use.
 DEFAULT_MODEL = DEFAULT_CASCADE_MODEL
 
@@ -54,6 +55,24 @@ def create_llm(assistant, *, has_tools: bool = False):
     # unchanged. openai.LLM stays the path for OpenAI-compatible third-party endpoints,
     # which this platform does not use.
     model = llm_config.get("model") or DEFAULT_MODEL
+
+    # A model off the allowlist is not rejected here — the row exists, the call is already
+    # connected, and refusing to build the LLM would end the job just as silently. One warning
+    # instead, because this is the single most likely reason a cascade call connects and never
+    # speaks: OpenAI 400s every turn on a retired model id, and the WebSocket error frame it
+    # sends back carries no detail at all. The API refuses to *store* such a model
+    # (api/validation/assistant_guard.py); rows written before that gate, or by a direct DB
+    # edit, or with a model retired since the last save, still reach this line.
+    if model not in CASCADE_MODELS:
+        logger.warning(
+            "Cascade assistant %s runs model %r, which is not on the supported list. If this "
+            "call connects and the assistant never speaks, that is why — OpenAI rejects every "
+            "turn for a model it does not serve, and the error frame says nothing. Check it "
+            "with `uv run python scripts/audit_assistant_models.py`.",
+            assistant_id,
+            model,
+        )
+
     kwargs: dict = {
         "model": model,
         "api_key": api_key,
@@ -87,7 +106,7 @@ def create_llm(assistant, *, has_tools: bool = False):
     # reasoning_effort. These match src/api/models/api_schemas.py::AssistantLLMConfig.
     #
     # Three of them are model-gated, and the stored config can hold a value the current
-    # model rejects — which model reads which is src/core/agents/llm_capabilities.py.
+    # model rejects — which model reads which is src/core/model_support/capabilities.py.
     temperature = llm_config.get("temperature")
     if temperature is not None and keep("temperature", temperature):
         kwargs["temperature"] = temperature
@@ -110,7 +129,22 @@ def create_llm(assistant, *, has_tools: bool = False):
     if reasoning_effort and keep("reasoning_effort", reasoning_effort):
         kwargs["reasoning"] = Reasoning(effort=reasoning_effort)
 
-    llm = openai.responses.LLM(**kwargs)
+    try:
+        llm = openai.responses.LLM(**kwargs)
+    except Exception as e:
+        # Every other config error in this file ends the job through `return None`, which the
+        # caller handles. A raise here would escape entrypoint() and kill the job with a
+        # traceback instead — same outcome for the caller, much worse for whoever reads the
+        # log. The plugin can raise on a missing key and on an unknown keyword after a bump.
+        logger.error(
+            "Could not build the cascade LLM for assistant %s (model=%s): %s: %s. Knobs: %s",
+            assistant_id,
+            model,
+            type(e).__name__,
+            e,
+            {k: v for k, v in kwargs.items() if k not in ("api_key", "model")} or "defaults",
+        )
+        return None
 
     # Filtering our own kwargs is not enough. openai.responses.LLM.__init__ inserts a
     # Reasoning object of its own for the gpt-5 models it believes support one, so the knob
@@ -132,12 +166,15 @@ def create_llm(assistant, *, has_tools: bool = False):
     # A Responses 400 is about the request shape, and over the WebSocket the error frame
     # carries no detail ("There was an issue with your request. Please check your inputs
     # and try again"), so the knobs that produced it have to be in our own log. Never the
-    # API key.
+    # API key. The replay command is spelled out because this line is what someone reads
+    # *after* the call already failed, and it turns the next step into one paste.
     logger.info(
-        "Cascade LLM built | assistant=%s | model=%s | has_tools=%s | knobs=%s",
+        "Cascade LLM built | assistant=%s | model=%s | has_tools=%s | knobs=%s | "
+        "if every turn fails: uv run python scripts/replay_cascade_request.py %s --bisect",
         assistant_id,
         model,
         has_tools,
         {k: v for k, v in kwargs.items() if k not in ("api_key", "model")} or "defaults",
+        assistant_id,
     )
     return llm

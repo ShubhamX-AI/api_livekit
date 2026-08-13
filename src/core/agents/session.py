@@ -36,7 +36,13 @@ from src.core.agents.dynamic_assistant import DynamicAssistant
 from src.core.agents.inbound_context import log_missing_strategy, resolve_inbound_context
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL, create_llm
-from src.core.agents.llm_capabilities import realtime_supports_truncation
+from src.core.model_support.capabilities import (
+    DEFAULT_GEMINI_LIVE_MODEL,
+    DEFAULT_GEMINI_VOICE,
+    DEFAULT_REALTIME_MODEL,
+    GEMINI_NO_MIDSESSION_CONTENT_MODELS,
+    realtime_supports_truncation,
+)
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
 from src.core.agents.stt import (
     FinalCoalescer,
@@ -597,8 +603,9 @@ async def entrypoint(ctx: JobContext):
     )
     _native_transcription = AudioTranscription(model="gpt-4o-mini-transcribe", prompt=_stt_prompt)
 
-    # Shared by the two OpenAI realtime branches (full realtime and half-cascade).
-    _openai_realtime_model = llm_config.get("model") or "gpt-realtime-1.5"
+    # Shared by the two OpenAI realtime branches (full realtime and half-cascade). The default
+    # lives in model_support so the API validates the model this line will actually pick.
+    _openai_realtime_model = llm_config.get("model") or DEFAULT_REALTIME_MODEL
     # `session.truncation` is a GA Realtime API field. The older gpt-4o-*realtime-preview
     # models — still on the allowlist, so still reachable — do not carry it in their session
     # shape, and an unknown session field comes back as an error event rather than being
@@ -647,9 +654,25 @@ async def entrypoint(ctx: JobContext):
     elif is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
         if realtime_provider == "gemini":
+            _gemini_model = llm_config.get("model") or DEFAULT_GEMINI_LIVE_MODEL
+            # The 3.1 Live model answers `send_client_content` with a 1007 close after the
+            # first model turn, so `generate_reply()` is ignored from then on. Two features
+            # here go through it: the max-duration farewell and the silence re-prompt. The
+            # greeting is unaffected — it is sent as realtime *input*, not client content.
+            # Not a rejection, because everything else about the model works; a log line
+            # instead, so the missing farewell is traceable to a choice rather than a bug.
+            # https://docs.livekit.io/agents/models/realtime/plugins/gemini/#gemini-3-1-compatibility
+            if _gemini_model in GEMINI_NO_MIDSESSION_CONTENT_MODELS:
+                logger.warning(
+                    "Gemini Live model %s ignores generate_reply() after the first turn — the "
+                    "max-duration farewell and silence re-prompts will not be spoken on this "
+                    "call. Use %s to keep them.",
+                    _gemini_model,
+                    DEFAULT_GEMINI_LIVE_MODEL,
+                )
             llm = google_realtime.RealtimeModel(
-                model=llm_config.get("model", "gemini-3.1-flash-live-preview"),
-                voice=llm_config.get("voice", "Puck"),
+                model=_gemini_model,
+                voice=llm_config.get("voice") or DEFAULT_GEMINI_VOICE,
                 modalities=["AUDIO"],
                 instructions=assistant.assistant_prompt,
                 api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,

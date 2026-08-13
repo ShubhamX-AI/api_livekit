@@ -4,8 +4,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from .config.interaction_config import (
     AssistantInteractionConfigSchema,
+    EndCallWebhookSchema,
     GreetingAudioSchema,
     UpdateAssistantInteractionConfigSchema,
+    UpdateEndCallWebhookSchema,
     UpdateGreetingAudioSchema,
 )
 from .config.llm_config import (
@@ -56,6 +58,7 @@ class CreateAssistant(BaseModel):
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
     assistant_end_call_url: Optional[str] = Field(None, max_length=200, description="Assistant's end call url")
+    assistant_end_call_webhook: EndCallWebhookSchema = Field(default_factory=EndCallWebhookSchema, description="Delivery tuning for the end-of-call webhook (timeout, attempts). Omit to use the server defaults — see docs/api/calls/webhook.md.")
 
     class Config:
         # Strip whitespace from string fields
@@ -140,8 +143,15 @@ class CreateAssistant(BaseModel):
         # Provider/model/STT rules for whichever mode this is. Runs for all three, so a
         # combination that cannot start (e.g. gemini in pipeline mode) is a 422 here
         # instead of a dead job later.
+        #
+        # `has_tools`: a fresh assistant has no `tool_ids` yet (tools are attached afterwards
+        # through /assistant/attach-tools, which re-runs this check), so the built-in end_call
+        # tool is the only one that can be present at creation.
         validate_mode_config(
-            self.assistant_mode, self.assistant_llm_config, self.assistant_stt_model
+            self.assistant_mode,
+            self.assistant_llm_config,
+            self.assistant_stt_model,
+            has_tools=bool(self.assistant_end_call_enabled),
         )
         if self.assistant_stt_config and not self.assistant_stt_model:
             raise ValueError("`assistant_stt_config` requires `assistant_stt_model`.")
@@ -175,6 +185,7 @@ class UpdateAssistant(BaseModel):
     assistant_end_call_trigger_phrase: Optional[str] = Field(None, max_length=300, description="Example user phrase that should trigger end_call")
     assistant_end_call_agent_message: Optional[str] = Field(None, max_length=300, description="What assistant should say before ending the call")
     assistant_end_call_url: Optional[str] = Field(None, max_length=200, description="Assistant's end call url (optional)")
+    assistant_end_call_webhook: Optional[UpdateEndCallWebhookSchema] = Field(None, description="Change the end-of-call webhook timeout or attempt count. Merged with what is stored, like assistant_interaction_config; send a field as null to fall back to the server default.")
 
     class Config:
         # Strip whitespace from string fields
@@ -223,8 +234,13 @@ class UpdateAssistant(BaseModel):
                 "assistant_llm_config is required when switching to realtime mode."
             )
         # Fires only when this request names the mode. A PATCH that omits it is caught by
-        # enforce_stored_mode_constraints() in routes/assistant.py, which can see the
-        # stored row. Both paths are needed.
+        # enforce_stored_mode_constraints() in api/validation/assistant_guard.py, which can
+        # see the stored row. Both paths are needed.
+        #
+        # `has_tools` is left at its default here even when the request enables end_call: this
+        # validator cannot see the row's `tool_ids`, and guessing False would reject nothing
+        # while guessing True would reject a knob that is legal for a toolless assistant. The
+        # stored-row check has the real answer and runs on every PATCH.
         if self.assistant_mode:
             validate_mode_config(
                 self.assistant_mode, self.assistant_llm_config, self.assistant_stt_model

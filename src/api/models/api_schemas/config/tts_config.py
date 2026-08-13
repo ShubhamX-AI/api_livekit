@@ -1,7 +1,11 @@
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.model_support.speech import (
+    unsupported_sarvam_speaker_reason,
+    unsupported_speech_model_reason,
+)
 from src.core.providers.keys import ProviderApiKey
 
 
@@ -43,6 +47,21 @@ class SarvamTTSConfig(BaseModel):
     temperature: float = Field(0.3, ge=0.01, le=2.0, description="TTS sampling temperature, 0.01–2.0. Lower is more stable. Applies to bulbul:v3.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Sarvam API key (optional, falls back to system key). TTS only — user transcription uses assistant_stt_config.api_key.")
 
+    @field_validator("speaker", mode="after")
+    @classmethod
+    def _speaker_is_on_the_v3_roster(cls, value):
+        """Rejected here, not just at call time.
+
+        The Sarvam plugin raises on a speaker its model cannot use, and that exception escapes
+        create_tts and entrypoint(): the job dies with a traceback and the caller hears
+        nothing. `create_tts` still checks (rows predate this validator), but a new assistant
+        cannot be saved with a speaker that would do that.
+        """
+        reason = unsupported_sarvam_speaker_reason(value)
+        if reason:
+            raise ValueError(f"{reason}. See docs/reference/models.md.")
+        return value
+
 
 class ElevenLabsVoiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -62,6 +81,15 @@ class ElevenLabsTTSConfig(BaseModel):
     model: str = Field("eleven_v3", max_length=40, description="ElevenLabs TTS model: eleven_v3 (default), eleven_multilingual_v2, eleven_turbo_v2_5 or eleven_flash_v2_5.")
     voice_settings: Optional[ElevenLabsVoiceSettings] = Field(None, description="Voice settings (stability, similarity_boost, style, speed, use_speaker_boost). Applies to all models.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="ElevenLabs API key (optional, falls back to system key)")
+
+    @field_validator("model", mode="after")
+    @classmethod
+    def _model_is_real(cls, value):
+        """A misspelled model id used to reach the vendor and fail every synthesis."""
+        reason = unsupported_speech_model_reason("elevenlabs", value, stage="tts")
+        if reason:
+            raise ValueError(f"{reason}. See docs/reference/models.md.")
+        return value
 
 
 class MistralTTSConfig(BaseModel):

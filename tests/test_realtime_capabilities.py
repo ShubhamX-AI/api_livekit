@@ -7,9 +7,18 @@ sending a cascade LLM a knob its model cannot read.
 """
 
 import unittest
+from types import SimpleNamespace
 
-from src.api.models.api_schemas.config.llm_config import OPENAI_REALTIME_MODELS
-from src.core.agents.llm_capabilities import (
+from src.api.models.api_schemas.config.llm_config import (
+    OPENAI_REALTIME_MODELS,
+    validate_mode_config,
+)
+from src.core.model_support.capabilities import (
+    DEFAULT_GEMINI_LIVE_MODEL,
+    DEFAULT_GEMINI_VOICE,
+    GEMINI_LIVE_MODELS,
+    GEMINI_NO_MIDSESSION_CONTENT_MODELS,
+    GEMINI_VOICES,
     REALTIME_TRUNCATION_MODELS,
     realtime_supports_truncation,
 )
@@ -55,12 +64,103 @@ class TestRealtimeTruncationSupport(unittest.TestCase):
         self.assertFalse(realtime_supports_truncation("gpt-realtime-2027-whatever"))
 
     def test_every_truncation_model_is_actually_allowlisted(self):
-        """Otherwise the set names models the API would reject at create time anyway."""
-        self.assertTrue(REALTIME_TRUNCATION_MODELS & OPENAI_REALTIME_MODELS)
-        unknown = REALTIME_TRUNCATION_MODELS - OPENAI_REALTIME_MODELS
-        # Newer GA IDs may be listed here before the allowlist catches up; they must at
-        # least all be gpt-realtime line members, never chat or preview models.
-        self.assertTrue(all(m.startswith("gpt-realtime") for m in unknown))
+        """A truncation model the API rejects is dead code that reads like coverage.
+
+        It happened: `gpt-realtime-2` and `gpt-realtime-2025-08-28` were listed as
+        truncation-capable while `OPENAI_REALTIME_MODELS` refused both, so neither entry could
+        ever be reached. The sets are now derived from one another, and this asserts it.
+        """
+        self.assertEqual(REALTIME_TRUNCATION_MODELS - OPENAI_REALTIME_MODELS, set())
+
+
+class TestGeminiLiveModelRules(unittest.TestCase):
+    """Gemini has no /v1/models to ask, so the plugin's own Literal is the only gate."""
+
+    def test_the_allowlist_matches_the_installed_plugin(self):
+        """A model outside the plugin's Literal opens a socket the API then closes."""
+        from livekit.plugins.google.realtime.api_proto import LiveAPIModels
+        from typing import get_args
+
+        self.assertEqual(GEMINI_LIVE_MODELS, set(get_args(LiveAPIModels)))
+
+    def test_the_voice_roster_matches_the_installed_plugin(self):
+        from livekit.plugins.google.realtime.api_proto import Voice
+        from typing import get_args
+
+        self.assertEqual(GEMINI_VOICES, set(get_args(Voice)))
+
+    def test_the_default_live_model_is_allowlisted_and_keeps_generate_reply(self):
+        """The default has to be the model where every feature works, not the newest one."""
+        self.assertIn(DEFAULT_GEMINI_LIVE_MODEL, GEMINI_LIVE_MODELS)
+        self.assertNotIn(DEFAULT_GEMINI_LIVE_MODEL, GEMINI_NO_MIDSESSION_CONTENT_MODELS)
+
+    def test_the_default_voice_is_on_the_roster(self):
+        self.assertIn(DEFAULT_GEMINI_VOICE, GEMINI_VOICES)
+
+    def test_a_chat_model_is_rejected_in_realtime_mode(self):
+        with self.assertRaises(ValueError) as ctx:
+            validate_mode_config(
+                "realtime",
+                SimpleNamespace(provider="gemini", model="gemini-2.5-flash", voice=None),
+                None,
+            )
+        self.assertIn("not a Gemini Live model", str(ctx.exception))
+
+    def test_a_live_model_is_accepted(self):
+        validate_mode_config(
+            "realtime",
+            SimpleNamespace(
+                provider="gemini", model="gemini-3.1-flash-live-preview", voice="Puck"
+            ),
+            None,
+        )
+
+    def test_gemini_is_the_default_provider_so_its_models_are_checked_unprovided(self):
+        with self.assertRaises(ValueError):
+            validate_mode_config(
+                "realtime",
+                SimpleNamespace(provider=None, model="gpt-realtime", voice=None),
+                None,
+            )
+
+
+class TestRealtimeVoiceRules(unittest.TestCase):
+    """One `voice` field, two rosters with nothing in common."""
+
+    def test_a_gemini_voice_under_openai_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            validate_mode_config(
+                "realtime",
+                SimpleNamespace(provider="openai", model="gpt-realtime", voice="Puck"),
+                None,
+            )
+        self.assertIn("is a Gemini Live voice", str(ctx.exception))
+
+    def test_an_openai_voice_under_gemini_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            validate_mode_config(
+                "realtime",
+                SimpleNamespace(
+                    provider="gemini", model="gemini-3.1-flash-live-preview", voice="marin"
+                ),
+                None,
+            )
+        self.assertIn("not a Gemini Live voice", str(ctx.exception))
+
+    def test_an_unknown_openai_voice_is_allowed_through(self):
+        """OpenAI ships realtime voices without an SDK Literal — do not block a new one."""
+        validate_mode_config(
+            "realtime",
+            SimpleNamespace(provider="openai", model="gpt-realtime", voice="cedar"),
+            None,
+        )
+
+    def test_no_voice_is_always_fine(self):
+        validate_mode_config(
+            "realtime",
+            SimpleNamespace(provider="openai", model="gpt-realtime", voice=None),
+            None,
+        )
 
 
 if __name__ == "__main__":
