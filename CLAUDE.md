@@ -92,14 +92,20 @@ Three concurrent processes form the runtime:
 
 ### Call flow (outbound)
 
-`POST /call/outbound` → validates assistant + trunk (`trunk_type` must match `call_service`) → inserts `OutboundCallQueue` record → returns `202 Accepted` with `queue_id` → dispatcher polls every 2s (30s when idle) → creates LiveKit room + dispatches agent job → worker `entrypoint()` runs the session → end-of-call webhook + `CallRecord` finalized.
+`POST /call/outbound` → validates assistant + trunk (`trunk_type` must match `call_service`) → inserts `OutboundCallQueue` record → returns `202 Accepted` with `queue_id` → dispatcher wakes on a MongoDB Change Stream (30s safety-net poll) → creates LiveKit room + dispatches agent job → worker `entrypoint()` runs the session → end-of-call webhook + `CallRecord` finalized.
 
 Queue states: `pending` → `dispatching` → `dispatched` (or `failed` after 3 retries). `GET /call/queue/{queue_id}` returns state.
 
 ### Concurrency / load control
 
 - `MAX_CONCURRENT_JOBS` (default `12`) caps active sessions in the dispatcher (`src/core/config.py`).
-- The LiveKit worker stops accepting new jobs around `65%` CPU load (load threshold in `src/core/agents/session.py`).
+- The LiveKit worker stops accepting new jobs once it is already running `MAX_CONCURRENT_JOBS`,
+  counted from its own active jobs (`_worker_load` + `load_threshold=1.0` in
+  `src/core/agents/session.py`). It used to use the SDK default, which reads whole-machine CPU — so
+  a busy SIP dispatcher on the same host silently stopped agent intake and calls connected with no
+  agent behind them.
+- The cap is shared by every call type: outbound, inbound, web and passthrough calls all write a
+  `CallRecord` and all count against the same 12.
 - Providers: outbound supports `twilio` + `exotel`; inbound supports `exotel` only (no Twilio inbound).
 
 ### Auth
@@ -129,6 +135,8 @@ REST routes require `Authorization: Bearer <api_key>` (keys are `lvk_`-prefixed,
 | Tool loader (DB-backed function tools) | `src/core/agents/tool_builder.py` |
 | Outbound dispatcher loop | `src/services/outbound_dispatcher/dispatcher.py` |
 | Exotel SIP/RTP bridge | `src/services/exotel/custom_sip_reach/` |
+| — One inbound call's media half (own process) | `src/services/exotel/custom_sip_reach/inbound_worker.py` |
+| — Multiprocessing context for all bridges | `src/services/outbound_dispatcher/dispatcher.py::get_bridge_context` |
 | Provider key masking | `src/core/providers/` |
 | MongoDB schemas (Beanie ODM) | `src/core/db/db_schemas.py` |
 | Settings / env config | `src/core/config.py` |
