@@ -5,7 +5,7 @@ from src.api.dependencies import get_current_user
 from src.core.logger import logger
 from src.services.livekit.livekit_svc import LiveKitService
 from src.api.models.api_schemas import TriggerWebCall
-from src.services.outbound_dispatcher.dispatcher import release_slot, try_reserve_slot
+from src.services.outbound_dispatcher.dispatcher import WEB, release_slot, try_reserve_slot
 from google.protobuf.json_format import MessageToDict
 
 router = APIRouter()
@@ -34,10 +34,11 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
                 detail="text_only is not supported for realtime assistants. Use a pipeline-mode assistant.",
             )
 
-        # Web calls dispatch a real agent and write a CallRecord, so they consume the same
-        # capacity as a phone call — but they used to skip the concurrency cap entirely, which
-        # let a burst of web sessions starve the telephony queue without ever being throttled.
-        if not await try_reserve_slot():
+        # Web calls dispatch a real agent and write a CallRecord, so they need capacity of
+        # their own — they used to skip the cap entirely, which let a burst of web sessions
+        # starve the telephony queue. They are counted in their own bucket because a web call
+        # is much cheaper than a phone call: no bridge process and no RTP port.
+        if not await try_reserve_slot(WEB):
             logger.warning("Web call rejected — concurrency cap reached")
             raise HTTPException(
                 status_code=503,
@@ -68,7 +69,7 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
             call_service="web",
         )
         # Reservation handed over to the DB-counted CallRecord above.
-        release_slot()
+        release_slot(WEB)
         slot_held = False
 
         # Create agent dispatch
@@ -99,4 +100,4 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
     finally:
         # Releases the reservation if we bailed out before the CallRecord took over counting it.
         if slot_held:
-            release_slot()
+            release_slot(WEB)

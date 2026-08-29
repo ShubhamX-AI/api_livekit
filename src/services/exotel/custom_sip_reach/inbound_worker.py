@@ -56,6 +56,18 @@ async def _run_inbound_bridge(
         # draw ICMP port-unreachable.
         rtp_bridge = RTPMediaBridge(public_ip=EXOTEL_MEDIA_IP, bind_port=port)
 
+        # The parent answers the call on this, so it must be sent exactly once however the
+        # agent turns up — an explicit agent_ready message, or its audio track appearing.
+        agent_ready_sent = False
+
+        def signal_agent_ready(how: str) -> None:
+            nonlocal agent_ready_sent
+            if agent_ready_sent:
+                return
+            agent_ready_sent = True
+            logger.info(f"[INBOUND] Agent ready ({how}) — parent may answer")
+            ready_queue.put({"event": "agent_ready"})
+
         @room.on("track_subscribed")
         def on_track(track, publication, participant):
             if track.kind == rtc.TrackKind.KIND_AUDIO:
@@ -65,21 +77,40 @@ async def _run_inbound_bridge(
                 )
                 rtp_bridge.add_outbound_track(track)
                 rtp_bridge.start_outbound_mixer()
+                # Fallback readiness signal. Weaker than the agent's own agent_ready message
+                # (a published track means session.start() finished, not that the greeting is
+                # queued), but it needs nothing from the agent side, so ringing still works
+                # against an older agent build that never publishes.
+                signal_agent_ready("audio track published")
+
+        @room.on("data_received")
+        def on_data(data: rtc.DataPacket):
+            if data.topic != "sip_bridge_events":
+                return
+            try:
+                event = json.loads(data.data.decode()).get("event")
+            except Exception:
+                return
+            if event == "agent_ready":
+                signal_agent_ready("agent_ready event")
 
         await asyncio.wait_for(room.connect(LK_URL, token), timeout=15.0)
         logger.info(f"[INBOUND] Bridge process: LiveKit connected room={room_name}")
         await rtp_bridge.start_inbound(room)
 
-        ready_queue.put({"ready": True, "port": port})
+        # Phase one: the media path is up. The parent sends 180 Ringing on this and starts
+        # waiting for agent_ready above.
+        ready_queue.put({"event": "media_ready", "port": port})
 
         # Media stays gated until the parent has actually sent the 200 OK.
-        if not await asyncio.to_thread(answered_event.wait, 30.0):
+        if not await asyncio.to_thread(answered_event.wait, 60.0):
             logger.error("[INBOUND] Parent never signalled answer — aborting")
             return
         rtp_bridge.set_remote_endpoint(remote_ip, remote_port, pt)
 
-        # Give the agent process a moment to finish booting before telling it to greet.
-        await asyncio.sleep(1.5)
+        # No sleep before this any more. There used to be an unconditional 1.5s wait here to
+        # "give the agent process a moment to finish booting" — the parent now rings until the
+        # agent says it is ready, so by this point booting is already done.
         try:
             await room.local_participant.publish_data(
                 json.dumps({"event": "call_answered"}).encode(),
@@ -117,7 +148,7 @@ async def _run_inbound_bridge(
     except Exception as e:
         logger.error(f"[INBOUND] Bridge error: {e}", exc_info=True)
         try:
-            ready_queue.put({"ready": False, "error": str(e)})
+            ready_queue.put({"event": "failed", "error": str(e)})
         except Exception:
             pass
 

@@ -9,11 +9,11 @@ bridge to tear down the call.
 import asyncio
 import multiprocessing
 import multiprocessing.synchronize
-import os
 import threading
 
 from .config import EXOTEL_CUSTOMER_SIP_PORT, EXOTEL_SIP_ALLOWED_IPS, INBOUND_SIP_LISTEN
 from .sip_client import ExotelSipClient
+from src.core.config import settings
 from src.core.logger import logger
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +153,10 @@ async def ensure_inbound_server():
 # Bounds how many INVITEs may be in setup at once. Without this every INVITE became a bare
 # task, so a burst all reached the concurrency gate before any of them had incremented it and
 # they all passed — the 486 Busy Here gate was softest under exactly the burst it exists for.
-MAX_CONCURRENT_INVITE_SETUPS = int(os.getenv("MAX_CONCURRENT_INVITE_SETUPS", "8"))
+#
+# This is not a cap on live inbound calls: the slot is released as soon as the call is
+# answered. It does have to exceed the number of calls that can be ringing at once, because
+# the ring-until-agent-ready wait happens inside it — see inbound_bridge.MAX_RING_SECONDS.
 _invite_semaphore: asyncio.Semaphore | None = None
 _invite_tasks: set[asyncio.Task] = set()
 
@@ -161,7 +164,7 @@ _invite_tasks: set[asyncio.Task] = set()
 def _get_invite_semaphore() -> asyncio.Semaphore:
     global _invite_semaphore
     if _invite_semaphore is None:
-        _invite_semaphore = asyncio.Semaphore(MAX_CONCURRENT_INVITE_SETUPS)
+        _invite_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_INVITE_SETUPS)
     return _invite_semaphore
 
 

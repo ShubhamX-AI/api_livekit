@@ -976,6 +976,26 @@ async def entrypoint(ctx: JobContext):
     # worker overload); this timestamp is the thing that tells the difference.
     await livekit_services.mark_agent_ready(room_name)
 
+    # Tell the SIP bridge the same thing over the room's data channel, so an inbound call can
+    # ring until this point instead of answering into silence.
+    #
+    # This spot is chosen deliberately: it is after the inbound-context webhook (which can take
+    # up to 10s), after tool loading, after TTS prewarm and after session.start() — so it means
+    # both halves of "ready", the agent is up *and* the webhook has already answered.
+    #
+    # The bridge is the only listener and it treats this as advisory: if the publish fails, or
+    # an older agent build never sends it, the bridge falls back to the agent's audio track
+    # appearing and then to its own ring deadline. So a failure here delays an answer, it never
+    # blocks one.
+    try:
+        await ctx.room.local_participant.publish_data(
+            json.dumps({"event": "agent_ready"}).encode(),
+            topic="sip_bridge_events",
+        )
+        logger.info("Published agent_ready to sip_bridge_events")
+    except Exception as e:
+        logger.warning(f"Could not publish agent_ready (call proceeds regardless): {e}")
+
     @session.on("user_state_changed")
     def on_user_state_changed(event):
         nonlocal user_is_speaking
@@ -1276,7 +1296,10 @@ def _worker_load(worker) -> float:
     behind them and the caller heard nothing. Counting our own jobs keeps the decision local
     and predictable.
     """
-    max_jobs = max(1, settings.MAX_CONCURRENT_JOBS)
+    # Measured against the global ceiling, not the telephony cap: this worker runs the agent
+    # job for *every* call type — phone, web and passthrough — so the telephony cap alone would
+    # make it refuse web jobs it has ample room for.
+    max_jobs = max(1, settings.MAX_CONCURRENT_SESSIONS)
     return min(1.0, len(worker.active_jobs) / max_jobs)
 
 

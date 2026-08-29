@@ -42,7 +42,9 @@ A change to models, providers or config knobs is finished only when all of these
   `docs/architecture/cascade-pipeline.md`, `docs/api/assistant/{create,update,index,list}.md`,
   plus `README.md` / `docs/features.md` when the feature list changes. `grep` for a sibling
   provider's name to find them all.
-- Docs build clean: `uv run mkdocs build --strict`.
+- Docs build clean: `uv run mkdocs build --strict`, and diagrams parse:
+  `uv run python scripts/check_mermaid.py`. The strict build cannot catch a broken Mermaid
+  diagram — they render in the browser, so a bad one deploys clean and then shows an error box.
 - Lint the files you touched: `uvx ruff check <paths>` (the repo has pre-existing violations
   elsewhere — don't reflow unrelated files).
 - **Never `git commit` unless explicitly asked.**
@@ -98,14 +100,18 @@ Queue states: `pending` → `dispatching` → `dispatched` (or `failed` after 3 
 
 ### Concurrency / load control
 
-- `MAX_CONCURRENT_JOBS` (default `12`) caps active sessions in the dispatcher (`src/core/config.py`).
-- The LiveKit worker stops accepting new jobs once it is already running `MAX_CONCURRENT_JOBS`,
+- Concurrency caps are per call type (`src/core/config.py`): `MAX_CONCURRENT_JOBS` (default `12`)
+  for telephony, `MAX_CONCURRENT_WEB_CALLS` (default `40`) for web calls, and
+  `MAX_CONCURRENT_SESSIONS` (default `48`) as a hard ceiling across everything. Buckets come from
+  `CallRecord.call_type` via `bucket_for_call_type`; passthrough counts as telephony because it
+  holds a bridge and an RTP port. The web and global defaults are **not** measured — set them from
+  a load test.
+- `MAX_CONCURRENT_INVITE_SETUPS` (default `24`) bounds inbound INVITEs *in setup*, not live calls.
+- The LiveKit worker stops accepting new jobs once it is already running `MAX_CONCURRENT_SESSIONS`,
   counted from its own active jobs (`_worker_load` + `load_threshold=1.0` in
   `src/core/agents/session.py`). It used to use the SDK default, which reads whole-machine CPU — so
   a busy SIP dispatcher on the same host silently stopped agent intake and calls connected with no
   agent behind them.
-- The cap is shared by every call type: outbound, inbound, web and passthrough calls all write a
-  `CallRecord` and all count against the same 12.
 - Providers: outbound supports `twilio` + `exotel`; inbound supports `exotel` only (no Twilio inbound).
 
 ### Auth
@@ -233,6 +239,7 @@ All read in `src/core/config.py` (`Settings`). Beyond `ENABLE_SIP_LISTENER` / `E
 |---|---|
 | `check_model_allowlist.py` | Does every allowlisted model still exist for this key? Exits 1 on drift, so it doubles as a pre-deploy gate. **Run it before editing any model list.** |
 | `audit_assistant_models.py` | Which stored assistants hold a model this deployment cannot run? `--apply` clears the model field so they fall back to the default. |
+| `check_mermaid.py` | Does every Mermaid diagram in the docs actually render? Catches both parse errors and diagrams that parse but draw wrong (a literal `\n` in a label). Exits 1 on failure. |
 | `replay_cascade_request.py <assistant_id>` | *Why* did OpenAI refuse this assistant's request? Replays the exact payload over HTTPS, where the error has detail; `--bisect` names every offending knob. |
 
 `migrate_stt_config.py` runs in two passes: default copies the legacy `assistant_interaction_config.user_stt_provider` / `.stt_api_key` into `assistant_stt_model` / `assistant_stt_config` (safe before deploy), `--unset` removes the old keys (after deploy is verified).

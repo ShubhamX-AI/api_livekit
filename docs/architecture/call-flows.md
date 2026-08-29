@@ -116,11 +116,25 @@ SIP dispatcher process (PID 1234)
 
 **Every multiprocessing object must come from the same context.** A `multiprocessing.Event()` built from the default context and handed to a `forkserver` child fails outright with *"A SemLock created in a fork context is being shared with a process in a spawn context."* `register_call_id` therefore builds its Event from `get_bridge_context()`.
 
-#### Inbound answer ordering
+#### Inbound answer ordering — ring until the agent is ready
 
-The bridge process binds the RTP socket and connects to LiveKit **before** the 200 OK goes out, and reports readiness back through a `multiprocessing.Queue`. Exotel starts sending RTP the moment it sees the 200 OK, so answering first would point it at a port nothing was listening on. If the process fails to become ready, the INVITE is answered `503 Service Unavailable` rather than left hanging.
+Inbound calls used to be answered as soon as the media bridge was up. Everything the agent still had to do — the inbound-context webhook (up to 10s), tool loading, `session.start()` — then played out as dead air on the caller's phone. Outbound never had this problem, because the agent boots while the phone rings. Inbound now has the same shape:
 
-Once the 200 OK is sent, `handle_inbound_call` hands the process to a monitor task and returns, so a call does not occupy an INVITE setup slot for its whole duration.
+1. **`100 Trying`** immediately on INVITE. Setup involves DB lookups, room creation, dispatch and a process start; before this, Exotel saw no response at all for that whole window.
+2. The bridge process starts, binds its RTP socket and joins the room, then reports **`media_ready`** on a `multiprocessing.Queue`. Exotel starts sending RTP the moment it sees a 200 OK, so answering before the socket exists would point it at a port nothing is listening on.
+3. **`180 Ringing`** goes out and the caller hears ringing.
+4. The agent publishes **`agent_ready`** on the `sip_bridge_events` data topic once `session.start()` returns — which is after the inbound-context webhook has already answered. The bridge process relays it to the parent as a second queue event.
+5. **`200 OK`** on `agent_ready`, or after `INBOUND_MAX_RING_SECONDS` (default 15), whichever comes first. **A slow agent delays the answer; it never drops the call.**
+
+The agent-side signal is advisory. If it never arrives — an older agent build, or a failed publish — the bridge falls back to the agent's audio track being subscribed, and then to the ring deadline. Set `INBOUND_RING_UNTIL_AGENT_READY=false` to answer on `media_ready` as before.
+
+**The To-tag is minted once**, before the 180, and reused by the 200 OK and by any later rejection in that transaction. A 1xx with a To-tag opens an early dialog and the 2xx has to confirm *that* dialog; two different tags read as two dialogs, and ACK routing and CANCEL matching come apart.
+
+**The 180 is deliberately unreliable** — no `Require: 100rel`, no `RSeq`. Nothing in this codebase handles PRACK (the listener dispatches only BYE, CANCEL, OPTIONS, INVITE and ACK), so a reliable provisional would leave Exotel retransmitting a PRACK forever.
+
+**Cancellation is checked throughout the ring.** A caller who hangs up while ringing gets `487 Request Terminated`. Previously there was no check between the last setup checkpoint and the 200 OK, so a CANCEL arriving in that window was recorded and ignored and the call was answered anyway.
+
+Once the 200 OK is sent, `handle_inbound_call` arms the silent-agent watchdog and hands the process to a monitor task, then returns — so a call does not occupy an INVITE setup slot for its whole duration. The watchdog is armed *after* the answer on purpose: it force-ends a call whose agent never arrives, counting from the answer, and arming it earlier meant its grace period ran during the ring and killed healthy calls.
 
 ```mermaid
 graph TD
@@ -148,7 +162,7 @@ graph TD
     Port -.->|3. Bind UDP| RTP
     SIP -->|4. SIP 200 OK| Exo
     Exo -.->|Hold: re-INVITE a=sendonly| SIP
-    SIP -.->|Resume: re-INVITE a=sendrecv| SIP
+    Exo -.->|Resume: re-INVITE a=sendrecv| SIP
     SIP -.->|on_hold_change| Bridge
     Bridge -.->|publish_data call_hold| LKR
     LKR -.->|data_received| Agent
@@ -250,6 +264,40 @@ available_slots = MAX_CONCURRENT_JOBS(12 default) - active_sessions
 active_sessions = COUNT(CallRecord where status IN ["initiated","answered"])
                 + _dispatching_count  ← in-memory reservation for mid-dispatch calls
 ```
+
+### Caps are per call type
+
+The four call types cost very different amounts. A phone call needs an agent job process, a
+bridge process and an RTP port; a web call needs only the agent job; a `text_only` web call has
+no TTS, STT or VAD at all. One shared counter therefore let a burst of web sessions give phone
+callers a busy tone.
+
+| Setting | Default | Governs |
+|---|---|---|
+| `MAX_CONCURRENT_JOBS` | `12` | telephony: inbound, outbound, passthrough |
+| `MAX_CONCURRENT_WEB_CALLS` | `40` | web calls |
+| `MAX_CONCURRENT_SESSIONS` | `48` | hard ceiling across every type |
+| `MAX_CONCURRENT_INVITE_SETUPS` | `24` | inbound INVITEs in setup at once |
+
+Buckets come from `CallRecord.call_type`: `web` is its own bucket, everything else is telephony.
+Passthrough is not a `call_type` — it is a boolean on an `outbound` row — so it lands in
+telephony, which is correct: it holds a bridge process and an RTP port. Rows with no `call_type`
+(legacy) count as telephony, the safe direction to be wrong in.
+
+`MAX_CONCURRENT_INVITE_SETUPS` is **not** a cap on live inbound calls — the setup slot is
+released as soon as the call is answered. It has to exceed the number of calls that can be
+ringing simultaneously, because the ring-until-agent-ready wait happens inside it.
+
+The count is one aggregation grouped by `call_type`, served by the `(call_status, call_type)`
+index on `call_records`. Before that index it was a full collection scan on every inbound INVITE
+and every web-call request, growing with total call history rather than with the number of calls
+actually in progress.
+
+!!! warning "The web and global defaults are provisional"
+    They are not derived from a measured agent-session footprint. The only figure available is a
+    ~238 MiB import floor per agent job process, before audio buffers, model state and provider
+    connections. Run a load test, read the agent container's steady-state RSS per session with
+    `docker stats`, and record the number here.
 
 The `_dispatching_count` in-memory counter bridges the gap between "room creation started" and "CallRecord written to MongoDB" (~100ms window), preventing double-dispatch under any timing.
 

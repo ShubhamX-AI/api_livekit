@@ -11,8 +11,18 @@ Inbound calling currently uses the custom Exotel SIP bridge.
 5. If the mapping is missing or detached, the bridge returns `480 Temporarily Unavailable`.
 6. The bridge loads the assistant from `assistant_id` on the mapping.
 7. If the mapped assistant is inactive or missing, the bridge returns `480 Temporarily Unavailable`.
-8. If the global concurrency cap (`MAX_CONCURRENT_JOBS`) is reached, the bridge returns `486 Busy Here`. Inbound calls share the same slot pool as outbound and web calls. Running out of RTP ports also answers `486`.
-9. The media bridge runs in its own OS process. It binds the RTP socket and connects to LiveKit *before* the `200 OK` is sent, so Exotel never sends RTP at a port nothing is listening on; if it cannot start, the INVITE is answered `503 Service Unavailable`.
+8. If the telephony concurrency cap (`MAX_CONCURRENT_JOBS`) or the global ceiling
+   (`MAX_CONCURRENT_SESSIONS`) is reached, the bridge returns `486 Busy Here`. Inbound shares the
+   telephony pool with outbound and passthrough calls; web calls have their own
+   (`MAX_CONCURRENT_WEB_CALLS`). Running out of RTP ports also answers `486`.
+9. The media bridge runs in its own OS process. It binds the RTP socket and connects to LiveKit
+   *before* the call is answered, so Exotel never sends RTP at a port nothing is listening on; if
+   it cannot start, the INVITE is answered `503 Service Unavailable`.
+10. The caller hears **ringing until the agent is ready to speak**. `100 Trying` goes out
+    immediately, `180 Ringing` once the media path is up, and `200 OK` only when the agent
+    signals readiness — which is after the inbound-context webhook has returned. If the agent is
+    not ready within `INBOUND_MAX_RING_SECONDS` (default 15) the call is answered anyway, never
+    dropped. Hanging up while ringing gets `487 Request Terminated`.
 9. When routing succeeds, the bridge creates a LiveKit room, dispatches the assistant, and connects RTP audio.
 10. The agent session optionally runs inbound context lookup before rendering prompt templates.
 

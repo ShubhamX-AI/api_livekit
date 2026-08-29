@@ -64,11 +64,37 @@ def get_bridge_context():
     return _bridge_context
 
 
+TELEPHONY = "telephony"
+WEB = "web"
+BUCKETS = (TELEPHONY, WEB)
+
+LIVE_CALL_STATUSES = ["initiated", "answered"]
+
+
+def bucket_for_call_type(call_type: str | None) -> str:
+    """Which capacity bucket a CallRecord belongs to.
+
+    Web calls need only an agent job process. Phone calls additionally need a bridge process
+    and an RTP port, so they are capped separately and much lower.
+
+    Passthrough is not a call_type — it is a boolean on an "outbound" row — so it lands in
+    telephony without a special case, which is correct: it holds a bridge and a port.
+    """
+    return WEB if call_type == "web" else TELEPHONY
+
+
+BUCKET_CAPS = {
+    TELEPHONY: lambda: settings.MAX_CONCURRENT_JOBS,
+    WEB: lambda: settings.MAX_CONCURRENT_WEB_CALLS,
+}
+
+
 _new_call_event = asyncio.Event()
 
-# In-memory reservation counter: tracks calls that are mid-dispatch
-# (room created but CallRecord not yet written). Prevents double-dispatch.
-_dispatching_count = 0
+# In-memory reservation counters, one per capacity bucket: calls that are mid-dispatch
+# (room created but CallRecord not yet written). Prevents double-dispatch. The reservation is a
+# short-lived handover token — once the CallRecord exists, counting comes from the DB.
+_dispatching_count: dict[str, int] = {bucket: 0 for bucket in BUCKETS}
 
 
 async def _fail_stale_calls_on_startup() -> None:
@@ -149,12 +175,26 @@ async def _recover_stuck_dispatching() -> None:
         )
 
 
+async def _get_active_session_counts() -> dict[str, int]:
+    """Live (initiated/answered) calls per bucket, plus mid-dispatch reservations.
+
+    One aggregation rather than a query per bucket. The count runs on every inbound INVITE and
+    every web-call request, so paying for N collection scans instead of one would be a real
+    regression — see the (call_status, call_type) index on CallRecord.
+    """
+    counts = {bucket: _dispatching_count[bucket] for bucket in BUCKETS}
+    pipeline = [
+        {"$match": {"call_status": {"$in": LIVE_CALL_STATUSES}}},
+        {"$group": {"_id": "$call_type", "n": {"$sum": 1}}},
+    ]
+    async for row in CallRecord.aggregate(pipeline):
+        counts[bucket_for_call_type(row.get("_id"))] += row.get("n", 0)
+    return counts
+
+
 async def _get_active_session_count() -> int:
-    """Count calls that are live (initiated/answered) PLUS any mid-dispatch reservations."""
-    db_active = await CallRecord.find(
-        In(CallRecord.call_status, ["initiated", "answered"])
-    ).count()
-    return db_active + _dispatching_count
+    """Total live sessions across every bucket."""
+    return sum((await _get_active_session_counts()).values())
 
 
 # Serialises the check-and-reserve below. Without it the `await` between counting active
@@ -164,21 +204,32 @@ async def _get_active_session_count() -> int:
 _slot_lock = asyncio.Lock()
 
 
-async def try_reserve_slot() -> bool:
-    """Atomically reserve a session slot if one is free. Returns True on success."""
-    global _dispatching_count
+async def try_reserve_slot(bucket: str = TELEPHONY) -> bool:
+    """Atomically reserve a session slot in `bucket` if one is free.
+
+    Two gates: the bucket's own cap, and the global ceiling across all buckets so the caps
+    can never together exceed what the agent host can hold.
+    """
     async with _slot_lock:
-        if await _get_active_session_count() >= settings.MAX_CONCURRENT_JOBS:
+        counts = await _get_active_session_counts()
+        if sum(counts.values()) >= settings.MAX_CONCURRENT_SESSIONS:
+            logger.info(
+                f"Slot refused ({bucket}): global ceiling reached "
+                f"({sum(counts.values())}/{settings.MAX_CONCURRENT_SESSIONS})"
+            )
             return False
-        _dispatching_count += 1
+        cap = BUCKET_CAPS[bucket]()
+        if counts[bucket] >= cap:
+            logger.info(f"Slot refused ({bucket}): bucket cap reached ({counts[bucket]}/{cap})")
+            return False
+        _dispatching_count[bucket] += 1
         return True
 
 
-def release_slot() -> None:
+def release_slot(bucket: str = TELEPHONY) -> None:
     """Release a reservation taken by try_reserve_slot()."""
-    global _dispatching_count
-    if _dispatching_count > 0:
-        _dispatching_count -= 1
+    if _dispatching_count[bucket] > 0:
+        _dispatching_count[bucket] -= 1
 
 
 def _terminate_bridge(process: multiprocessing.Process) -> None:
@@ -605,18 +656,27 @@ async def _dispatch_queued_call(item: OutboundCallQueue) -> None:
         await item.save()
 
     finally:
-        release_slot()  # release reservation taken at top of this function
+        release_slot(TELEPHONY)  # release reservation taken at top of this function
 
 
 async def _process_pending() -> None:
     """Check queue and dispatch as many calls as current capacity allows."""
-    global _dispatching_count
     try:
-        active = await _get_active_session_count()
-        slots = settings.MAX_CONCURRENT_JOBS - active
+        counts = await _get_active_session_counts()
+        active = counts[TELEPHONY]
+        # Bounded by the telephony cap and by whatever the global ceiling still allows, so a
+        # busy web tier cannot be crowded out by the outbound queue or vice versa.
+        slots = min(
+            settings.MAX_CONCURRENT_JOBS - active,
+            settings.MAX_CONCURRENT_SESSIONS - sum(counts.values()),
+        )
 
         if slots <= 0:
-            logger.info(f"Dispatcher: active={active}, no slots available (max={settings.MAX_CONCURRENT_JOBS})")
+            logger.info(
+                f"Dispatcher: telephony={active}, total={sum(counts.values())}, "
+                f"no slots available (telephony max={settings.MAX_CONCURRENT_JOBS}, "
+                f"global max={settings.MAX_CONCURRENT_SESSIONS})"
+            )
             return
 
         pending = (
@@ -653,7 +713,8 @@ async def _process_pending() -> None:
                 logger.info(f"Queue item {item.queue_id} already claimed elsewhere; skipping")
                 continue
             item.status = "dispatching"
-            _dispatching_count += 1  # reserve before task starts to prevent double-dispatch
+            # Reserve before the task starts, to prevent double-dispatch.
+            _dispatching_count[TELEPHONY] += 1
             claimed += 1
             asyncio.create_task(_dispatch_queued_call(item))
 
