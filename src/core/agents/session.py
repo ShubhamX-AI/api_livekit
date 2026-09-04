@@ -27,6 +27,7 @@ from openai.types.realtime.realtime_truncation_retention_ratio import (
 import os
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 
 from src.core.config import settings
@@ -95,6 +96,59 @@ def should_record(role: str | None, *, on_hold: bool, gate_active: bool) -> bool
     if role == "user":
         return True
     return gate_active and not on_hold
+
+
+async def _wait_to_speak_or_hangup(
+    *,
+    gate: CallReadinessGate,
+    recorder: RecordingManager,
+    hangup_event: asyncio.Event,
+    warmup_sec: float,
+    gate_timeout: float = 60.0,
+    recorder_timeout: float = 12.0,
+) -> bool:
+    """Wait for call_answered + recording + RTP warmup, raced against a hang-up.
+
+    Returns True if the greeting should be sent, False if the wait timed out or the
+    caller hung up first. Logs a per-phase timing breakdown so a slow call shows exactly
+    which phase ate the time, instead of looking like an unexplained one-off.
+    """
+    t_start = time.monotonic()
+
+    async def _wait_ready() -> bool:
+        if not await gate.wait_until_ready(timeout=gate_timeout):
+            logger.warning("[EXOTEL] Timed out waiting for call_answered — skipping start instruction")
+            return False
+        t_answered = time.monotonic()
+
+        recording_ready = await recorder.ensure_started(timeout=recorder_timeout)
+        t_recorder = time.monotonic()
+        if not recording_ready:
+            logger.warning("[EXOTEL] Recording did not become ready before first reply; proceeding")
+
+        await asyncio.sleep(warmup_sec)
+        t_warmup = time.monotonic()
+
+        logger.info(
+            "[EXOTEL] phase timing | gate_wait="
+            f"{t_answered - t_start:.2f}s recorder_wait={t_recorder - t_answered:.2f}s "
+            f"warmup={t_warmup - t_recorder:.2f}s total={t_warmup - t_start:.2f}s"
+        )
+        return True
+
+    wait_task = asyncio.ensure_future(_wait_ready())
+    hangup_task = asyncio.ensure_future(hangup_event.wait())
+    done, pending = await asyncio.wait({wait_task, hangup_task}, return_when=asyncio.FIRST_COMPLETED)
+    for t in pending:
+        t.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    if wait_task in done:
+        return wait_task.result()
+
+    logger.info("[EXOTEL] Caller hung up while waiting to speak — skipping start instruction")
+    return False
 
 
 # Helper to build background audio player based on interaction config
@@ -967,6 +1021,39 @@ async def entrypoint(ctx: JobContext):
         if silence_watchdog and role == "assistant" and not user_is_speaking:
             silence_watchdog.on_assistant_message(text)
 
+    # --- Exotel Bridge: Call-Answered Handling ---
+    # Registered before session.start(), not after: the room connects *inside*
+    # session.start() (tool loading, TTS prewarm, the inbound-context webhook can all run
+    # for 10s+ before it returns), and a data_received emit is a plain synchronous pyee
+    # dispatch with no buffering or replay. A call_answered message published by the SIP
+    # bridge while session.start() was still running used to arrive with nobody listening
+    # yet and be lost for good — the only recovery was the 60s gate timeout below. This spot
+    # is provably before the room can receive anything, so the message can no longer be missed.
+    @ctx.room.on("data_received")
+    def on_data_received(data: rtc.DataPacket):
+        if data.topic == "sip_bridge_events":
+            try:
+                msg = json.loads(data.data.decode())
+                if msg.get("event") == "call_answered":
+                    logger.info("Bridge reported call answered via data message (SIP 200 OK)")
+                    gate.mark_answered()
+                    if is_exotel_outbound:
+                        asyncio.create_task(recorder.start_once())
+                        asyncio.create_task(
+                            livekit_services.update_call_status(
+                                room_name=ctx.room.name,
+                                call_status="answered",
+                                call_status_reason=None,
+                                answered_at=datetime.now(timezone.utc),
+                            )
+                        )
+                elif msg.get("event") == "call_hold":
+                    hold_controller.signal_hold(True)
+                elif msg.get("event") == "call_resume":
+                    hold_controller.signal_hold(False)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
     # --- Start Session ---
     logger.info("Starting AgentSession...")
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
@@ -1032,32 +1119,6 @@ async def entrypoint(ctx: JobContext):
             elif event.old_state == "speaking":
                 input_guard.on_speaking_end()
 
-    # --- Exotel Bridge: Call-Answered Handling ---
-    @ctx.room.on("data_received")
-    def on_data_received(data: rtc.DataPacket):
-        if data.topic == "sip_bridge_events":
-            try:
-                msg = json.loads(data.data.decode())
-                if msg.get("event") == "call_answered":
-                    logger.info("Bridge reported call answered via data message (SIP 200 OK)")
-                    gate.mark_answered()
-                    if is_exotel_outbound:
-                        asyncio.create_task(recorder.start_once())
-                        asyncio.create_task(
-                            livekit_services.update_call_status(
-                                room_name=ctx.room.name,
-                                call_status="answered",
-                                call_status_reason=None,
-                                answered_at=datetime.now(timezone.utc),
-                            )
-                        )
-                elif msg.get("event") == "call_hold":
-                    hold_controller.signal_hold(True)
-                elif msg.get("event") == "call_resume":
-                    hold_controller.signal_hold(False)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
     # Wait for participant
     logger.info("Waiting for participant...")
     participant = await ctx.wait_for_participant()
@@ -1068,6 +1129,13 @@ async def entrypoint(ctx: JobContext):
     # readiness gate, recorder start and a full audio playout, and with close_on_disconnect
     # =False nothing else ends the job — so a caller who hung up in that window used to get
     # no teardown at all. Every name this closure reads is already bound by this point.
+    #
+    # _hangup_event lets the greeting block's waits (gate, recorder, warmup sleep) bail out
+    # immediately on disconnect instead of running to completion — including a live
+    # egress-start API call — concurrently with _flush_and_end_call already tearing the
+    # same room/session down.
+    _hangup_event = asyncio.Event()
+
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
         nonlocal call_end_triggered
@@ -1082,6 +1150,7 @@ async def entrypoint(ctx: JobContext):
                 f"(primary={primary_participant_identity})"
             )
             return
+        _hangup_event.set()
         if call_end_triggered:
             logger.info(f"Call end already triggered for room: {ctx.room.name}")
             return
@@ -1198,20 +1267,12 @@ async def entrypoint(ctx: JobContext):
 
                 if is_exotel_bridge:
                     logger.info("Exotel bridge detected — waiting for call_answered event before speaking")
-                    answered = await gate.wait_until_ready(timeout=60.0)
-                    if answered:
-                        recording_ready = await recorder.ensure_started(timeout=12.0)
-                        if not recording_ready:
-                            logger.warning(
-                                "[EXOTEL] Recording did not become ready before first reply; proceeding"
-                            )
-                        logger.info(
-                            f"[EXOTEL] call_answered confirmed — sleeping {EXOTEL_RTP_WARMUP_SLEEP_SEC}s for RTP + egress warmup"
-                        )
-                        await asyncio.sleep(EXOTEL_RTP_WARMUP_SLEEP_SEC)
-                    else:
-                        logger.warning("[EXOTEL] Timed out waiting for call_answered — skipping start instruction")
-                        should_send_instruction = False
+                    should_send_instruction = await _wait_to_speak_or_hangup(
+                        gate=gate,
+                        recorder=recorder,
+                        hangup_event=_hangup_event,
+                        warmup_sec=EXOTEL_RTP_WARMUP_SLEEP_SEC,
+                    )
 
                 if should_send_instruction:
                     # The text recorded for the silence watchdog (transcript when prerecorded).

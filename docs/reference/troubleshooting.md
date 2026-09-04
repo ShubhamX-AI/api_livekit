@@ -334,6 +334,32 @@ timing.
 
 ---
 
+## An outbound caller hears a delay between pickup and the greeting
+
+Expected behaviour is a short, bounded pause — the fixed RTP/egress warmup pause plus whatever the
+call actually needed to confirm answer and start recording. Look for this line in the agent log
+for the call in question:
+
+```
+[EXOTEL] phase timing | gate_wait=0.01s recorder_wait=0.02s warmup=1.00s total=1.03s
+```
+
+- `gate_wait` — time from the wait starting until the bridge's `call_answered` message arrived.
+  Should be near-zero; a large value means the message took a while to arrive or (rarely) the
+  60-second wait timed out entirely (look for `Timed out waiting for call_answered` instead of
+  this line).
+- `recorder_wait` — time waiting for recording to start. Recording is kicked off in the background
+  the moment the call is answered, so this is normally near-zero regardless of its 12s timeout;
+  a large value means the egress start itself was slow, not that the timeout needs tuning.
+- `warmup` — the fixed RTP/egress-settle pause (`EXOTEL_RTP_WARMUP_SLEEP_SEC`, default `1.0s`).
+  Intentional, not a bug.
+
+If you see `[EXOTEL] Caller hung up while waiting to speak` instead, the callee disconnected
+during the wait — the greeting was correctly skipped rather than being sent (or attempted) after
+the call had already ended.
+
+---
+
 ## Changing a model list
 
 Never from memory. OpenAI retires models on its own schedule and a stale entry is
