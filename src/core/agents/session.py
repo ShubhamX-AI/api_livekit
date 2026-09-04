@@ -81,7 +81,7 @@ END_OF_CALL_GRACE_S = 4.0
 # real chunk of the reported 5-6s first-speech latency). Lowered as a starting point;
 # NOT verified against a live call — listen to the first ~2s of a real Exotel greeting
 # after this change and put it back up if the opening word sounds clipped or garbled.
-EXOTEL_RTP_WARMUP_SLEEP_SEC = 1.0
+EXOTEL_RTP_WARMUP_SLEEP_SEC = 0.25
 
 
 def should_record(role: str | None, *, on_hold: bool, gate_active: bool) -> bool:
