@@ -279,7 +279,7 @@ A read timeout used to log a full `httpx` traceback, which is why old logs are f
 
 ---
 
-## Callers get a busy tone, or a web call gets 503
+## Callers get a busy tone, or a web or meeting call gets 503
 
 Both mean a concurrency cap was reached. The caps are per call type, so the first thing to
 establish is *which* one.
@@ -288,6 +288,7 @@ establish is *which* one.
 |---|---|---|
 | Inbound caller hears a busy tone (SIP `486 Busy Here`) | telephony, or the global ceiling | `MAX_CONCURRENT_JOBS`, `MAX_CONCURRENT_SESSIONS` |
 | `POST /get_token` returns `503` | web, or the global ceiling | `MAX_CONCURRENT_WEB_CALLS`, `MAX_CONCURRENT_SESSIONS` |
+| `POST /meeting_call/join` returns `503` | meeting, or the global ceiling — or `MEETING_CONNECTOR_STATUS_TOKEN` is unset | `MAX_CONCURRENT_MEETING_CALLS`, `MAX_CONCURRENT_SESSIONS` |
 | Inbound caller hears a busy tone with capacity to spare | RTP port pool exhausted | `SIP_BRIDGE_PORT_RANGE_START` / `_END` |
 
 The dispatcher logs which gate refused, so grep for `Slot refused`:

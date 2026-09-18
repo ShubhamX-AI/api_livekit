@@ -117,7 +117,22 @@ entry is indistinguishable from a working one until a call goes silent — run
   - polls the queue every `2` seconds (fallback poll every `30s` when idle)
   - retries dispatch failures up to `3` times
 - Active-session protection also uses the worker load threshold in `src/core/agents/session.py`: the worker counts its own active jobs and stops accepting new ones once it is running `MAX_CONCURRENT_SESSIONS`.
-- Caps are per call type: `MAX_CONCURRENT_JOBS` (telephony), `MAX_CONCURRENT_WEB_CALLS` (web), and `MAX_CONCURRENT_SESSIONS` as a hard ceiling across both. Web calls return `503` when their cap is reached; inbound phone calls get SIP `486 Busy Here`.
+- Caps are per call type: `MAX_CONCURRENT_JOBS` (telephony), `MAX_CONCURRENT_WEB_CALLS` (web), `MAX_CONCURRENT_MEETING_CALLS` (meeting), and `MAX_CONCURRENT_SESSIONS` as a hard ceiling across all three. Web and meeting calls return `503` when their cap is reached; inbound phone calls get SIP `486 Busy Here`.
+
+## Meeting Calls (Google Meet)
+
+`POST /meeting_call/join` puts an assistant into a Google Meet as an ordinary participant. The
+assistant hears everyone in the meeting and speaks back into it.
+
+The API creates a LiveKit room and dispatches the assistant exactly as for a web call, then
+launches a connector container that joins the meeting in a browser and bridges its audio into the
+room. The meeting's own audio mix is published as a **single** LiveKit track, which is what makes a
+meeting with several people work: an `AgentSession` listens to one linked participant, so one track
+per speaker would leave the assistant deaf to everyone but the first joiner.
+
+`platform` selects the connector image, so adding Zoom or Teams later is a new value rather than a
+new API. Meeting calls have their own concurrency cap and write a `CallRecord` with
+`call_type="meeting"`. Full reference: `docs/api/calls/meeting-call.md`.
 
 ## Passthrough Mode (Web ↔ SIP, No AI Agent)
 

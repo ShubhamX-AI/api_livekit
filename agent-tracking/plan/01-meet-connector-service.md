@@ -1,5 +1,10 @@
 # Plan 01 — The meeting connector service
 
+> **Superseded in part by [`03-worker-dispatch-redesign.md`](./03-worker-dispatch-redesign.md).**
+> Everything about *what* a meeting call is still holds. How the connector is *started* and how it
+> *reports back* does not: plan 03 dispatches it as a LiveKit worker instead of running a container
+> from the API. The code described here is in the tree and works; read plan 03 before changing it.
+
 Everything in this document lives **outside** `api_livekit`. Its counterpart,
 [`02-api-livekit-integration.md`](./02-api-livekit-integration.md), covers the changes inside this
 repo. The two meet at exactly two contracts: the environment block the connector is launched with,
@@ -57,7 +62,12 @@ switched off. In `chrome_session.py:121-122`:
 "sendPerParticipantAudio": True,
 ```
 
-Flip both. Then teach `websocket_server.py::_handle` to accept `protocol.MIXED_AUDIO` (already
+**Done.** Both flags now come from `ConnectorConfig.audio_mode` (`MEETING_AUDIO_MODE`, default
+`mixed`), `websocket_server.py` decodes `protocol.MIXED_AUDIO`, and `livekit_sync.py` publishes
+the mix as a single participant under the fixed identity `google-meet`. The per-participant path
+is still there, reachable with `MEETING_AUDIO_MODE=per_participant`. The mixing `AudioContext` is
+now created with an explicit `sampleRate` taken from `initialData.audioSampleRate`, which settles
+the open question below rather than leaving it to whatever the host negotiated. Then teach `websocket_server.py::_handle` to accept `protocol.MIXED_AUDIO` (already
 defined as `3` in `protocol.py`), and collapse `livekit_sync.py` to a single room connection under
 a fixed identity such as `google-meet`, publishing one track.
 
@@ -106,7 +116,7 @@ bridge's `call_answered` message.
 Add two environment variables and a handful of lines of `httpx`:
 
 ```
-CONNECTOR_STATUS_URL=http://<our api>/call/meet/status
+CONNECTOR_STATUS_URL=http://<our api>/meeting_call/status
 CONNECTOR_STATUS_TOKEN=<shared secret>
 ```
 
@@ -154,9 +164,17 @@ LIVEKIT_API_KEY=<same as ours>
 LIVEKIT_API_SECRET=<same as ours>
 LIVEKIT_ROOM=<the room our agent was dispatched into>
 LIVEKIT_SOURCE_PUBLISH_ON_BEHALF=<the same room name>
-CONNECTOR_STATUS_URL=http://<our api>/call/meet/status
+CONNECTOR_STATUS_URL=http://<our api>/meeting_call/status
 CONNECTOR_STATUS_TOKEN=<shared secret>
 ```
+
+Implemented in `src/services/meeting_connector/launcher.py`, which passes exactly these. The two
+LiveKit secrets and the status token are handed to `docker run` by name only, so they never appear
+in the process arguments. The status token goes on the callback as the `X-Connector-Token` header,
+which is what `POST /meeting_call/status` checks.
+
+`MEETING_AUDIO_MODE` is deliberately **not** in the contract: mixed is the only mode that works for
+an `AgentSession`, and per-participant exists for debugging, so the API never sets it.
 
 `LIVEKIT_SOURCE_PUBLISH_ON_BEHALF` being the room name is deliberate: it is a value both sides
 already hold, unique per call, and needs no coordination.

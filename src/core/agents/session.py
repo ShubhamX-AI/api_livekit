@@ -28,6 +28,7 @@ import json
 import time
 from datetime import datetime, timezone
 
+from src.core.call_types import CALL_TYPE_MEETING, CALL_TYPE_WEB, is_phone_call
 from src.core.config import settings
 from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.audio_denoise import SpeechGate
@@ -292,7 +293,11 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")
 
     # Text-only web chat: skip STT, TTS, recording. Validated upstream against realtime mode.
-    is_web_call = job_metadata.get("call_type") == "web"
+    is_web_call = job_metadata.get("call_type") == CALL_TYPE_WEB
+    # A meeting call is not a web call: no browser client, no text_only. It gets its own flag
+    # because the connector needs the agent to announce itself before it will play any audio
+    # into the meeting.
+    is_meeting_call = job_metadata.get("call_type") == CALL_TYPE_MEETING
     is_text_only = is_web_call and job_metadata.get("text_only") is True
 
     if job_metadata:
@@ -446,7 +451,9 @@ async def entrypoint(ctx: JobContext):
             metered["pricing_complete"] = pricing.pricing_complete
             metered["unpriced_model_usage"] = pricing.unpriced_model_usage
             telephony_provider = job_metadata.get("call_service") or job_metadata.get("service")
-            if job_metadata.get("call_type") == "web":
+            # Neither a web call nor a meeting call has a telephony provider to attribute
+            # carrier cost to, so the field would otherwise carry a meaningless value.
+            if job_metadata.get("call_type") in (CALL_TYPE_WEB, CALL_TYPE_MEETING):
                 telephony_provider = None
 
             # Compute call duration from CallRecord
@@ -735,7 +742,9 @@ async def entrypoint(ctx: JobContext):
     # The model stays mini deliberately. What was actually missing was the prompt and
     # far_field, not model size, and mini takes both — so the fix costs nothing per minute.
     # Swap to "gpt-4o-transcribe" if Indic accuracy is ever measured to justify the price.
-    _is_phone_call = job_metadata.get("call_type") != "web"
+    # Positive test, not "anything that is not web". Meeting audio is wideband, so the
+    # narrowband noise reduction and the phone-tuned STT prompt would both be wrong for it.
+    _is_phone_call = is_phone_call(job_metadata.get("call_type"))
     _noise_reduction = noise_reduction_for(_is_phone_call)
     _stt_prompt = build_native_stt_prompt(
         interaction_config.preferred_languages, is_phone_call=_is_phone_call
@@ -1145,6 +1154,19 @@ async def entrypoint(ctx: JobContext):
     logger.info("Starting AgentSession...")
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
     logger.info("AgentSession started successfully")
+
+    # Meeting calls only: tell the connector which participant to play into the meeting.
+    #
+    # The connector cannot select us by identity — LiveKit mints the agent's identity inside the
+    # job token, so nobody knows it before we join. It matches on this attribute instead, whose
+    # value is the room name: a value both sides already hold and neither has to discover.
+    #
+    # Set immediately after the session starts and before anything can be spoken. The connector's
+    # browser adapter may already be subscribed and waiting, and audio published before the
+    # attribute is set is audio nobody in the meeting hears.
+    if is_meeting_call:
+        await ctx.room.local_participant.set_attributes({"lk.publish_on_behalf": room_name})
+        logger.info(f"Announced agent to meeting connector via lk.publish_on_behalf={room_name}")
     # Tell the dispatcher's silent-agent watchdog we actually made it into the room —
     # SIP can mark a call "answered" with no agent behind it (crash, provider outage,
     # worker overload); this timestamp is the thing that tells the difference.

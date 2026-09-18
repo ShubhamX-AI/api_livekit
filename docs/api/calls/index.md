@@ -16,6 +16,7 @@ Outbound calls are now queued first, then dispatched into LiveKit and the select
 - [Passthrough Call (Web ↔ SIP, No AI Agent)](passthrough.md)
 - [Queue Status](queue-status.md)
 - [Generate Web Call Token](web-call.md)
+- [Join a Meeting (Google Meet)](meeting-call.md)
 - [Call Flow](flow.md)
 - [End Call Webhook](webhook.md)
 - [Call Status Tracking](tracking.md)

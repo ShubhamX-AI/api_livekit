@@ -147,6 +147,7 @@ nav:
       - Passthrough Call (No AI Agent): api/calls/passthrough.md
       - Queue Status: api/calls/queue-status.md
       - Generate Web Call Token: api/calls/web-call.md
+      - Join a Meeting: api/calls/meeting-call.md
       - Call Flow: api/calls/flow.md
       - End Call Webhook: api/calls/webhook.md
       - Per-Call Usage: api/calls/usage.md

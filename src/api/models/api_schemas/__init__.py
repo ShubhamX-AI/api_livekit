@@ -41,6 +41,7 @@ from .config.tts_config import (
     TTSConfig,
 )
 from .keys import CreateApiKey
+from .meeting import MeetingConnectorStatus, TriggerMeetingCall
 from .telephony.calls import TriggerOutboundCall, TriggerPassthroughCall, TriggerWebCall
 from .telephony.inbound import (
     AssignInboundNumber,
@@ -100,6 +101,8 @@ __all__ = [
     "ExotelTrunkConfig",
     "TrunkConfig",
     "CreateOutboundTrunk",
+    "MeetingConnectorStatus",
+    "TriggerMeetingCall",
     "TriggerOutboundCall",
     "TriggerPassthroughCall",
     "TriggerWebCall",

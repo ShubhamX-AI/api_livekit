@@ -19,6 +19,11 @@ class TestBucketDerivation(unittest.TestCase):
         self.assertEqual(d.bucket_for_call_type("inbound"), d.TELEPHONY)
         self.assertEqual(d.bucket_for_call_type("outbound"), d.TELEPHONY)
 
+    def test_meeting_calls_are_their_own_bucket(self):
+        """A meeting call holds a connector container running a headful browser, which neither
+        of the other two caps accounts for."""
+        self.assertEqual(d.bucket_for_call_type("meeting"), d.MEETING)
+
     def test_unknown_and_missing_call_types_default_to_telephony(self):
         """Legacy rows predate call_type. Counting them as the scarcer resource is the safe
         direction to be wrong in."""

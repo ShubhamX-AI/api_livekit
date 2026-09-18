@@ -249,9 +249,13 @@ class CallRecord(Document):
     billable_duration_minutes: Optional[int] = None
     # Analytics fields
     created_by_email: Optional[EmailStr] = None
-    call_type: Optional[Literal["outbound", "inbound", "web"]] = None
-    call_service: Optional[Literal["exotel", "twilio", "web"]] = None
+    call_type: Optional[Literal["outbound", "inbound", "web", "meeting"]] = None
+    call_service: Optional[Literal["exotel", "twilio", "web", "google_meet"]] = None
     platform_number: Optional[str] = None  # platform's own Exotel/Twilio number used
+    # Meeting calls only: the URL the connector was told to join, and the container running it.
+    # The container id is what lets us stop a connector whose call ended some other way.
+    meeting_url: Optional[str] = None
+    meeting_connector_container_id: Optional[str] = None
 
     class Settings:
         name = "call_records"
