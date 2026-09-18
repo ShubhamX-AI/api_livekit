@@ -54,6 +54,9 @@ server = AgentServer.from_server_options(
         # Raised from 2: at a dozen simultaneous calls, jobs past the second one queued
         # behind a cold process start each.
         num_idle_processes=4,
+        # Cold imports and plugin initialization can exceed the SDK's 10-second default,
+        # especially when several idle processes start together.
+        initialize_process_timeout=30.0,
         load_fnc=_worker_load,
         # The SDK refuses a job when load >= threshold, so 1.0 means "refuse once we are
         # already running MAX_CONCURRENT_JOBS". Anything lower would make the worker refuse
