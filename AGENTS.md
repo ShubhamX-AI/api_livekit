@@ -28,6 +28,28 @@ fix, a rename, or a plain question skips all of it; do those directly.
 
 Same block lives in `CLAUDE.md` — edit both or neither.
 
+## Agent working files (`agent-tracking/`)
+
+Everything an agent produces that is **not** shipped code or product documentation goes under
+`agent-tracking/`, never in the repo root and never in `docs/`. `docs/` is the published MkDocs
+site and is for users of the API; `agent-tracking/` is for us.
+
+| Directory | Holds |
+|---|---|
+| `agent-tracking/plan/` | Implementation plans, numbered by execution order (`01-…`, `02-…`) |
+| `agent-tracking/research/` | Research write-ups and findings, including their unverified claims |
+| `agent-tracking/demo-code/` | Spikes and prototypes that are not wired into the app |
+| `agent-tracking/plan-tracking/` | Notes on work already underway |
+
+Three rules:
+
+- **Do not add these to `mkdocs.yml`.** They are working notes, not the product's docs, and a
+  strict build must not depend on them.
+- **Write them in normal prose**, with `file:line` citations for every claim about the code. They
+  are read by people who are not in the conversation that produced them.
+- **Supersede in place.** When a plan is replaced, rewrite or delete the old file rather than
+  leaving two documents that contradict each other.
+
 ## Definition of done
 
 A change to models, providers or config knobs is finished only when all of these are true:
