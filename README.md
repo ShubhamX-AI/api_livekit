@@ -117,7 +117,73 @@ entry is indistinguishable from a working one until a call goes silent — run
   - polls the queue every `2` seconds (fallback poll every `30s` when idle)
   - retries dispatch failures up to `3` times
 - Active-session protection also uses the worker load threshold in `src/core/agents/session.py`: the worker counts its own active jobs and stops accepting new ones once it is running `MAX_CONCURRENT_SESSIONS`.
-- Caps are per call type: `MAX_CONCURRENT_JOBS` (telephony), `MAX_CONCURRENT_WEB_CALLS` (web), and `MAX_CONCURRENT_SESSIONS` as a hard ceiling across both. Web calls return `503` when their cap is reached; inbound phone calls get SIP `486 Busy Here`.
+- Caps are per call type: `MAX_CONCURRENT_JOBS` (telephony), `MAX_CONCURRENT_WEB_CALLS` (web), `MAX_CONCURRENT_MEETING_CALLS` (meeting), and `MAX_CONCURRENT_SESSIONS` as a hard ceiling across all three. Web and meeting calls return `503` when their cap is reached; inbound phone calls get SIP `486 Busy Here`.
+
+## Meeting Calls (Google Meet)
+
+`POST /meeting_call/join` puts an assistant into a Google Meet as an ordinary participant. The
+assistant hears everyone in the meeting and speaks back into it.
+
+The API creates a LiveKit room and dispatches both the assistant and a named meeting-connector
+worker into it. The connector worker joins the meeting in a browser and bridges its audio into the
+room. The meeting's own audio mix is published as a **single** LiveKit track, which is what makes a
+meeting with several people work: an `AgentSession` listens to one linked participant, so one track
+per speaker would leave the assistant deaf to everyone but the first joiner.
+
+`platform` selects the connector behavior, so adding Zoom or Teams later is a new value rather than
+a new API. Meeting calls have their own concurrency cap and write a `CallRecord` with
+`call_type="meeting"`. Full reference: `docs/api/calls/meeting-call.md`.
+
+### Dispatcher and worker topology
+
+There is only **one application-level outbound dispatcher**. It continues to process the outbound
+phone queue, reserve capacity, start SIP bridges, retry failures, and recover stuck queue items.
+Google Meet calls do not create another application dispatcher.
+
+The difference is at the LiveKit job level:
+
+```text
+Normal assistant call:
+  API -> LiveKit room -> api-agent
+
+Google Meet call:
+  API -> one LiveKit room
+      -> api-agent       (conversation + accounting)
+      -> meet-connector  (Chrome + meeting audio bridge)
+```
+
+`api-agent` runs the normal assistant session and owns STT, LLM, TTS, transcripts, usage,
+recording, billing, end-call webhooks, and room teardown. `meet-connector` is not another
+assistant: it starts Chrome/Xvfb, joins Google Meet, publishes the meeting's mixed audio into the
+shared room, subscribes to the assistant's audio, and plays that audio into Google Meet.
+
+```text
+Google Meet participants
+    -> Chrome mixed-audio capture
+    -> meet-connector
+    -> LiveKit room
+    -> api-agent: STT -> LLM -> TTS
+    -> LiveKit room
+    -> meet-connector
+    -> Chrome virtual microphone
+    -> Google Meet
+```
+
+Both jobs use the same room, so the room recording can contain both directions. Only `api-agent`
+creates/finalizes the `CallRecord`, persists the `UsageRecord`, sends the end-call webhook, and
+deletes the room. The connector publishes `waiting`, `ready`, `failed`, and `ended` events on the
+`meeting_connector_events` data topic and sets `lk.meeting_connector_status=ready` so readiness can
+be recovered if the data packet was sent before the assistant connected.
+
+The assistant waits for connector readiness before greeting. If the connector does not join or
+become ready before `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS`, the call is failed, finalized, and
+the abandoned room is deleted. Full architecture, lifecycle, ownership, capacity, and failure
+diagrams are in [`docs/architecture/meeting-calls.md`](docs/architecture/meeting-calls.md).
+
+The core API now expects the connector worker to be registered under `MEETING_CONNECTOR_AGENT_NAME`
+(default `meet-connector`). The remaining work is in the connector repository: convert the
+prototype into a LiveKit `AgentServer`, read job metadata, publish through `ctx.room`, emit the
+lifecycle signals, and clean up Chrome/Xvfb/WebSocket resources on job shutdown.
 
 ## Passthrough Mode (Web ↔ SIP, No AI Agent)
 
@@ -171,9 +237,10 @@ Use `GET /call/records?passthrough_only=true` to list all passthrough call recor
 
 1. API service (`src/api/server.py`) exposes REST endpoints (multiple Gunicorn workers in production).
 2. SIP dispatcher (`sip_dispatcher_run.py`) — dedicated process that owns the inbound SIP listener and outbound dispatcher loop. See `docs/architecture.md` for the single-container vs. multi-container deployment model.
-3. Worker (`src/core/agents/session.py`) joins LiveKit rooms and runs the assistant.
-4. MongoDB stores assistants, tools, trunks, queued outbound calls, call records, and logs.
-5. LiveKit handles media transport and room orchestration.
+3. `api-agent` worker (`agent_run.py` → `src/core/agents/session.py`) joins LiveKit rooms and runs the assistant.
+4. `meet-connector` worker joins the same room only for meeting calls and bridges Chrome/Google Meet audio.
+5. MongoDB stores assistants, tools, trunks, queued outbound calls, call records, usage, and logs.
+6. LiveKit handles media transport, explicit worker dispatch, shared rooms, and room orchestration.
 
 ## Requirements
 
@@ -463,6 +530,8 @@ api_livekit/
 ├── assets/
 │   └── audio/
 ├── docs/                  # MkDocs source
+│   └── architecture/
+│       └── meeting-calls.md            # Google Meet dispatch, audio, lifecycle, and ownership
 ├── scripts/               # migration/backfill one-offs + the three diagnostics below
 ├── tests/
 ├── src/
@@ -483,6 +552,7 @@ api_livekit/
 │   │   │   ├── inbound.py
 │   │   │   ├── inbound_context_strategy.py
 │   │   │   ├── logs.py
+│   │   │   ├── meeting_call.py          # Google Meet join and dual LiveKit dispatch
 │   │   │   ├── sip.py
 │   │   │   ├── tool.py
 │   │   │   ├── web_call.py
@@ -491,6 +561,7 @@ api_livekit/
 │   │   ├── mcp_docs.py                # serves docs/ markdown as an MCP server
 │   │   └── server.py                  # FastAPI app
 │   ├── core/
+│   │   ├── call_types.py               # call shapes, meeting platforms, lifecycle topics
 │   │   ├── agents/
 │   │   │   ├── session.py             # entrypoint / orchestrator
 │   │   │   ├── dynamic_assistant.py   # Agent class
@@ -527,6 +598,9 @@ api_livekit/
 │   │   ├── config.py                  # Settings / env config
 │   │   └── logger.py
 │   └── services/
+│       ├── meeting_connector/
+│       │   ├── __init__.py              # meeting URL validation exports
+│       │   └── platforms.py             # meeting URL/platform validation
 │       ├── outbound_dispatcher/
 │       │   └── dispatcher.py          # outbound dispatch loop
 │       ├── elevenlabs/

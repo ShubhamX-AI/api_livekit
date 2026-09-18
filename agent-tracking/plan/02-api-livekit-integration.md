@@ -1,260 +1,220 @@
-# Plan 02 — Changes in this repository
+# Plan 02 — Changes inside `api_livekit`
 
-**Scope:** everything inside `api_livekit`. A new call type, a new route, a thin client for the
-Attendee service, and the small edits to the agent worker that make a Google Meet call behave
-correctly.
+> **Superseded in part by [`03-worker-dispatch-redesign.md`](./03-worker-dispatch-redesign.md).**
+> Everything about *what* a meeting call is still holds. How the connector is *started* and how it
+> *reports back* does not: plan 03 dispatches it as a LiveKit worker instead of running a container
+> from the API. The code described here is in the tree and works; read plan 03 before changing it.
 
-**Companion document:** [`01-attendee-service.md`](01-attendee-service.md) covers the service we
-host outside this repository. The contract between the two documents is the `POST /api/v1/bots`
-body defined there and the webhook payload defined here.
+> **Status: superseded by plan 03.** The meeting vocabulary, capacity bucket, route shape, and
+> assistant-side audio changes remain in the tree. The Docker launcher and HTTP status callback
+> described below have been removed in favor of named LiveKit worker dispatch. The connector worker
+> itself ([`01-meet-connector-service.md`](./01-meet-connector-service.md)) still needs to be
+> implemented before end-to-end verification.
+>
+> **Naming.** The plan originally said "meet" everywhere. What was built says **meeting** for the
+> call *shape* and **google_meet** for the *platform*, matching the existing split where
+> `call_type` is the shape (`outbound`/`inbound`/`web`) and `call_service` is the provider
+> (`exotel`/`twilio`). Adding Zoom is then a new `call_service`, not a new `call_type`, and the
+> route, the bucket and the connector package all keep their names.
 
----
+The connector that actually joins the meeting is [`01-meet-connector-service.md`](./01-meet-connector-service.md).
+This document covers only what changes in this repository, and assumes the connector honours the
+launch contract defined there.
 
 ## The shape of the change
 
-A Google Meet call is a web call with a different participant on the other end.
-
-The LiveKit room, the agent dispatch and the `CallRecord` are identical to what
-`src/api/routes/web_call.py` already does. The only difference is what happens after the agent is
-dispatched: instead of handing a join token to a browser, we ask Attendee to put a bot into a
-Google Meet and mirror it into the same room.
+A Meet call is a web call whose participant happens to be a browser inside a Google Meet. The
+LiveKit room, the agent dispatch, the `CallRecord`, the usage record and the end-of-call webhook are
+all identical to `POST /web_call/get_token`. The single difference is that instead of handing a
+token to a browser, we launch a connector container and let it bring the meeting into the room.
 
 ```
-POST /call/meet
-      │
-      ├─► create_room()                          src/services/livekit/livekit_svc.py:57
-      ├─► initialize_call_record()                                              :179
-      ├─► create_agent_dispatch()  with call_type="meet"                         :70
-      └─► POST <attendee>/api/v1/bots  with room_sync_settings
-                  │
-   agent joins the room                  Attendee bot joins the Meet
-   sets lk.publish_on_behalf ◄───────►   mirrors humans in, streams the agent out
+POST /meeting_call/join
+    ├─ create_room()
+    ├─ initialize_call_record(call_type="meeting")
+    ├─ create_agent_dispatch(job_metadata={"call_type": "meeting", ...})
+    └─ launch connector container with the room name
+                 │
+   agent joins ──┤── connector joins the Meet
+   sets          │   publishes the meeting's audio into the room,
+   lk.publish_   │   subscribes to the participant matching
+   on_behalf     │   lk.publish_on_behalf and plays it into the Meet
 ```
 
-The agent stack itself is unchanged. `DynamicAssistant`, the TTS and STT factories, the voice
-features, the usage accounting and the end-of-call webhook all run exactly as they do for a web
-call. That is the whole point of choosing room sync over any other integration: the meeting becomes
-a set of ordinary LiveKit participants, and the agent never learns that Google Meet exists.
-
----
+Because the worker learns the call kind from `ctx.job.metadata` alone — it never reads the
+`CallRecord` or room metadata for this — one metadata key is the entire mechanism on the agent side.
 
 ## Changes, file by file
 
-### 1. Widen the call-type enums
-
-`src/core/db/db_schemas.py:252-253`
+### 1. Widen the call-type enums — `src/core/db/db_schemas.py:252-253`
 
 ```python
-call_type: Optional[Literal["outbound", "inbound", "web", "meet"]] = None
-call_service: Optional[Literal["exotel", "twilio", "web", "meet"]] = None
+call_type: Optional[Literal["outbound", "inbound", "web", "meeting"]] = None
+call_service: Optional[Literal["exotel", "twilio", "web", "google_meet"]] = None
 ```
 
-Beanie performs no migrations, so existing rows are untouched. The compound index at `:269`,
-`IndexModel([("call_status", 1), ("call_type", 1)])`, already serves the new value — it exists
-precisely so the concurrency counts can be answered per call type without a second scan.
+Beanie does not migrate, so existing rows are untouched. The
+`IndexModel([("call_status", 1), ("call_type", 1)])` at `:269` already serves the new value — that
+index exists precisely to make the per-type live-call count cheap, and a fourth type costs it
+nothing.
 
-### 2. Give Meet calls their own capacity bucket
+### 2. A capacity bucket of its own — `src/services/outbound_dispatcher/dispatcher.py:67-89`
 
-`src/services/outbound_dispatcher/dispatcher.py:67-89`
+`bucket_for_call_type` currently returns `WEB` for `"web"` and `TELEPHONY` for everything else, a
+deliberate fail-closed default. Leaving Meet to fall through would put it in the telephony bucket,
+which is wrong in both directions: a Meet call holds no bridge and no RTP port, but it does hold a
+headful Chrome, which is far more expensive than either existing bucket.
 
-`bucket_for_call_type` today returns `WEB` for `"web"` and `TELEPHONY` for everything else. That
-default is deliberate and fail-closed: an unrecognised call type lands in the scarcer bucket, which
-is the safe direction to be wrong in.
+Add `MEETING = "meeting"` to `BUCKETS`, a branch in `bucket_for_call_type`, and an entry in `BUCKET_CAPS`.
+`tests/test_capacity_buckets.py` asserts that an unknown call type falls to `TELEPHONY`; that
+assertion stays true and correct, and a case for `"meeting"` is added beside it.
 
-A Meet bot holds an entire browser container — roughly 4 vCPU and 4 GiB, per plan 01. It is more
-expensive than either existing bucket, so it needs its own:
+Update the docstring at `:74-81` while you are there — it currently explains a two-bucket world.
 
-- add `MEET = "meet"` and include it in `BUCKETS`
-- add the branch to `bucket_for_call_type`
-- add `MEET: lambda: settings.MAX_CONCURRENT_MEET_CALLS` to `BUCKET_CAPS`
+### 3. Settings — `src/core/config.py`
 
-`tests/test_capacity_buckets.py:23-26` asserts that `None` and `"something-new"` fall back to
-`TELEPHONY`. That assertion stays true and must not be weakened; add a new case asserting
-`bucket_for_call_type("meet") == MEET` beside it.
+- `MAX_CONCURRENT_MEETING_CALLS`, default `4`. **Not measured**, in the same spirit as the existing
+  note on `MAX_CONCURRENT_WEB_CALLS`. Four concurrent headful Chromes is already a meaningful
+  slice of a host. Set it properly from a load test.
+- `MEETING_CONNECTOR_IMAGE_GOOGLE_MEET` — the connector image tag.
+- `MEETING_CONNECTOR_STATUS_TOKEN` — the shared secret the connector authenticates its status
+  callbacks with.
 
-### 3. New settings
+`LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` are already present and are passed
+straight through to the connector.
 
-`src/core/config.py`, beside the existing caps at `:86-87`:
+### 4. The route — `src/api/routes/meeting_call.py` (new)
+
+Copy the structure of `src/api/routes/web_call.py` exactly. That file is the reference for the
+ordering that matters: ownership check (404) → capacity reserve (503) → `create_room` →
+`job_metadata` → `initialize_call_record` → `release_slot` → `create_agent_dispatch`. The subtle
+part worth preserving is that the in-memory reservation hands over to database counting the moment
+the `CallRecord` exists, and the `finally` releases the slot only if we bailed before that point.
+
+Differences from the web-call route:
+
+- Request schema `TriggerMeetingCall`: `assistant_id`, `meeting_url`, optional `bot_name`, optional
+  `metadata`. Validate `meeting_url` against `https://meet.google.com/…` — rejecting a bad URL here
+  is much cheaper than discovering it when a container fails to join three minutes later.
+- `try_reserve_slot(MEETING)` rather than `WEB`.
+- `job_metadata = {**metadata, "call_type": "meeting"}`.
+- `initialize_call_record(..., to_number=meeting_url, call_type="meeting", call_service="google_meet")`.
+- Instead of minting a browser token, launch the connector (change 5).
+- If the launch fails, call `end_call(room_name)` before returning, so we do not leak a room
+  holding an idle agent.
+- Reject `text_only` and realtime mode the same way the web-call route does, for the same reasons.
+
+Mount it in `src/api/server.py` beside the existing routers.
+
+### 5. Launching the connector — `src/services/meeting_connector/` (new package)
+
+Per the repo convention that several new files belong in a purpose-named package, this is a package
+from the start rather than a loose module.
+
+It needs to do one thing: start a container with the environment block from plan 01, and be able to
+stop it. The lazy implementation is `docker run --rm -d` through `asyncio.create_subprocess_exec`,
+keeping the returned container id on the `CallRecord` so we can `docker kill` it. That needs no new
+dependency and no Docker socket mounted anywhere.
+
+If the API is itself containerised, this instead requires either the Docker socket mounted into the
+API container or a small launcher process on the host. Decide this when the deployment shape is
+settled; it does not change anything above the package boundary.
+
+Do **not** build an abstraction over "meeting platforms" yet. There is one platform. The second one
+will tell us what the seam should be, and plan 01 already keeps the connector side clean enough
+that adding Zoom does not reach into this repo at all.
+
+### 6. Agent changes — `src/core/agents/session.py`
+
+Three edits, all small.
+
+**Publish the attribute the connector matches on.** After the session starts, when the call is a
+Meet call, the agent must announce itself:
 
 ```python
-self.MAX_CONCURRENT_MEET_CALLS = int(os.getenv("MAX_CONCURRENT_MEET_CALLS", "4"))
+if job_metadata.get("call_type") == "meeting":
+    await ctx.room.local_participant.set_attributes({"lk.publish_on_behalf": room_name})
 ```
 
-Default `4`, deliberately low, and — in the same spirit as the existing comment on
-`MAX_CONCURRENT_SESSIONS` — **not measured**. Four concurrent bots is already about 16 vCPU of
-browser containers. Raise it from a load test, with evidence, not from optimism. Say so in the
-comment.
+This is the whole of the identity problem's solution — see plan 01 §2 for why an attribute rather
+than an identity. Set it early: the connector's browser adapter may already be connected and
+waiting, and anything published before the attribute is set is audio nobody in the meeting hears.
 
-Also add `ATTENDEE_BASE_URL` and `ATTENDEE_API_KEY`.
-
-### 4. The new route
-
-`src/api/routes/meet_call.py` (new file)
-
-Follow `src/api/routes/web_call.py` closely. It is the reference implementation for the whole
-sequence — ownership check, capacity reservation, room, `CallRecord`, dispatch — including the
-subtle part: the in-memory slot reservation is released the moment the `CallRecord` exists, because
-counting hands over to the database at that point (`web_call.py:72-73`), and the `finally` block
-releases it only if we bailed out before that (`web_call.py:100-103`).
-
-Differences from the web route:
-
-- Request schema `TriggerMeetCall` in `src/api/models/api_schemas/telephony/calls.py`, beside
-  `TriggerWebCall` at `:47`: `assistant_id`, `meeting_url`, optional `bot_name`, optional
-  `metadata`. Validate `meeting_url` against `https://meet.google.com/…` — a malformed URL should
-  fail here, not silently become a bot that never joins anything.
-- `try_reserve_slot(MEET)` rather than `WEB`.
-- `job_metadata = {**(request.metadata or {}), "call_type": "meet"}`.
-- `initialize_call_record(..., to_number=meeting_url, call_type="meet", call_service="meet")`.
-- After `create_agent_dispatch`, call Attendee instead of minting a browser token.
-- If the Attendee call fails, call `end_call(room_name)` before returning the error. Otherwise we
-  leak a room with an idle agent job in it, burning a slot until the orphan reaper notices.
-
-Mount it in `src/api/server.py` alongside the others — `:164` is the pattern:
-
-```python
-app.include_router(meet_call.router, prefix="/call", tags=["Meet Call"])
-```
-
-### 5. The Attendee client
-
-`src/services/attendee/` (new package)
-
-A thin async `httpx` client with two functions: `create_bot(meeting_url, bot_name, room_name)`
-returning the bot id, and `leave_bot(bot_id)`. Nothing more — no retry framework, no model layer,
-no abstraction over a single vendor we are not going to swap.
-
-It goes in its own package rather than as a loose module because the repository convention is that
-several related new files get a purpose-named package, decided before they are written.
-
-The request body is specified in plan 01,
-[The one API call we make](01-attendee-service.md#the-one-api-call-we-make).
-
-### 6. Three small edits to the agent worker
-
-`src/core/agents/session.py`
-
-**Set the attribute Attendee matches on.** Near `mark_agent_ready` at `:1151`, after
-`session.start()`, when the call is a Meet call:
-
-```python
-await ctx.room.local_participant.set_attributes({"lk.publish_on_behalf": room_name})
-```
-
-This is what makes `source_participant.publish_on_behalf` in the Attendee request resolve to our
-agent without anyone having to guess the agent's server-assigned identity. The reasoning, and the
-caveat about the attribute being an avatar-worker convention in the SDK, are in plan 01; proving it
-is open item **V1** and it should be settled before this line is written.
-
-**Fix the phone-call test.** `:738` reads:
+**Fix the negative phone-call test — `:738`.**
 
 ```python
 _is_phone_call = job_metadata.get("call_type") != "web"
 ```
 
-It is a negative test, so a Meet call currently reads as a phone call and gets narrowband noise
-reduction and the phone-tuned STT prompt. Meet audio is wideband. Make this a positive test or an
-explicit set membership so that adding a future call type cannot silently inherit phone tuning
-again.
+This reads "anything that is not a web call is a phone call", so a Meet call would silently get
+narrowband noise reduction and the phone-tuned STT prompt applied to wideband meeting audio. Make
+it a positive test against the telephony types, or an explicit set membership. The same reasoning
+applies to any other `!= "web"` test that appears later.
 
-**Zero the telephony provider in usage.** `:448-450` sets `call_service` to `None` for web calls
-when building the `UsageRecord`, because there is no telephony provider to attribute cost to. The
-same is true of a Meet call.
+**Zero the telephony provider for Meet — `:448-450`.** Usage currently clears `telephony_provider`
+for web calls only. A Meet call has no telephony provider either, so it belongs in the same branch.
 
-Nothing else in `entrypoint` changes. The worker determines the call kind from `ctx.job.metadata`
-alone (`:295-296`) — it never reads the `CallRecord`, room metadata or participant metadata for
-this purpose — so one metadata key really is the entire mechanism.
+Everything else in `entrypoint` is untouched. The discriminator at `:295-296` gains no new case,
+because a Meet call genuinely is not a web call — it does not carry `text_only` and has no browser
+client.
 
-### 7. The Attendee webhook receiver
+### 7. The status callback — `src/api/routes/meeting_call.py` or a sibling
 
-`src/api/routes/meet_webhook.py` (new file)
+Plan 01 §3 defines the payload. Map it onto call status:
 
-This is why webhooks are in scope at all. Without them a Meet call would sit at `"initiated"` for
-its entire life, exactly as web calls do today: `update_call_status(..., "answered")` is currently
-only ever reached from the Exotel SIP bridge's `call_answered` data message
-(`session.py:1130-1137`).
-
-Attendee's bot state machine (its `docs/basics.md`) is richer than ours. Map only what we need:
-
-| Attendee state | What we do |
+| `status` | Action |
 |---|---|
-| `waiting_room` | Leave `call_status` at `"initiated"`; log it. The bot is waiting to be admitted |
-| joined / recording | `update_call_status(room_name, "answered", answered_at=now)` |
-| `ended` | `end_call(room_name)` — this fires our existing end-of-call webhook and finalises usage |
-| `fatal_error` | `update_call_status(..., "failed", call_status_reason=…)`, then `end_call` |
+| `waiting` | Leave `call_status="initiated"`. Log it — this is the state a human has to resolve by admitting the bot. |
+| `joined` | `update_call_status(room_name, "answered", answered_at=now)` |
+| `failed` | `update_call_status(..., "failed", call_status_reason=detail)` then `end_call(room_name)` |
+| `ended` | `end_call(room_name)` — fires the existing end-of-call webhook and usage finalisation |
 
-The room is looked up from the `metadata.room_name` we sent when creating the bot.
+Authenticate with `MEETING_CONNECTOR_STATUS_TOKEN`; this route is not part of the public API surface
+and must not accept a normal user API key.
 
-`end_call` (`livekit_svc.py:524`) already dedupes against `TERMINAL_CALL_STATUSES`, so a duplicate
-`ended` webhook is harmless — it patches a missing duration without re-firing the webhook. That
-matters, because the agent's own participant-disconnect path (`session.py:1245`) will often reach
-`end_call` first.
-
-Verify the payload shape and the signature scheme against Attendee's `docs/webhooks.md` before
-trusting anything in the body — open item **V4**.
+Without this route a Meet call sits at `"initiated"` for its entire life, because `"answered"` is
+only ever set from the Exotel bridge's `call_answered` message. That is the sole reason the
+callback exists.
 
 ### 8. Deployment
 
-`docker-compose.yml` and `deploy.sh`
+The connector image has to be built and present on whichever host runs the API. `deploy.sh`
+enumerates roles explicitly (`control | agent | full`), so this is a build step added to the
+relevant roles rather than a new service in our compose file — the connector is started per call,
+not kept running.
 
-The Attendee stack is separate, not a service inside our compose file, because it brings its own
-PostgreSQL and Redis. `deploy.sh` enumerates its roles explicitly (`control | agent | full`), so a
-`meet` role is added that brings up that stack.
-
-One thing to settle when writing the compose file: `api` and `sip_dispatcher` use
-`network_mode: "host"` while `agent` sits on the default bridge, so there is no shared
-user-defined network today. The Attendee stack either joins host networking or gets explicit port
-mappings, and its webhook needs to reach our API either way.
+Note the existing networking split: `api` and `sip_dispatcher` run with `network_mode: "host"` while
+`agent` is on the default bridge. The connector also wants host networking, so it agrees with the
+API by default.
 
 ### 9. Documentation
 
-A change is not done in this repository until code, schemas, tests and documentation agree. A new
-call type appears in more places than it first seems:
+Per `CLAUDE.md`, the change is not done until code, schemas, tests and docs agree. A new call type
+touches: a new `docs/api/calls/meeting-call.md` beside `web-call.md` and `passthrough.md`,
+`docs/reference/compatibility.md`, `docs/reference/troubleshooting.md`, `docs/features.md`,
+`README.md`, and the `mkdocs.yml` nav. Grep for `passthrough` to find every place a call type is
+enumerated.
 
-- `docs/api/calls/meet-call.md` — new, beside `web-call.md` and `passthrough.md`
-- `docs/reference/compatibility.md`
-- `docs/reference/troubleshooting.md`
-- `docs/features.md` and `README.md`
-- `mkdocs.yml` nav
-
-`grep -rn passthrough docs/ README.md` finds every place a call type is enumerated.
-
-Then: `uv run mkdocs build --strict` and `uv run python scripts/check_mermaid.py`. The strict build
-cannot catch a broken Mermaid diagram — a bad one deploys clean and shows an error box in the
-browser — so both must run.
-
----
+Then `uv run mkdocs build --strict` and `uv run python scripts/check_mermaid.py`.
 
 ## Not in scope
 
-- **Calendar-driven joining.** Attendee supports it; we trigger manually for now.
-- **Attendee recording and transcription.** We already own both, and a second copy in a second
-  database splits the truth.
-- **Zoom and Microsoft Teams.** Attendee supports them through the same `room_sync_settings`, so
-  they are close to free once this works. They are not this change.
-- **Video.** The agent is audio-only and the bot shows no camera.
-
----
+- Zoom and Teams. The connector's seam makes them cheap later; they are not this change.
+- Video. The assistant is audio-only and the bot shows no camera.
+- Per-speaker attribution in transcripts. Plan 01 §1 explains what is traded away and how to get it
+  back.
+- Calendar-driven joining. The trigger is an explicit API call.
+- Recording and transcription on the connector side. We already own both.
 
 ## Verification
 
-Steps 1 to 4 belong to plan 01 and prove that audio flows in both directions before any of this
-repository's code exists. Assuming those pass:
+Steps 1 to 4 are in plan 01 and must pass first — they prove the connector works at all. These
+prove the integration.
 
-5. **The full route.** `POST /call/meet` end to end. Then check that the `CallRecord` was written
-   with `call_type="meet"`, that its status moves `initiated → answered → completed`, that a
-   `UsageRecord` was upserted for the room, and that the end-of-call webhook fired.
-6. **The caps hold.** Exceeding `MAX_CONCURRENT_MEET_CALLS` returns 503, and — the part worth
-   checking explicitly — a Meet call in progress does not consume a telephony slot.
-7. **The gates.**
-   ```bash
-   uv run python -m unittest discover -s tests
-   uvx ruff check <touched paths>
-   uv run mkdocs build --strict
-   uv run python scripts/check_mermaid.py
-   ```
-
-New tests worth writing: the bucket case in `tests/test_capacity_buckets.py`, and a test that the
-webhook handler maps each Attendee state to the right `CallRecord` transition.
-
-No commit unless asked for one.
+5. **The route works end to end.** `POST /meeting_call/join` against a real meeting. Then check: a
+   `CallRecord` exists with `call_type="meeting"`, its status moves `initiated → answered →
+   completed`, a `UsageRecord` is upserted, and the end-of-call webhook fires.
+6. **The caps hold.** Exceeding `MAX_CONCURRENT_MEETING_CALLS` returns 503, and a Meet call in
+   progress does not consume a telephony slot.
+7. **The gates pass.** `uv run python -m unittest discover -s tests`, `uvx ruff check` on the paths
+   touched, `uv run mkdocs build --strict`, `uv run python scripts/check_mermaid.py`.

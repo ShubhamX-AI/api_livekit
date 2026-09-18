@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from beanie.operators import In
 
+from src.core.call_types import CALL_TYPE_MEETING, CALL_TYPE_WEB
 from src.core.config import settings
 from src.core.db.database import Database
 from src.core.db.db_schemas import CallRecord, OutboundCallQueue, OutboundSIP
@@ -66,26 +67,40 @@ def get_bridge_context():
 
 TELEPHONY = "telephony"
 WEB = "web"
-BUCKETS = (TELEPHONY, WEB)
+MEETING = "meeting"
+BUCKETS = (TELEPHONY, WEB, MEETING)
 
 LIVE_CALL_STATUSES = ["initiated", "answered"]
+
+_BUCKET_BY_CALL_TYPE = {
+    CALL_TYPE_WEB: WEB,
+    CALL_TYPE_MEETING: MEETING,
+}
 
 
 def bucket_for_call_type(call_type: str | None) -> str:
     """Which capacity bucket a CallRecord belongs to.
 
-    Web calls need only an agent job process. Phone calls additionally need a bridge process
-    and an RTP port, so they are capped separately and much lower.
+    Three workloads of very different cost, so three caps:
+
+    * Web calls need only an agent job process.
+    * Phone calls additionally need a bridge process and an RTP port.
+    * Meeting calls hold a whole headful Chrome in a connector container, which is more
+      expensive again — and expensive in a different resource, so it cannot share either cap.
+
+    Anything unrecognised, including the missing ``call_type`` on rows written before the field
+    existed, falls to telephony. That is the scarcest bucket and so the safe default.
 
     Passthrough is not a call_type — it is a boolean on an "outbound" row — so it lands in
     telephony without a special case, which is correct: it holds a bridge and a port.
     """
-    return WEB if call_type == "web" else TELEPHONY
+    return _BUCKET_BY_CALL_TYPE.get(call_type, TELEPHONY)
 
 
 BUCKET_CAPS = {
     TELEPHONY: lambda: settings.MAX_CONCURRENT_JOBS,
     WEB: lambda: settings.MAX_CONCURRENT_WEB_CALLS,
+    MEETING: lambda: settings.MAX_CONCURRENT_MEETING_CALLS,
 }
 
 

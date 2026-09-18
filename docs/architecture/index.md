@@ -30,5 +30,6 @@ Dive in:
 
 - [Runtime Modes & Startup](runtime-modes.md) — startup services, pipeline vs realtime, latency & cost tricks (LLM truncation, Sarvam keepalive, parallel STT).
 - [Call Flows & Queueing](call-flows.md) — web integration, managed SIP, custom Exotel bridge, outbound queue + dispatcher, capacity, crash recovery, passthrough mode.
+- [Google Meet Calls](meeting-calls.md) — the single application dispatcher, dual LiveKit jobs, shared-room audio flow, connector lifecycle, recording ownership, capacity, and failure paths.
 - [Audio Pipeline](audio-pipeline.md) — inbound/outbound RTP processing, STT noise-reduction branching, hold/resume detection, per-utterance input guard.
 - [Inbound Routing](inbound.md) — Exotel inbound components, sequence, and failure paths.

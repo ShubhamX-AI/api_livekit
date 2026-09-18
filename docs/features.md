@@ -68,7 +68,18 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 5. Passthrough Calls (Human Agent, No AI)
+## 5. Meeting Calls (Google Meet)
+
+- **An assistant in a video meeting** — `POST /meeting_call/join` puts the assistant into a Google Meet as an ordinary participant; it hears the meeting and speaks back into it
+- **Everyone is heard** — the meeting's own audio mix is published as one LiveKit track, so a meeting with several people works. One track per speaker would leave the assistant hearing only whoever it linked to
+- **Platform-agnostic shape** — `platform` selects the connector image; adding Zoom or Teams later is a new value, not a new API
+- **Own capacity bucket** — `MAX_CONCURRENT_MEETING_CALLS` (default `4`), separate from telephony and web, because each call holds a whole browser
+- **Same lifecycle as any other call** — `CallRecord` with `call_type="meeting"`, usage record, end-of-call webhook
+- Trade-off: no per-speaker attribution in the transcript. The roster of who is in the meeting is still tracked
+
+---
+
+## 6. Passthrough Calls (Human Agent, No AI)
 
 - Web user speaks directly to a phone caller over SIP — no STT, LLM, or TTS
 - `POST /call/outbound_passthrough` creates a LiveKit room synchronously and returns a `room_token` immediately
@@ -80,7 +91,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 6. Inbound Calls
+## 7. Inbound Calls
 
 - **Number-to-assistant mapping** — link any inbound phone number to an assistant; incoming calls route automatically
 - **Inbound via Exotel** — custom SIP bridge handles inbound SIP signalling and RTP
@@ -88,7 +99,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 7. Inbound Context Strategies
+## 8. Inbound Context Strategies
 
 - **Pre-call CRM/data fetch** — before the assistant speaks on an inbound call, the platform POSTs to your webhook with caller metadata
 - Response `context` object injected into prompt templates as `{{context.<key>}}`
@@ -100,7 +111,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 8. Web Calls (No SIP)
+## 9. Web Calls (No SIP)
 
 - Browser or mobile app joins a LiveKit room and speaks directly to the AI assistant
 - `POST /web_call/get_token` issues a scoped LiveKit room token
@@ -110,7 +121,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 9. Function Tools
+## 10. Function Tools
 
 - **Webhook tools** — during a conversation the assistant calls an HTTP POST to your endpoint; use for live data lookup or triggering external actions
 - **Static-return tools** — assistant returns a fixed payload without HTTP; use for constant answers (support hours, policy text, etc.)
@@ -120,7 +131,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 10. Audio Pipeline (Phone / PSTN)
+## 11. Audio Pipeline (Phone / PSTN)
 
 - **G.711 decode** — PCMA (a-law) and PCMU (μ-law) decoding; non-G.711 payloads (DTMF/RFC 2833) discarded early
 - **Stateful 2nd-order Butterworth high-pass at 80 Hz** — removes DC offset and sub-bass hum; state carried across RTP packet boundaries (no 50 Hz buzz artefact)
@@ -131,7 +142,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 
 ---
 
-## 10a. Input Speech Gate (Noise Rejection)
+## 11a. Input Speech Gate (Noise Rejection)
 
 Stops background noise from interrupting the agent mid-sentence. Runs in the agent process on both web and Exotel calls, so it needs no LiveKit Cloud (BVC/Krisp is Cloud-only, and this deployment is self-hosted).
 
@@ -145,7 +156,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 11. Hold Detection & Suppression
+## 12. Hold Detection & Suppression
 
 - **Instant hold detection via SIP re-INVITE** — detects `a=sendonly` / `a=inactive` in SDP (Exotel only)
 - On hold: silence watchdog stops, filler controller stops, any in-progress agent speech is interrupted, agent transcripts suppressed (caller transcripts are still recorded)
@@ -154,7 +165,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 12. Per-Utterance Input Guard
+## 13. Per-Utterance Input Guard
 
 - **Fragment-loop prevention** — blanks caller audio for the first N seconds of each agent reply, configurable per assistant via `input_guard_window_sec` (default 3 s, range 0–10; `0` disables)
 - Prevents "Hello? Hello?" repeat barge-ins from fragmenting the agent's response
@@ -165,7 +176,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 13. Silence Watchdog & Reprompts
+## 14. Silence Watchdog & Reprompts
 
 - Detects caller silence after configurable interval
 - Sends up to a configurable max number of reprompt messages before ending the call
@@ -175,7 +186,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 14. Filler Words (Backchannel)
+## 15. Filler Words (Backchannel)
 
 - Assistant emits natural filler sounds while thinking (e.g. "Hmm, let me check that…")
 - Toggle per-assistant via `assistant_interaction_config.filler_words`
@@ -184,7 +195,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 15. Background Audio
+## 16. Background Audio
 
 - **Ambient office sound** — low-level background noise makes silences feel natural on phone calls
 - **Thinking sound** — subtle typing sound while the LLM generates a reply
@@ -193,7 +204,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 16. Transcripts & Call Records
+## 17. Transcripts & Call Records
 
 - Full conversation transcripts stored in MongoDB per call
 - Entries are timestamped at capture and appended in speaking order — a user utterance always precedes the agent reply it triggered, even though transcribing it costs a round-trip
@@ -203,7 +214,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 17. Call Recording
+## 18. Call Recording
 
 - Recordings started after call is answered (SIP answer confirmed)
 - Recordings stopped on call end; uploaded to S3
@@ -212,7 +223,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 18. Usage & Billing Tracking
+## 19. Usage & Billing Tracking
 
 - Per-call LLM token usage tracked (input + output tokens) via SDK metrics
 - Per-call TTS character counts tracked
@@ -222,7 +233,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 19. Activity Logs
+## 20. Activity Logs
 
 - Structured logs written for: tool calls, inbound context lookups, end-call webhook delivery
 - Queryable via `/logs` endpoint
@@ -230,7 +241,7 @@ Stops background noise from interrupting the agent mid-sentence. Runs in the age
 
 ---
 
-## 20. Analytics (Per-User)
+## 21. Analytics (Per-User)
 
 All analytics scoped to the authenticated user's API key.
 
@@ -246,7 +257,7 @@ Date range filters on all endpoints.
 
 ---
 
-## 21. Admin / Super-Admin Analytics
+## 22. Admin / Super-Admin Analytics
 
 Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
@@ -262,7 +273,7 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
 ---
 
-## 22. SIP Trunk Management
+## 23. SIP Trunk Management
 
 - Create, list, and deactivate outbound SIP trunks
 - Provider-specific config: Twilio (LiveKit managed) and Exotel (custom bridge)
@@ -272,7 +283,7 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
 ---
 
-## 23. Authentication & API Keys
+## 24. Authentication & API Keys
 
 - API-key based auth (`Authorization: Bearer <key>`)
 - Per-user key scoping — analytics and records always filter to key owner
@@ -281,7 +292,7 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
 ---
 
-## 24. Outbound Dispatcher & Capacity Management
+## 25. Outbound Dispatcher & Capacity Management
 
 - Background dispatcher loop polls queue every 2 seconds; fallback 30 s poll when idle
 - Configurable `MAX_CONCURRENT_JOBS` (default 12)
@@ -291,7 +302,7 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
 ---
 
-## 25. Deployment Flexibility
+## 26. Deployment Flexibility
 
 - **Single container** — API + SIP dispatcher + worker in one process (dev default)
 - **Split-role containers** — dedicated `control` container (API + SIP dispatcher) and `agent` container (worker only)
@@ -302,14 +313,14 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
 ---
 
-## 26. Email Tool (Optional)
+## 27. Email Tool (Optional)
 
 - SMTP/SendGrid email sending available as a built-in assistant tool
 - Configured via `SMTP_*` environment variables
 
 ---
 
-## 27. API Documentation Site
+## 28. API Documentation Site
 
 - Full MkDocs Material docs site bundled with the API
 - Served at `/documentation` directly from the running API server
@@ -317,7 +328,7 @@ Requires `is_super_admin` flag on the API key. Cross-tenant visibility.
 
 ---
 
-## 28. Prerecorded Greeting Audio & Audio Library
+## 29. Prerecorded Greeting Audio & Audio Library
 
 - **Reusable audio library** — upload a clip once (stored in the `audio_assets` collection + S3), attach it to one or many assistants by `audio_id`
 - **Any input format** — accepts mp3, m4a, ogg, wav, etc.; the server transcodes to WAV 48 kHz mono in-process via PyAV (bundled ffmpeg — no system binary, no subprocess)

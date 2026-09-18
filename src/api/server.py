@@ -17,6 +17,7 @@ from src.api.routes import (
     tool,
     logs,
     web_call,
+    meeting_call,
     inbound,
     inbound_context_strategy,
     analytics,
@@ -162,6 +163,7 @@ app.include_router(call.router, prefix="/call", tags=["Call"])
 app.include_router(tool.router, prefix="/tool", tags=["Tool"])
 app.include_router(logs.router, prefix="/logs", tags=["Logs"])
 app.include_router(web_call.router, prefix="/web_call", tags=["Web Call"])
+app.include_router(meeting_call.router, prefix="/meeting_call", tags=["Meeting Call"])
 app.include_router(inbound.router, prefix="/inbound", tags=["Inbound Call"])
 app.include_router(
     inbound_context_strategy.router,

@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -86,6 +87,14 @@ class Settings:
         self.MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "12"))
         self.MAX_CONCURRENT_WEB_CALLS = int(os.getenv("MAX_CONCURRENT_WEB_CALLS", "40"))
 
+        # Meeting calls (Google Meet today) each hold a connector container running a headful
+        # Chrome, so they are an order of magnitude more expensive than a web call and expensive
+        # in a resource neither other bucket accounts for.
+        #
+        # NOT MEASURED. Four concurrent browsers is already a meaningful slice of a host. Set it
+        # from a load test that watches the connector containers, not from this default.
+        self.MAX_CONCURRENT_MEETING_CALLS = int(os.getenv("MAX_CONCURRENT_MEETING_CALLS", "4"))
+
         # Hard ceiling across every call type, so the two caps above can never together
         # exceed what the agent host can hold.
         #
@@ -100,6 +109,14 @@ class Settings:
         # the number of calls that can be ringing simultaneously, because the ring-until-ready
         # wait happens inside this semaphore.
         self.MAX_CONCURRENT_INVITE_SETUPS = int(os.getenv("MAX_CONCURRENT_INVITE_SETUPS", "24"))
+
+        # LiveKit dispatch name for the worker that runs the browser-based meeting connector.
+        self.MEETING_CONNECTOR_AGENT_NAME = os.getenv(
+            "MEETING_CONNECTOR_AGENT_NAME", "meet-connector"
+        )
+        self.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS = float(
+            os.getenv("MEETING_CONNECTOR_READY_TIMEOUT_SECONDS", "60")
+        )
 
         # End-of-call webhook. Read timeout is generous on purpose: the receiver often
         # writes the payload to its own database before answering, and a slow answer is
