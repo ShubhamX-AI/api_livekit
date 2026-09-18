@@ -50,9 +50,14 @@ Content-Type: application/json
     "call_duration_minutes": 5.5,
     "billable_duration_minutes": 6,
     "created_by_email": "user@example.com",
-    "call_type": "outbound",
-    "call_service": "exotel",
-    "platform_number": "08044319240",
+    "call_type": "meeting",
+    "call_service": "google_meet",
+    "platform_number": null,
+    "meeting_url": "https://meet.google.com/abc-defg-hij",
+    "meeting_connector_status": "ended",
+    "meeting_connector_status_reason": "meeting ended",
+    "meeting_connector_ready_at": "2024-01-15T10:00:08.000Z",
+    "meeting_connector_ended_at": "2024-01-15T10:05:30.000Z",
       "usage": {
        "mode": "cascade",
        "call_duration_minutes": 5.5,
@@ -124,9 +129,14 @@ Content-Type: application/json
 | `data.call_duration_minutes`   | number  | Actual measured call duration in minutes.  |
 | `data.billable_duration_minutes` | integer | Chargeable duration in whole minutes, rounded up for connected calls and `0` for non-connected terminal outcomes. |
 | `data.created_by_email`        | string  | Email of the user who owns this call.      |
-| `data.call_type`               | string  | Call direction: `outbound`, `inbound`, or `web`. |
-| `data.call_service`            | string  | Telephony provider: `exotel`, `twilio`, or `web`. |
+| `data.call_type`               | string  | Call shape: `outbound`, `inbound`, `web`, or `meeting`. |
+| `data.call_service`            | string  | Provider or platform: `exotel`, `twilio`, `web`, or `google_meet`. |
 | `data.platform_number`         | string  | Platform's own phone number used for this call. |
+| `data.meeting_url`              | string  | Google Meet URL for meeting calls; `null` for other call types. |
+| `data.meeting_connector_status` | string  | Connector lifecycle state: `pending`, `waiting`, `ready`, `failed`, or `ended`; `null` for other call types. |
+| `data.meeting_connector_status_reason` | string | Optional connector failure or termination detail. |
+| `data.meeting_connector_ready_at` | string | Timestamp when the connector became ready; `null` if it never became ready. |
+| `data.meeting_connector_ended_at` | string | Timestamp when the connector entered `failed` or `ended`; `null` for an active connector. |
 | `data.usage`                   | object  | Per-component usage metrics and estimated AI-provider cost (if available). |
 | `data.usage.mode`                   | string | Runtime mode for this call: `pipeline`, `realtime` or `cascade`. See [Models & Providers](../../reference/models.md). |
 | `data.usage.call_duration_minutes` | number | Usage record's copied call duration in minutes. |
@@ -231,6 +241,11 @@ The webhook payload is generated from the stored call record and currently inclu
 - `call_type`
 - `call_service`
 - `platform_number`
+- `meeting_url` (meeting calls)
+- `meeting_connector_status` (meeting calls)
+- `meeting_connector_status_reason` (meeting calls)
+- `meeting_connector_ready_at` (meeting calls)
+- `meeting_connector_ended_at` (meeting calls)
 - `usage` (object with per-component LLM / TTS / STT metrics, included when available)
 
 ### Quick Test with curl

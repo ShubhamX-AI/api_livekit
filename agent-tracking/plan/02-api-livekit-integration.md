@@ -5,9 +5,11 @@
 > *reports back* does not: plan 03 dispatches it as a LiveKit worker instead of running a container
 > from the API. The code described here is in the tree and works; read plan 03 before changing it.
 
-> **Status: implemented.** Everything in changes 1–9 below is in the tree. The connector itself
-> ([`01-meet-connector-service.md`](./01-meet-connector-service.md)) is not, so nothing here has
-> been exercised end to end yet — verification steps 5 to 7 are still open.
+> **Status: superseded by plan 03.** The meeting vocabulary, capacity bucket, route shape, and
+> assistant-side audio changes remain in the tree. The Docker launcher and HTTP status callback
+> described below have been removed in favor of named LiveKit worker dispatch. The connector worker
+> itself ([`01-meet-connector-service.md`](./01-meet-connector-service.md)) still needs to be
+> implemented before end-to-end verification.
 >
 > **Naming.** The plan originally said "meet" everywhere. What was built says **meeting** for the
 > call *shape* and **google_meet** for the *platform*, matching the existing split where

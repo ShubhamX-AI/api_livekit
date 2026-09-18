@@ -3,7 +3,9 @@
 This plan replaces the launch mechanism described in
 [`01-meet-connector-service.md`](./01-meet-connector-service.md) and
 [`02-api-livekit-integration.md`](./02-api-livekit-integration.md). Those two are implemented and
-working code; nothing here has been built. Read this one before touching either of them again.
+working code. The core-repository portion of this plan is now implemented; the connector repository
+still needs the worker conversion described near the end of this document. Read this one before
+touching either of the earlier plans again.
 
 Everything about *what* a meeting call is — the call type, the capacity bucket, the wideband audio
 tuning, the mixed-audio decision — is unchanged and stays exactly as plans 01 and 02 describe. The
@@ -11,7 +13,7 @@ only thing this plan changes is **how the connector is started and how it report
 
 ## The problem with what exists
 
-`src/services/meeting_connector/launcher.py` runs `docker run --rm -d` from inside the API process
+The previous implementation in `src/services/meeting_connector/launcher.py` ran `docker run --rm -d` from inside the API process
 to start a connector container per call, then keeps the container id on the `CallRecord` so it can
 be killed later. The connector is configured entirely through the environment block that
 `launch_connector` sets, because `ConnectorConfig.from_environment()` in the prototype is the only
@@ -98,17 +100,22 @@ keeps its name; it just holds one module instead of two.
 Once the connector is a room participant, its arrival and departure are LiveKit events, and the
 things we wanted the callback for have existing answers:
 
-- **"the bot got in"** — the connector publishes its track. Nothing needs to tell us.
-- **"the bot is waiting for admission"** — the connector publishes a data message on the room's data
-  channel, the same mechanism the Exotel bridge already uses in the other direction
-  (`src/core/agents/session.py:1174` publishes `agent_ready`; the topic subscription that reads
-  bridge messages is in the same file). The assistant reads it and can hold its greeting.
-- **"the bot failed to join"** — the connector job ends. A job that ends without ever publishing is
-  a failure, and the dispatcher already has machinery for exactly this shape: `_watch_agent_join` in
-  `src/services/outbound_dispatcher/dispatcher.py` force-ends calls whose agent never arrived, using
-  `CallRecord.agent_ready_at` (`src/core/db/db_schemas.py:241`).
-- **"the meeting ended"** — same as any other call: the assistant's own session ends and
-  `end_call(room_name)` runs.
+- **"the bot is waiting for admission"** — the connector publishes `{"event":"waiting"}` on the
+  `meeting_connector_events` data topic.
+- **"the bot got in"** — the connector publishes `{"event":"ready"}`. The assistant persists
+  `meeting_connector_ready_at`, sets `lk.meeting_connector_status=ready`, marks the call answered,
+  and only then sends its greeting. The participant attribute makes readiness recoverable if the
+  data event predates the assistant's room connection.
+- **"the bot failed to join"** — the connector publishes `{"event":"failed","detail":"..."}` or
+  the assistant's readiness timeout expires. The assistant marks the call failed and ends the room.
+- **"the meeting ended"** — the connector publishes `{"event":"ended"}` and the assistant's normal
+  teardown calls `end_call(room_name)`.
+
+These events are handled before `session.start()` can receive them. Connector state is separate from
+`CallRecord.agent_ready_at`, which still means that the assistant session reached `session.start()`.
+The core stores the connector state in `meeting_connector_status`,
+`meeting_connector_status_reason`, `meeting_connector_ready_at`, and
+`meeting_connector_ended_at`.
 
 The honest trade: `call_status` moves to `answered` when the *assistant* is ready rather than when
 the bot is admitted to the meeting, so a call sitting in a Google Meet waiting room reads as
@@ -132,7 +139,9 @@ self.MEETING_CONNECTOR_AGENT_NAME = os.getenv("MEETING_CONNECTOR_AGENT_NAME", "m
 
 ## Changes in the connector repository
 
-This is where the work moves, and it is the larger half.
+This is where the remaining work moves, and it is the larger half. The API-side migration is
+complete, but the connector worker must still be implemented and deployed before meeting calls can
+run end to end.
 
 ### 1. Become a worker
 

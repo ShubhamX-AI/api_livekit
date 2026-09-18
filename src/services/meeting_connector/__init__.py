@@ -1,12 +1,8 @@
-"""Launching and stopping the containers that join meetings for us."""
+"""Meeting-platform URL validation shared by meeting-call routes."""
 
-from .launcher import launch_connector, stop_connector
-from .platforms import UnsupportedMeetingPlatform, connector_image, validate_meeting_url
+from .platforms import UnsupportedMeetingPlatform, validate_meeting_url
 
 __all__ = [
     "UnsupportedMeetingPlatform",
-    "connector_image",
-    "launch_connector",
-    "stop_connector",
     "validate_meeting_url",
 ]

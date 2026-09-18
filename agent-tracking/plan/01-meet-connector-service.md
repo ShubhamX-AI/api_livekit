@@ -3,7 +3,8 @@
 > **Superseded in part by [`03-worker-dispatch-redesign.md`](./03-worker-dispatch-redesign.md).**
 > Everything about *what* a meeting call is still holds. How the connector is *started* and how it
 > *reports back* does not: plan 03 dispatches it as a LiveKit worker instead of running a container
-> from the API. The code described here is in the tree and works; read plan 03 before changing it.
+> from the API. The connector worker conversion described here remains to be implemented in the
+> connector repository; read plan 03 before changing it.
 
 Everything in this document lives **outside** `api_livekit`. Its counterpart,
 [`02-api-livekit-integration.md`](./02-api-livekit-integration.md), covers the changes inside this

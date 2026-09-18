@@ -39,18 +39,3 @@ class TriggerMeetingCall(BaseModel):
                 "metadata": {"extra": "value about the call"},
             }
         }
-
-
-class MeetingConnectorStatus(BaseModel):
-    """Posted by the connector container as it moves through the meeting's lifecycle.
-
-    Authenticated with the shared MEETING_CONNECTOR_STATUS_TOKEN, not a user API key — the
-    connector is infrastructure, not a customer.
-    """
-
-    room_name: str = Field(..., min_length=1, max_length=200, description="LiveKit room the connector was launched for")
-    status: Literal["waiting", "joined", "failed", "ended"] = Field(..., description="Connector lifecycle state")
-    detail: Optional[str] = Field(None, max_length=500, description="Human-readable reason, required in practice for 'failed'")
-
-    class Config:
-        str_strip_whitespace = True

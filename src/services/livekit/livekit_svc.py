@@ -1,23 +1,27 @@
 import asyncio
-import uuid
 import json
 import time
-import httpx
+import uuid
 from contextlib import asynccontextmanager
-from typing import List, Optional, Dict, Literal
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Literal
+
+import httpx
 from livekit import api
-from livekit.api import LiveKitAPI, AccessToken, VideoGrants
+from livekit.api import AccessToken, LiveKitAPI, VideoGrants
 from livekit.protocol.sip import (
     CreateSIPOutboundTrunkRequest,
     SIPOutboundTrunkInfo,
     # ListSIPOutboundTrunkRequest,
 )
-from src.core.config import settings
-from src.core.logger import logger
-from src.core.billing import calculate_billable_duration_minutes, NON_BILLABLE_FINAL_STATUSES
-from src.core.db.db_schemas import CallRecord, Assistant, ActivityLog, UsageRecord
 
+from src.core.billing import (
+    NON_BILLABLE_FINAL_STATUSES,
+    calculate_billable_duration_minutes,
+)
+from src.core.config import settings
+from src.core.db.db_schemas import ActivityLog, Assistant, CallRecord, UsageRecord
+from src.core.logger import logger
 
 PASSTHROUGH_ROOM_PREFIX = "passthrough"
 
@@ -36,7 +40,7 @@ class LiveKitService:
         self.api_key = settings.LIVEKIT_API_KEY
         self.api_secret = settings.LIVEKIT_API_SECRET
         self.url = settings.LIVEKIT_URL
-        self.transcripts: List[Dict] = []
+        self.transcripts: list[dict] = []
 
     def _get_client(self) -> LiveKitAPI:
         """Return shared LiveKitAPI client, creating it on first use."""
@@ -54,7 +58,7 @@ class LiveKitService:
         yield self._get_client()
 
     # Create livekit room
-    async def create_room(self, assistant_id: Optional[str] = None) -> str:
+    async def create_room(self, assistant_id: str | None = None) -> str:
         """Create and return a unique LiveKit room name."""
         async with self.get_livekit_api() as lkapi:
             prefix = assistant_id if assistant_id else PASSTHROUGH_ROOM_PREFIX
@@ -67,14 +71,19 @@ class LiveKitService:
             return room.name
 
     # Create agent dispatch
-    async def create_agent_dispatch(self, room_name: str, metadata: Optional[dict] = None):
-        """Create an agent dispatch for a room with optional metadata."""
+    async def create_agent_dispatch(
+        self,
+        room_name: str,
+        metadata: dict | None = None,
+        agent_name: str = "api-agent",
+    ):
+        """Create a named agent dispatch for a room with optional metadata."""
         async with self.get_livekit_api() as lkapi:
             # Create agent dispatch with metadata
             agent_dispatch = await lkapi.agent_dispatch.create_dispatch(
                 api.CreateAgentDispatchRequest(
                     room=room_name,
-                    agent_name="api-agent",
+                    agent_name=agent_name,
                     metadata=json.dumps(metadata) if metadata else "",
                 )
             )
@@ -134,12 +143,12 @@ class LiveKitService:
         assistant_id: str,
         assistant_name: str,
         to_number: str,
-        recording_path: Optional[str],
-        created_by_email: Optional[str] = None,
-        call_type: Optional[str] = None,
-        call_service: Optional[str] = None,
-        platform_number: Optional[str] = None,
-        timestamp: Optional[datetime] = None,
+        recording_path: str | None,
+        created_by_email: str | None = None,
+        call_type: str | None = None,
+        call_service: str | None = None,
+        platform_number: str | None = None,
+        timestamp: datetime | None = None,
     ):
         """Append a transcript entry to an existing call record or create a new one.
 
@@ -151,7 +160,7 @@ class LiveKitService:
         entry = {
             "speaker": speaker,
             "text": text,
-            "timestamp": timestamp or datetime.now(timezone.utc),
+            "timestamp": timestamp or datetime.now(UTC),
         }
         # Atomic append. A read-modify-save() here would race the other writers of this
         # document (update_call_status, end_call, the dispatcher safety net) and could
@@ -168,7 +177,7 @@ class LiveKitService:
                 to_number=to_number,
                 recording_path=recording_path,
                 transcripts=[entry],
-                started_at=datetime.now(timezone.utc),
+                started_at=datetime.now(UTC),
                 created_by_email=created_by_email,
                 call_type=call_type,
                 call_service=call_service,
@@ -180,8 +189,8 @@ class LiveKitService:
         self,
         room_name: str,
         to_number: str = "",
-        assistant_id: Optional[str] = None,
-        assistant_name: Optional[str] = None,
+        assistant_id: str | None = None,
+        assistant_name: str | None = None,
         call_status: Literal[
             "initiated",
             "answered",
@@ -194,12 +203,12 @@ class LiveKitService:
             "unreachable",
             "timeout",
         ] = "initiated",
-        call_status_reason: Optional[str] = None,
-        created_by_email: Optional[str] = None,
-        call_type: Optional[str] = None,
-        call_service: Optional[str] = None,
-        platform_number: Optional[str] = None,
-        queue_id: Optional[str] = None,
+        call_status_reason: str | None = None,
+        created_by_email: str | None = None,
+        call_type: str | None = None,
+        call_service: str | None = None,
+        platform_number: str | None = None,
+        queue_id: str | None = None,
         is_passthrough: bool = False,
     ):
         """Create a call record if missing, or refresh base call metadata if present."""
@@ -232,7 +241,7 @@ class LiveKitService:
             to_number=to_number,
             call_status=call_status,
             call_status_reason=call_status_reason,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             created_by_email=created_by_email,
             call_type=call_type,
             call_service=call_service,
@@ -257,12 +266,12 @@ class LiveKitService:
             "unreachable",
             "timeout",
         ],
-        call_status_reason: Optional[str] = None,
-        sip_status_code: Optional[int] = None,
-        sip_status_text: Optional[str] = None,
-        answered_at: Optional[datetime] = None,
-        ended_at: Optional[datetime] = None,
-        call_duration_minutes: Optional[float] = None,
+        call_status_reason: str | None = None,
+        sip_status_code: int | None = None,
+        sip_status_text: str | None = None,
+        answered_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        call_duration_minutes: float | None = None,
     ):
         """Update call status fields for a room and persist the changes."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
@@ -298,12 +307,41 @@ class LiveKitService:
         """
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record and call_record.agent_ready_at is None:
-            call_record.agent_ready_at = datetime.now(timezone.utc)
+            call_record.agent_ready_at = datetime.now(UTC)
             await call_record.save()
+
+    async def record_meeting_connector_event(
+        self,
+        room_name: str,
+        status: Literal["waiting", "ready", "failed", "ended"],
+        detail: str | None = None,
+    ) -> CallRecord | None:
+        """Persist an idempotent connector lifecycle event for a meeting call."""
+        call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        if not call_record or call_record.call_type != "meeting":
+            return call_record
+
+        current = call_record.meeting_connector_status
+        terminal_statuses = {"failed", "ended"}
+        if current in terminal_statuses:
+            return call_record
+        if current == "ready" and status == "waiting":
+            return call_record
+
+        now = datetime.now(UTC)
+        call_record.meeting_connector_status = status
+        if detail:
+            call_record.meeting_connector_status_reason = detail
+        if status == "ready" and call_record.meeting_connector_ready_at is None:
+            call_record.meeting_connector_ready_at = now
+        if status in terminal_statuses and call_record.meeting_connector_ended_at is None:
+            call_record.meeting_connector_ended_at = now
+        await call_record.save()
+        return call_record
 
     async def _post_end_call_webhook(
         self, url: str, payload: dict, room_name: str, webhook_config=None
-    ) -> tuple[str, Optional[dict], str]:
+    ) -> tuple[str, dict | None, str]:
         """POST the post-call payload, retrying a slow or failing receiver.
 
         Returns `(status, response_data, message)` in the shape the ActivityLog row wants.
@@ -329,7 +367,7 @@ class LiveKitService:
         timeout = httpx.Timeout(
             configured_timeout or settings.END_CALL_WEBHOOK_TIMEOUT, connect=10.0
         )
-        last: tuple[str, Optional[dict], str] = (
+        last: tuple[str, dict | None, str] = (
             "error",
             None,
             f"Failed to send post-call data to {url}: no attempt was made",
@@ -394,7 +432,7 @@ class LiveKitService:
         )
         return last
 
-    async def send_end_call_webhook(self, room_name: str, assistant_id: Optional[str] = None, webhook_url: Optional[str] = None):
+    async def send_end_call_webhook(self, room_name: str, assistant_id: str | None = None, webhook_url: str | None = None):
         """Send post-call details to a webhook URL.
 
         webhook_url takes priority; if absent, falls back to assistant's end_call_url.
@@ -521,15 +559,24 @@ class LiveKitService:
             logger.warning(f"Failed to write activity log for end_call_webhook: {log_err}")
 
     # Update And send Details at the end of the call
-    async def end_call(self, room_name: str, assistant_id: Optional[str] = None):
+    async def end_call(self, room_name: str, assistant_id: str | None = None):
         """Mark a call as completed, store duration, and trigger end-call webhook."""
         call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
         if call_record:
-            if call_record.call_status in TERMINAL_CALL_STATUSES:
+            if (
+                call_record.call_status in TERMINAL_CALL_STATUSES
+                and (
+                    call_record.call_status != "failed"
+                    or (
+                        call_record.ended_at is not None
+                        and call_record.call_duration_minutes is not None
+                    )
+                )
+            ):
                 # Dispatcher safety net may have set status="completed" before session.py ran
                 # end_call(), skipping duration. Patch it here without re-sending the webhook.
                 if call_record.call_duration_minutes is None:
-                    ended_at = call_record.ended_at or datetime.now(timezone.utc)
+                    ended_at = call_record.ended_at or datetime.now(UTC)
                     duration_start = call_record.answered_at or call_record.started_at
                     if duration_start is None:
                         logger.warning(f"Cannot patch duration for room {room_name}: no start time on record")
@@ -550,18 +597,19 @@ class LiveKitService:
                 logger.info(f"Stopping room recording for room: {room_name}")
                 await self.stop_room_recording(call_record.recording_egress_id)
 
-            call_record.ended_at = datetime.now(timezone.utc)
+            call_record.ended_at = datetime.now(UTC)
             duration_start = call_record.answered_at or call_record.started_at
             call_record.call_duration_minutes = (
                 call_record.ended_at - duration_start
             ).total_seconds() / 60
+            final_status = call_record.call_status if call_record.call_status == "failed" else "completed"
             call_record.billable_duration_minutes = calculate_billable_duration_minutes(
-                call_status="completed",
+                call_status=final_status,
                 call_duration_minutes=call_record.call_duration_minutes,
             )
-            call_record.call_status = "completed"
+            call_record.call_status = final_status
             await call_record.save()
-            logger.info(f"Call record ended for room: {room_name}")
+            logger.info(f"Call record ended for room: {room_name} | status={final_status}")
             await self.send_end_call_webhook(room_name=room_name, assistant_id=assistant_id)
 
 
@@ -602,13 +650,13 @@ class LiveKitService:
         except Exception as e:
             logger.error(f"Failed to delete room {room_name}: {e}", exc_info=True)
 
-    async def start_room_recording(self, room_name: str, assistant_id: Optional[str] = None) -> Optional[dict]:
+    async def start_room_recording(self, room_name: str, assistant_id: str | None = None) -> dict | None:
         """Start recording the room using LiveKit Egress"""
         try:
             async with self.get_livekit_api() as lkapi:
                 # Store the recording in Year/Month/Day/Timestamp.ogg format
-                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                folder_path = datetime.now(timezone.utc).strftime('%Y/%m/%d')
+                timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+                folder_path = datetime.now(UTC).strftime('%Y/%m/%d')
                 path_key = assistant_id if assistant_id else "passthrough"
                 filepath = f"lvk_call_recordings/{folder_path}/{path_key}/{timestamp}.ogg"
 
@@ -671,7 +719,7 @@ class LiveKitService:
 
 
     # Create token for web call — user joins room, agent is auto-dispatched via RoomConfiguration
-    async def create_token(self, room_name: str, metadata: Optional[dict] = None) -> Optional[str]:
+    async def create_token(self, room_name: str, metadata: dict | None = None) -> str | None:
         """Generate a JWT token that allows a user to join and publish in a room."""
         try:
             at = AccessToken(self.api_key, self.api_secret)

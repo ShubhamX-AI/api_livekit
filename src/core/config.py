@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -109,17 +110,13 @@ class Settings:
         # wait happens inside this semaphore.
         self.MAX_CONCURRENT_INVITE_SETUPS = int(os.getenv("MAX_CONCURRENT_INVITE_SETUPS", "24"))
 
-        # Meeting connector. One image per platform, so adding Zoom later is a new entry here
-        # and a new value in src/core/call_types.py MEETING_PLATFORMS — no code change.
-        self.MEETING_CONNECTOR_IMAGES = {
-            "google_meet": os.getenv("MEETING_CONNECTOR_IMAGE_GOOGLE_MEET", "meeting-connector-google-meet:latest"),
-        }
-        # Shared secret the connector authenticates its status callbacks with. The status route
-        # is not part of the public API and must never accept a normal user API key.
-        self.MEETING_CONNECTOR_STATUS_TOKEN = os.getenv("MEETING_CONNECTOR_STATUS_TOKEN", "")
-        # How the connector container reaches this API to post status. Defaults to BACKEND_URL,
-        # which is correct when both run with host networking.
-        self.MEETING_CONNECTOR_STATUS_URL = os.getenv("MEETING_CONNECTOR_STATUS_URL", "")
+        # LiveKit dispatch name for the worker that runs the browser-based meeting connector.
+        self.MEETING_CONNECTOR_AGENT_NAME = os.getenv(
+            "MEETING_CONNECTOR_AGENT_NAME", "meet-connector"
+        )
+        self.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS = float(
+            os.getenv("MEETING_CONNECTOR_READY_TIMEOUT_SECONDS", "60")
+        )
 
         # End-of-call webhook. Read timeout is generous on purpose: the receiver often
         # writes the payload to its own database before answering, and a slow answer is

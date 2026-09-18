@@ -138,6 +138,24 @@ class TestLiveKitLifecycle(unittest.IsolatedAsyncioTestCase):
             svc.stop_room_recording.assert_not_awaited()
             svc.send_end_call_webhook.assert_not_awaited()
 
+    async def test_end_call_finalizes_failed_call_and_sends_webhook_once(self):
+        svc = LiveKitService()
+        record = FakeCallRecord(status="failed")
+
+        with patch("src.services.livekit.livekit_svc.CallRecord") as call_record_model:
+            call_record_model.room_name = RoomNameField()
+            call_record_model.find_one = AsyncMock(return_value=record)
+            svc.stop_room_recording = AsyncMock(return_value=True)
+            svc.send_end_call_webhook = AsyncMock(return_value=True)
+
+            await svc.end_call(room_name="room-1", assistant_id="assistant-1")
+            await svc.end_call(room_name="room-1", assistant_id="assistant-1")
+
+            self.assertEqual(record.call_status, "failed")
+            self.assertIsNotNone(record.ended_at)
+            self.assertEqual(record.billable_duration_minutes, 0)
+            svc.send_end_call_webhook.assert_awaited_once()
+
     async def test_update_call_status_sets_zero_billable_for_failed_call(self):
         svc = LiveKitService()
         record = FakeCallRecord(status="initiated")

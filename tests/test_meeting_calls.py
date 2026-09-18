@@ -7,7 +7,6 @@ malformed meeting URL is rejected before anything is reserved or launched.
 """
 
 import unittest
-from unittest import mock
 
 from src.core.call_types import (
     CALL_TYPE_INBOUND,
@@ -57,13 +56,6 @@ class TestMeetingUrlValidation(unittest.TestCase):
     def test_unknown_platform_is_rejected_rather_than_allowed(self):
         with self.assertRaises(platforms.UnsupportedMeetingPlatform):
             platforms.validate_meeting_url("zoom", "https://zoom.us/j/1234567890")
-
-
-class TestConnectorImageLookup(unittest.TestCase):
-    def test_platform_without_a_configured_image_is_rejected(self):
-        with mock.patch.object(platforms.settings, "MEETING_CONNECTOR_IMAGES", {}):
-            with self.assertRaises(platforms.UnsupportedMeetingPlatform):
-                platforms.connector_image(MEETING_PLATFORM_GOOGLE_MEET)
 
 
 if __name__ == "__main__":

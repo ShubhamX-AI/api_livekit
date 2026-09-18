@@ -288,7 +288,8 @@ establish is *which* one.
 |---|---|---|
 | Inbound caller hears a busy tone (SIP `486 Busy Here`) | telephony, or the global ceiling | `MAX_CONCURRENT_JOBS`, `MAX_CONCURRENT_SESSIONS` |
 | `POST /get_token` returns `503` | web, or the global ceiling | `MAX_CONCURRENT_WEB_CALLS`, `MAX_CONCURRENT_SESSIONS` |
-| `POST /meeting_call/join` returns `503` | meeting, or the global ceiling — or `MEETING_CONNECTOR_STATUS_TOKEN` is unset | `MAX_CONCURRENT_MEETING_CALLS`, `MAX_CONCURRENT_SESSIONS` |
+| `POST /meeting_call/join` returns `503` | meeting or the global ceiling | `MAX_CONCURRENT_MEETING_CALLS`, `MAX_CONCURRENT_SESSIONS` |
+| Meeting call fails after the readiness deadline | no connector worker is registered under the configured dispatch name, or the browser never publishes `ready` | `MEETING_CONNECTOR_AGENT_NAME`, `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` |
 | Inbound caller hears a busy tone with capacity to spare | RTP port pool exhausted | `SIP_BRIDGE_PORT_RANGE_START` / `_END` |
 
 The dispatcher logs which gate refused, so grep for `Slot refused`:

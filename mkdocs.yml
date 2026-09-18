@@ -90,6 +90,7 @@ nav:
     - Container Dependencies: architecture/dependencies.md
     - Cascade Pipeline (STT/LLM/TTS): architecture/cascade-pipeline.md
     - Call Flows & Queueing: architecture/call-flows.md
+    - Google Meet Calls: architecture/meeting-calls.md
     - Audio Pipeline: architecture/audio-pipeline.md
     - Inbound Routing: architecture/inbound.md
 

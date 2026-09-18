@@ -30,19 +30,19 @@ later is a new value of `platform` and nothing else.
 | `data.room_name` | string | Unique LiveKit room created for this meeting call. |
 | `data.platform` | string | The meeting platform that was joined. |
 | `data.meeting_url` | string | The meeting the connector was sent to. |
-| `data.connector_container_id` | string | Id of the container running the connector, for operational debugging. |
 | `data.agent_dispatch` | object | The LiveKit agent dispatch that was created. |
+| `data.connector_dispatch` | object | The LiveKit dispatch created for the meeting connector worker. |
 
 ### HTTP Status Codes
 
 | Code | Description |
 | :--- | :--- |
-| 200 | Success - The connector was launched and the assistant dispatched. |
+| 200 | Success - The assistant and connector worker were dispatched. |
 | 400 | Bad Request - `meeting_url` is not a valid link for `platform`. |
 | 422 | Validation Error - Invalid request body. |
 | 401 | Unauthorized - Invalid or missing Bearer token. |
 | 404 | Not Found - Assistant not found for the authenticated user. |
-| 503 | Unavailable - `MAX_CONCURRENT_MEETING_CALLS` reached, or meeting calls are not configured on this deployment. |
+| 503 | Unavailable - `MAX_CONCURRENT_MEETING_CALLS` reached or the global session ceiling is reached. |
 | 500 | Server Error - Internal error while starting the meeting call. |
 
 ### How it works
@@ -51,14 +51,14 @@ A meeting call is a web call whose participant happens to be a browser sitting i
 LiveKit room, the agent dispatch, the `CallRecord`, the usage record and the end-of-call webhook
 are all the same as a web call. The difference is who joins the room.
 
-1. The API creates a LiveKit room and dispatches the assistant into it, exactly as for a web call.
-2. The API launches a **connector** container, telling it the meeting URL and the room name.
-3. The connector opens a browser, joins the meeting, and publishes the meeting's audio into the
-   LiveKit room as a single participant named `google-meet`.
-4. The assistant sets the participant attribute `lk.publish_on_behalf` on itself to the room name.
-   The connector subscribes to whichever participant carries that attribute and plays its audio
-   into the meeting. This is how the connector finds the assistant without knowing its identity,
-   which LiveKit mints inside the job token and nobody can predict beforehand.
+1. The API creates a LiveKit room and dispatches the `api-agent` assistant into it.
+2. The API creates a second explicit dispatch for the configured
+   `MEETING_CONNECTOR_AGENT_NAME` worker, passing the meeting URL, platform, and display name in
+   job metadata.
+3. The connector worker opens a browser, joins the meeting, and publishes the meeting's audio into
+   the LiveKit room as a single participant named `google-meet`.
+4. The assistant sets `lk.publish_on_behalf` to the room name. The connector subscribes to the
+   participant carrying that attribute and plays its audio into the meeting.
 
 ### Everyone in the meeting is heard
 
@@ -76,14 +76,18 @@ mapping from a sentence back to a person.
 
 ### Call records and status
 
-The connector reports its progress to the API, which moves the `CallRecord` along:
+The connector publishes JSON lifecycle events on the `meeting_connector_events` LiveKit data topic.
+The connector also sets `lk.meeting_connector_status=ready` on its LiveKit participant. That
+attribute lets the assistant recover readiness if the data event was published before the
+assistant finished connecting. The assistant worker persists the events and moves the
+`CallRecord` along:
 
 | Connector reports | `call_status` |
 | :--- | :--- |
 | `waiting` | stays `initiated` — someone in the meeting has to admit the bot |
-| `joined` | `answered`, with `answered_at` set |
+| `ready` | `answered`, with `answered_at` set |
 | `failed` | `failed`, with the reason in `call_status_reason`, then the call is ended |
-| `ended` | `completed`, firing the end-of-call webhook and finalising usage |
+| `ended` | the assistant ends the room through the normal finalization path |
 
 `CallRecord.call_type` is `"meeting"` and `call_service` is the platform (`"google_meet"`).
 
@@ -91,10 +95,10 @@ The connector reports its progress to the API, which moves the `CallRecord` alon
 
 Meeting calls have their own concurrency cap, `MAX_CONCURRENT_MEETING_CALLS` (default `4`).
 They are counted separately from telephony and web calls because each one holds a whole browser
-in a container, which is far more expensive than either — and expensive in a resource neither
+worker, which is far more expensive than either — and expensive in a resource neither
 other cap accounts for. Exceeding the cap returns `503`.
 
-The default is **not measured**. Set it from a load test that watches the connector containers.
+The default is **not measured**. Set it from a load test that watches connector worker jobs.
 
 ### Deployment requirements
 
@@ -102,14 +106,9 @@ Meeting calls need three things on the host running the API:
 
 | Setting | Purpose |
 | :--- | :--- |
-| `MEETING_CONNECTOR_IMAGE_GOOGLE_MEET` | Connector image to run. Defaults to `meeting-connector-google-meet:latest`. |
-| `MEETING_CONNECTOR_STATUS_TOKEN` | Shared secret the connector authenticates its status callbacks with. **Meeting calls return 503 until this is set.** |
-| `MEETING_CONNECTOR_STATUS_URL` | Where the connector posts status. Defaults to `<BACKEND_URL>/meeting_call/status`. |
+| `MEETING_CONNECTOR_AGENT_NAME` | LiveKit dispatch name registered by the connector worker. Defaults to `meet-connector`. |
+| `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` | Maximum time the assistant waits for the connector's `ready` event before failing the call. Defaults to `60`. |
 
-The API launches connectors with `docker run`, so it needs access to a Docker daemon.
-
-### Status callback (internal)
-
-`POST /meeting_call/status` is called by the connector, not by customers. It authenticates with
-the `X-Connector-Token` header carrying `MEETING_CONNECTOR_STATUS_TOKEN`, and rejects user API
-keys. It is documented here only so that operators can recognise it in logs.
+The connector worker must be deployed and registered with LiveKit under the configured dispatch
+name. The API does not need Docker access. The connector repository still needs the worker
+conversion that consumes this metadata and publishes the lifecycle events.
