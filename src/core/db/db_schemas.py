@@ -249,9 +249,15 @@ class CallRecord(Document):
     billable_duration_minutes: Optional[int] = None
     # Analytics fields
     created_by_email: Optional[EmailStr] = None
-    call_type: Optional[Literal["outbound", "inbound", "web"]] = None
-    call_service: Optional[Literal["exotel", "twilio", "web"]] = None
+    call_type: Optional[Literal["outbound", "inbound", "web", "meeting"]] = None
+    call_service: Optional[Literal["exotel", "twilio", "web", "google_meet"]] = None
     platform_number: Optional[str] = None  # platform's own Exotel/Twilio number used
+    # Meeting calls only: the URL and room-level lifecycle of the connector worker.
+    meeting_url: Optional[str] = None
+    meeting_connector_status: Optional[Literal["pending", "waiting", "ready", "failed", "ended"]] = None
+    meeting_connector_status_reason: Optional[str] = None
+    meeting_connector_ready_at: Optional[datetime] = None
+    meeting_connector_ended_at: Optional[datetime] = None
 
     class Settings:
         name = "call_records"

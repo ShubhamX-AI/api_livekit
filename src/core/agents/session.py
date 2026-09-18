@@ -1,48 +1,44 @@
-from dotenv import load_dotenv
+import asyncio
+import json
+import os
+import time
 from collections import deque
+from datetime import UTC, datetime
+
+from dotenv import load_dotenv
 from livekit import rtc
 from livekit.agents import (
+    NOT_GIVEN,
     AgentSession,
-    JobContext,
-    inference,
-    room_io,
-    BackgroundAudioPlayer,
     AudioConfig,
-    function_tool,
+    BackgroundAudioPlayer,
+    JobContext,
     RunContext,
     TurnHandlingOptions,
-    NOT_GIVEN,
+    function_tool,
+    inference,
+    room_io,
 )
-from openai.types.beta.realtime.session import TurnDetection
+from livekit.agents.utils.audio import audio_frames_from_file
 from livekit.plugins import sarvam as sarvam_plugin
-from livekit.plugins.openai import realtime
 from livekit.plugins.google import realtime as google_realtime
+from livekit.plugins.openai import realtime
+from openai.types.beta.realtime.session import TurnDetection
 from openai.types.realtime import AudioTranscription
 from openai.types.realtime.realtime_truncation_retention_ratio import (
     RealtimeTruncationRetentionRatio,
     TokenLimits,
 )
-import os
-import asyncio
-import json
-import time
-from datetime import datetime, timezone
 
-from src.core.config import settings
-from src.core.logger import logger, setup_logging, set_room_context
 from src.core.agents.audio_denoise import SpeechGate
 from src.core.agents.dynamic_assistant import DynamicAssistant
-from src.core.agents.inbound_context import log_missing_strategy, resolve_inbound_context
-from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
-from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL, create_llm
-from src.core.model_support.capabilities import (
-    DEFAULT_GEMINI_LIVE_MODEL,
-    DEFAULT_GEMINI_VOICE,
-    DEFAULT_REALTIME_MODEL,
-    GEMINI_NO_MIDSESSION_CONTENT_MODELS,
-    realtime_supports_truncation,
+from src.core.agents.inbound_context import (
+    log_missing_strategy,
+    resolve_inbound_context,
 )
-from src.core.agents.tts import create_tts, maintain_sarvam_connection
+from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL
+from src.core.agents.llm import create_llm
+from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 from src.core.agents.stt import (
     NATIVE_TRANSCRIBE_MODEL,
     CascadeSttUsage,
@@ -50,24 +46,54 @@ from src.core.agents.stt import (
     MeteredRealtimeModel,
     NativeSttUsage,
     SttUsage,
-    create_stt,
     build_native_stt_prompt,
+    create_stt,
     noise_reduction_for,
     resolve_stt,
     run_sarvam_parallel_stt,
 )
-from src.core.agents.usage import summarize_usage, upsert_usage_record
-from src.core.pricing import price_model_usage
-from src.core.agents.utils import render_prompt
-from src.core.agents.voice_features import SilenceWatchdogController, FillerController, HoldController, InputGuardController
 from src.core.agents.tool_builder import build_tools_from_db
+from src.core.agents.tts import create_tts, maintain_sarvam_connection
+from src.core.agents.usage import summarize_usage, upsert_usage_record
+from src.core.agents.utils import render_prompt
+from src.core.agents.voice_features import (
+    FillerController,
+    HoldController,
+    InputGuardController,
+    SilenceWatchdogController,
+)
+from src.core.call_types import (
+    CALL_TYPE_MEETING,
+    CALL_TYPE_WEB,
+    MEETING_CONNECTOR_EVENT_ENDED,
+    MEETING_CONNECTOR_EVENT_FAILED,
+    MEETING_CONNECTOR_EVENT_READY,
+    MEETING_CONNECTOR_EVENTS,
+    MEETING_CONNECTOR_EVENTS_TOPIC,
+    MEETING_CONNECTOR_STATUS_ATTRIBUTE,
+    is_phone_call,
+)
+from src.core.config import settings
 from src.core.db.database import Database
+from src.core.db.db_schemas import (
+    Assistant,
+    AudioAsset,
+    CallRecord,
+    InboundContextStrategy,
+    UsageRecord,
+)
+from src.core.logger import logger, set_room_context, setup_logging
+from src.core.model_support.capabilities import (
+    DEFAULT_GEMINI_LIVE_MODEL,
+    DEFAULT_GEMINI_VOICE,
+    DEFAULT_REALTIME_MODEL,
+    GEMINI_NO_MIDSESSION_CONTENT_MODELS,
+    realtime_supports_truncation,
+)
+from src.core.pricing import price_model_usage
 from src.core.providers.keys import provider_key_or_system
-from src.core.db.db_schemas import Assistant, AudioAsset, InboundContextStrategy, UsageRecord, CallRecord
-from src.services.livekit.livekit_svc import LiveKitService
+from src.services.livekit.livekit_svc import TERMINAL_CALL_STATUSES, LiveKitService
 from src.services.storage import s3_audio
-from livekit.agents.utils.audio import audio_frames_from_file
-
 
 setup_logging()
 load_dotenv(override=True)
@@ -292,7 +318,11 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"Failed to parse job metadata or process placeholders: {e}")
 
     # Text-only web chat: skip STT, TTS, recording. Validated upstream against realtime mode.
-    is_web_call = job_metadata.get("call_type") == "web"
+    is_web_call = job_metadata.get("call_type") == CALL_TYPE_WEB
+    # A meeting call is not a web call: no browser client, no text_only. It gets its own flag
+    # because the connector needs the agent to announce itself before it will play any audio
+    # into the meeting.
+    is_meeting_call = job_metadata.get("call_type") == CALL_TYPE_MEETING
     is_text_only = is_web_call and job_metadata.get("text_only") is True
 
     if job_metadata:
@@ -378,6 +408,8 @@ async def entrypoint(ctx: JobContext):
     livekit_services = LiveKitService()
     gate = CallReadinessGate(is_exotel_outbound)
     recorder = RecordingManager(livekit_services, room_name, assistant_id)
+    meeting_connector_ready = asyncio.Event()
+    meeting_connector_event_lock = asyncio.Lock()
 
     # Bounded queue serializes transcript DB writes off the audio hot path.
     # put_nowait on the event handler never blocks; single consumer drains async.
@@ -446,14 +478,16 @@ async def entrypoint(ctx: JobContext):
             metered["pricing_complete"] = pricing.pricing_complete
             metered["unpriced_model_usage"] = pricing.unpriced_model_usage
             telephony_provider = job_metadata.get("call_service") or job_metadata.get("service")
-            if job_metadata.get("call_type") == "web":
+            # Neither a web call nor a meeting call has a telephony provider to attribute
+            # carrier cost to, so the field would otherwise carry a meaningless value.
+            if job_metadata.get("call_type") in (CALL_TYPE_WEB, CALL_TYPE_MEETING):
                 telephony_provider = None
 
             # Compute call duration from CallRecord
             call_duration = 0.0
             call_record = await CallRecord.find_one(CallRecord.room_name == room_name)
             if call_record:
-                ended_at = datetime.now(timezone.utc)
+                ended_at = datetime.now(UTC)
                 duration_start = call_record.answered_at or call_record.started_at
                 call_duration = (ended_at - duration_start).total_seconds() / 60
 
@@ -597,7 +631,7 @@ async def entrypoint(ctx: JobContext):
                         await asyncio.wait_for(
                             asyncio.shield(_commit), timeout=END_OF_CALL_GRACE_S
                         )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("Final user turn did not finalize before the grace window")
                 except Exception as e:
                     logger.warning(f"Could not commit final user turn: {e}")
@@ -610,7 +644,7 @@ async def entrypoint(ctx: JobContext):
         # Drain transcript queue before ending (max 3s).
         try:
             await asyncio.wait_for(_transcript_queue.join(), timeout=3.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Timed out waiting for pending transcripts")
         transcript_worker.cancel()
         await asyncio.gather(transcript_worker, return_exceptions=True)
@@ -636,6 +670,24 @@ async def entrypoint(ctx: JobContext):
             await livekit_services.delete_room(room_name=ctx.room.name)
         except Exception as e:
             logger.error(f"delete_room failed | room={ctx.room.name}: {e}")
+
+    async def _wait_for_meeting_connector() -> bool:
+        try:
+            await asyncio.wait_for(
+                meeting_connector_ready.wait(),
+                timeout=settings.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning("Meeting connector did not become ready before the deadline")
+            await livekit_services.update_call_status(
+                room_name=room_name,
+                call_status="failed",
+                call_status_reason="Meeting connector readiness timed out",
+            )
+            return False
+
+        record = await CallRecord.find_one(CallRecord.room_name == room_name)
+        return bool(record and record.meeting_connector_status == MEETING_CONNECTOR_EVENT_READY)
 
     # Custom end_call tool — LLM speaks goodbye first, tool waits for playout before stopping recording
     if getattr(assistant, "assistant_end_call_enabled", False):
@@ -680,7 +732,7 @@ async def entrypoint(ctx: JobContext):
                     try:
                         handle = await asyncio.wait_for(fut, timeout=5.0)
                         await handle.wait_for_playout()
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.warning("end_call goodbye reply timed out; ending anyway")
                     finally:
                         session.off("speech_created", _on_created)
@@ -735,7 +787,9 @@ async def entrypoint(ctx: JobContext):
     # The model stays mini deliberately. What was actually missing was the prompt and
     # far_field, not model size, and mini takes both — so the fix costs nothing per minute.
     # Swap to "gpt-4o-transcribe" if Indic accuracy is ever measured to justify the price.
-    _is_phone_call = job_metadata.get("call_type") != "web"
+    # Positive test, not "anything that is not web". Meeting audio is wideband, so the
+    # narrowband noise reduction and the phone-tuned STT prompt would both be wrong for it.
+    _is_phone_call = is_phone_call(job_metadata.get("call_type"))
     _noise_reduction = noise_reduction_for(_is_phone_call)
     _stt_prompt = build_native_stt_prompt(
         interaction_config.preferred_languages, is_phone_call=_is_phone_call
@@ -1023,8 +1077,15 @@ async def entrypoint(ctx: JobContext):
     # of the realtime model, so noise never reaches the VAD that interrupts the agent.
     # AGC is off deliberately — the SDK default is True, and WebRTC AGC re-amplified the
     # agent's own echo into false barge-ins (docs/architecture/audio-pipeline.md).
+    meeting_participant_kinds = [
+        rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+        rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+        rtc.ParticipantKind.PARTICIPANT_KIND_CONNECTOR,
+        rtc.ParticipantKind.PARTICIPANT_KIND_AGENT,
+    ]
     room_options = room_io.RoomOptions(
         text_input=is_web_call,
+        participant_kinds=meeting_participant_kinds if is_meeting_call else NOT_GIVEN,
         audio_input=(
             # sample_rate is left at the SDK default: the gate resamples only its own VAD
             # copy, so the model still receives full-rate audio.
@@ -1044,7 +1105,7 @@ async def entrypoint(ctx: JobContext):
             return
         # Stamped here, not at DB-write time: the queue and the Mongo round-trip both add
         # latency, and the Sarvam tap passes the time the caller actually started talking.
-        timestamp = timestamp or datetime.now(timezone.utc)
+        timestamp = timestamp or datetime.now(UTC)
         try:
             _transcript_queue.put_nowait(
                 lambda: livekit_services.add_transcript(
@@ -1097,7 +1158,7 @@ async def entrypoint(ctx: JobContext):
             if _user_coalescer is not None:
                 _user_coalescer.add(text)
             else:
-                _on_user_utterance(text, datetime.now(timezone.utc))
+                _on_user_utterance(text, datetime.now(UTC))
         else:
             _enqueue_transcript(role, text)
 
@@ -1131,7 +1192,7 @@ async def entrypoint(ctx: JobContext):
                                 room_name=ctx.room.name,
                                 call_status="answered",
                                 call_status_reason=None,
-                                answered_at=datetime.now(timezone.utc),
+                                answered_at=datetime.now(UTC),
                             )
                         )
                 elif msg.get("event") == "call_hold":
@@ -1140,11 +1201,80 @@ async def entrypoint(ctx: JobContext):
                     hold_controller.signal_hold(False)
             except (json.JSONDecodeError, TypeError):
                 pass
+        elif data.topic == MEETING_CONNECTOR_EVENTS_TOPIC and is_meeting_call:
+            try:
+                message = json.loads(data.data.decode())
+                event = message.get("event")
+                detail = message.get("detail")
+                if event not in MEETING_CONNECTOR_EVENTS:
+                    logger.warning(f"Ignoring unknown meeting connector event: {event!r}")
+                    return
+
+                asyncio.create_task(
+                    _handle_meeting_connector_event(event, detail)
+                )
+            except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+                logger.warning("Ignoring malformed meeting connector event")
+
+    async def _handle_meeting_connector_event(event: str, detail: str | None) -> None:
+        nonlocal call_end_triggered
+        try:
+            async with meeting_connector_event_lock:
+                record = await livekit_services.record_meeting_connector_event(
+                    room_name=room_name,
+                    status=event,
+                    detail=detail,
+                )
+                if record is None:
+                    return
+
+                if event == MEETING_CONNECTOR_EVENT_READY:
+                    meeting_connector_ready.set()
+                    if record.call_status == "initiated":
+                        await livekit_services.update_call_status(
+                            room_name=room_name,
+                            call_status="answered",
+                            answered_at=datetime.now(UTC),
+                        )
+                    return
+
+                if event in {MEETING_CONNECTOR_EVENT_FAILED, MEETING_CONNECTOR_EVENT_ENDED}:
+                    if (
+                        event == MEETING_CONNECTOR_EVENT_FAILED
+                        and record.call_status not in TERMINAL_CALL_STATUSES
+                    ):
+                        await livekit_services.update_call_status(
+                            room_name=room_name,
+                            call_status="failed",
+                            call_status_reason=detail or "Meeting connector failed",
+                        )
+                    if not call_end_triggered:
+                        call_end_triggered = True
+                        asyncio.create_task(_flush_and_end_call(delay=0.0))
+                    meeting_connector_ready.set()
+        except Exception as e:
+            logger.error(
+                f"Failed to process meeting connector event | room={room_name} | event={event}: {e}",
+                exc_info=True,
+            )
 
     # --- Start Session ---
     logger.info("Starting AgentSession...")
     await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
     logger.info("AgentSession started successfully")
+
+    # Meeting calls only: tell the connector which participant to play into the meeting.
+    #
+    # The connector cannot select us by identity — LiveKit mints the agent's identity inside the
+    # job token, so nobody knows it before we join. It matches on this attribute instead, whose
+    # value is the room name: a value both sides already hold and neither has to discover.
+    #
+    # Set immediately after the session starts and before anything can be spoken. The connector's
+    # browser adapter may already be subscribed and waiting, and audio published before the
+    # attribute is set is audio nobody in the meeting hears.
+    if is_meeting_call:
+        await ctx.room.local_participant.set_attributes({"lk.publish_on_behalf": room_name})
+        logger.info(f"Announced agent to meeting connector via lk.publish_on_behalf={room_name}")
     # Tell the dispatcher's silent-agent watchdog we actually made it into the room —
     # SIP can mark a call "answered" with no agent behind it (crash, provider outage,
     # worker overload); this timestamp is the thing that tells the difference.
@@ -1208,7 +1338,30 @@ async def entrypoint(ctx: JobContext):
 
     # Wait for participant
     logger.info("Waiting for participant...")
-    participant = await ctx.wait_for_participant()
+    try:
+        if is_meeting_call:
+            participant = await asyncio.wait_for(
+                ctx.wait_for_participant(kind=meeting_participant_kinds),
+                timeout=settings.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS,
+            )
+        else:
+            participant = await ctx.wait_for_participant()
+    except TimeoutError:
+        logger.warning("Meeting connector did not join the LiveKit room before the deadline")
+        await livekit_services.update_call_status(
+            room_name=room_name,
+            call_status="failed",
+            call_status_reason="Meeting connector did not join the room",
+        )
+        call_end_triggered = True
+        await _flush_and_end_call()
+        return
+    if (
+        is_meeting_call
+        and participant.attributes.get(MEETING_CONNECTOR_STATUS_ATTRIBUTE)
+        == MEETING_CONNECTOR_EVENT_READY
+    ):
+        await _handle_meeting_connector_event(MEETING_CONNECTOR_EVENT_READY, None)
     primary_participant_identity = participant.identity
 
     # --- Wait for Disconnect ---
@@ -1372,6 +1525,12 @@ async def entrypoint(ctx: JobContext):
                         hangup_event=_hangup_event,
                         warmup_sec=EXOTEL_RTP_WARMUP_SLEEP_SEC,
                     )
+                elif is_meeting_call:
+                    logger.info("Meeting call detected — waiting for connector readiness before speaking")
+                    should_send_instruction = await _wait_for_meeting_connector()
+                    if not should_send_instruction and not call_end_triggered:
+                        call_end_triggered = True
+                        asyncio.create_task(_flush_and_end_call(delay=0.0))
 
                 if should_send_instruction:
                     # The text recorded for the silence watchdog (transcript when prerecorded).
@@ -1441,6 +1600,12 @@ async def entrypoint(ctx: JobContext):
                 if _gate_muted_for_answer and speech_gate is not None:
                     speech_gate.muted = False
     else:
+        if is_meeting_call:
+            connector_ready = await _wait_for_meeting_connector()
+            if not connector_ready and not call_end_triggered:
+                call_end_triggered = True
+                await _flush_and_end_call(delay=0.0)
+                return
         logger.info(
             "assistant_speaks_first=False — skipping start instruction; "
             "assistant is silent and waiting for the user to speak first"
