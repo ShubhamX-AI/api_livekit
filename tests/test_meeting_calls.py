@@ -16,6 +16,7 @@ from src.core.call_types import (
     MEETING_PLATFORM_GOOGLE_MEET,
     is_phone_call,
 )
+from src.core.config import settings
 from src.services.meeting_connector import platforms
 
 
@@ -56,6 +57,34 @@ class TestMeetingUrlValidation(unittest.TestCase):
     def test_unknown_platform_is_rejected_rather_than_allowed(self):
         with self.assertRaises(platforms.UnsupportedMeetingPlatform):
             platforms.validate_meeting_url("zoom", "https://zoom.us/j/1234567890")
+
+
+class TestConnectorTimeoutContract(unittest.TestCase):
+    """Pin the cross-repository deadline contract.
+
+    The connector service gives a human 300 seconds to admit the bot from the Google Meet
+    waiting room (its WAITING_ROOM_TIMEOUT_SECONDS). If this side's readiness deadline is
+    shorter, it expires first, marks the call failed and deletes the LiveKit room out from
+    under a connector that is still working — which is exactly the bug these two settings
+    were split to fix. Nothing else in either repository records that coupling, so it is
+    recorded here.
+    """
+
+    CONNECTOR_WAITING_ROOM_TIMEOUT_SECONDS = 300
+
+    def test_readiness_deadline_outlasts_the_connector_waiting_room(self):
+        self.assertGreaterEqual(
+            settings.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS,
+            self.CONNECTOR_WAITING_ROOM_TIMEOUT_SECONDS + 60,
+        )
+
+    def test_join_deadline_is_the_shorter_of_the_two(self):
+        # A connector that never joins the room at all is a dispatch or capacity failure,
+        # not a slow human, so it must still fail fast.
+        self.assertLess(
+            settings.MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS,
+            settings.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS,
+        )
 
 
 if __name__ == "__main__":

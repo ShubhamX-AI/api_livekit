@@ -175,9 +175,11 @@ deletes the room. The connector publishes `waiting`, `ready`, `failed`, and `end
 `meeting_connector_events` data topic and sets `lk.meeting_connector_status=ready` so readiness can
 be recovered if the data packet was sent before the assistant connected.
 
-The assistant waits for connector readiness before greeting. If the connector does not join or
-become ready before `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS`, the call is failed, finalized, and
-the abandoned room is deleted. Full architecture, lifecycle, ownership, capacity, and failure
+The assistant waits for connector readiness before greeting, bounded by two settings:
+`MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS` (default `120`) for the connector participant appearing in
+the room at all, and `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` (default `360`) for it reporting
+`ready`, which includes a human admitting the bot. If either expires, the call is failed,
+finalized, and the abandoned room is deleted. Full architecture, lifecycle, ownership, capacity, and failure
 diagrams are in [`docs/architecture/meeting-calls.md`](docs/architecture/meeting-calls.md).
 
 The core API now expects the connector worker to be registered under `MEETING_CONNECTOR_AGENT_NAME`

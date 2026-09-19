@@ -289,7 +289,7 @@ establish is *which* one.
 | Inbound caller hears a busy tone (SIP `486 Busy Here`) | telephony, or the global ceiling | `MAX_CONCURRENT_JOBS`, `MAX_CONCURRENT_SESSIONS` |
 | `POST /get_token` returns `503` | web, or the global ceiling | `MAX_CONCURRENT_WEB_CALLS`, `MAX_CONCURRENT_SESSIONS` |
 | `POST /meeting_call/join` returns `503` | meeting or the global ceiling | `MAX_CONCURRENT_MEETING_CALLS`, `MAX_CONCURRENT_SESSIONS` |
-| Meeting call fails after the readiness deadline | no connector worker is registered under the configured dispatch name, or the browser never publishes `ready` | `MEETING_CONNECTOR_AGENT_NAME`, `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` |
+| Meeting call fails after the readiness deadline | no connector worker is registered under the configured dispatch name, or the browser never publishes `ready` | `MEETING_CONNECTOR_AGENT_NAME`, `MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS`, `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` |
 | Inbound caller hears a busy tone with capacity to spare | RTP port pool exhausted | `SIP_BRIDGE_PORT_RANGE_START` / `_END` |
 
 The dispatcher logs which gate refused, so grep for `Slot refused`:
@@ -309,6 +309,27 @@ Rejected inbound calls are answered before the `CallRecord` is written, so **the
 Before raising any cap, measure. `docker stats` on the agent container during a load test gives
 the steady-state memory per session, and that is what the ceiling should be derived from — the
 defaults are deliberately conservative rather than measured.
+
+---
+
+## A meeting call is silent, but tokens are still billed
+
+The bot is in the Google Meet, the realtime model is being charged, and either nobody in the
+meeting can hear the assistant or the assistant never answers what is said to it. Three unrelated
+faults produce that same picture, so the agent log carries one line for each of them. Grep the
+worker log for the room and read them in this order.
+
+| Log line | Means | If it is missing |
+|---|---|---|
+| `Session input mode \| call_type=meeting` | The job knows it is a meeting call, so every meeting-specific branch is live. | The dispatch metadata is not carrying `call_type: "meeting"`. Nothing else will work; fix that first. |
+| `Announced agent to meeting connector via lk.publish_on_behalf=<room>` | The connector's browser can recognise the assistant's audio track. | Same cause as above. |
+| `Meeting input track subscribed \| participant=… \| kind=… \| source=…` | The assistant is receiving the meeting's mixed audio. | Nothing reaches the model, which is why there is no transcript and no reply. Check that the connector published `meet-audio-mixed`. |
+| `Agent audio track subscribed` | The connector's browser subscribed to the assistant's audio, so the meeting can hear it. | The warning `Agent audio track still has no subscriber after 10s` appears instead. Until something subscribes, the SDK blocks every audio frame the assistant produces, so it is silent in the meeting *and* in the recording while still being billed. |
+| `Meeting connector event received \| event=ready` | The `ready` signal arrived and the call can move to `answered`. | The connector may still have published it — check the connector's own `Published connector lifecycle event` line. If the connector logged it and the core did not, the data packet was lost; the `lk.meeting_connector_status` attribute path should have covered it, so look for `Meeting connector status attribute changed` too. |
+
+On the connector side, `Mixed Google Meet audio peak amplitude:` reading a flat `0` while somebody
+is speaking means the browser's audio mix is empty — a different fault from the assistant simply
+hearing silence.
 
 ---
 
