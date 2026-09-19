@@ -107,7 +107,8 @@ Meeting calls need three things on the host running the API:
 | Setting | Purpose |
 | :--- | :--- |
 | `MEETING_CONNECTOR_AGENT_NAME` | LiveKit dispatch name registered by the connector worker. Defaults to `meet-connector`. |
-| `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` | Maximum time the assistant waits for the connector's `ready` event before failing the call. Defaults to `60`. |
+| `MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS` | Maximum time the connector participant may take to appear in the LiveKit room before the call is failed. A miss here is a dispatch or worker-capacity problem, not a slow human, so it fails fast. Defaults to `120`. |
+| `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` | Maximum time the assistant waits for the connector's `ready` event before failing the call. This window covers a human admitting the bot from the Google Meet waiting room, so it must stay above the connector service's own waiting-room budget (300 seconds) — otherwise this deadline expires first and deletes the room out from under a connector that is still working. Defaults to `360`. |
 
 The connector worker must be deployed and registered with LiveKit under the configured dispatch
 name. The API does not need Docker access. The connector repository still needs the worker

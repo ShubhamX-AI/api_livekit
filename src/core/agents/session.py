@@ -1210,6 +1210,11 @@ async def entrypoint(ctx: JobContext):
                     logger.warning(f"Ignoring unknown meeting connector event: {event!r}")
                     return
 
+                # Logged on arrival so that "the connector published ready" and "the core
+                # received ready" stop being the same claim when reading two logs together.
+                logger.info(
+                    f"Meeting connector event received | event={event} | detail={detail}"
+                )
                 asyncio.create_task(
                     _handle_meeting_connector_event(event, detail)
                 )
@@ -1258,23 +1263,102 @@ async def entrypoint(ctx: JobContext):
                 exc_info=True,
             )
 
-    # --- Start Session ---
-    logger.info("Starting AgentSession...")
-    await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
-    logger.info("AgentSession started successfully")
+    # Both handlers below are registered only for meeting calls, so no other call type
+    # gains a listener on these room events.
+    if is_meeting_call:
+        # Second, independent path for the same readiness signal. The connector sets
+        # lk.meeting_connector_status on its own participant at the moment it publishes the
+        # `ready` data packet, so watching the attribute costs nothing and makes readiness
+        # survive a dropped packet. _handle_meeting_connector_event is idempotent — it goes
+        # through record_meeting_connector_event under meeting_connector_event_lock — so the
+        # two paths arriving together is harmless.
+        @ctx.room.on("participant_attributes_changed")
+        def on_participant_attributes_changed(changed_attributes, participant):
+            status = (changed_attributes or {}).get(MEETING_CONNECTOR_STATUS_ATTRIBUTE)
+            if status not in MEETING_CONNECTOR_EVENTS:
+                return
+            logger.info(
+                f"Meeting connector status attribute changed | "
+                f"participant={participant.identity} | status={status}"
+            )
+            asyncio.create_task(_handle_meeting_connector_event(status, None))
 
+        # Registered before the room connects: RoomIO subscribes to the connector's track
+        # from its own init task the moment session.start() runs, so a handler added
+        # afterwards can miss the only subscription the call ever makes.
+        @ctx.room.on("track_subscribed")
+        def on_meeting_track_subscribed(track, publication, participant):
+            logger.info(
+                f"Meeting input track subscribed | participant={participant.identity} | "
+                f"kind={participant.kind} | source={publication.source} | "
+                f"name={publication.name}"
+            )
+
+    # --- Start Session ---
     # Meeting calls only: tell the connector which participant to play into the meeting.
     #
     # The connector cannot select us by identity — LiveKit mints the agent's identity inside the
     # job token, so nobody knows it before we join. It matches on this attribute instead, whose
     # value is the room name: a value both sides already hold and neither has to discover.
     #
-    # Set immediately after the session starts and before anything can be spoken. The connector's
-    # browser adapter may already be subscribed and waiting, and audio published before the
-    # attribute is set is audio nobody in the meeting hears.
+    # This must happen *before* session.start(), not after. session.start() connects the room and
+    # RoomIO then publishes the agent's microphone track from its own init task, so a track set up
+    # after it would exist in the room before the attribute that identifies it does. The
+    # connector's browser adapter decides once, when the track is subscribed, and has no
+    # attributes-changed retry — a browser that subscribes inside that window rejects the track
+    # and the assistant stays inaudible in the meeting for the rest of the call.
+    #
+    # ctx.connect() is idempotent, and every other call type reaches the same connected state a
+    # moment later inside session.start(), so hoisting it changes nothing for them.
     if is_meeting_call:
+        await ctx.connect()
         await ctx.room.local_participant.set_attributes({"lk.publish_on_behalf": room_name})
         logger.info(f"Announced agent to meeting connector via lk.publish_on_behalf={room_name}")
+
+    logger.info("Starting AgentSession...")
+    await session.start(agent=agent_instance, room=ctx.room, room_options=room_options)
+    logger.info("AgentSession started successfully")
+
+    if is_meeting_call:
+        # Meeting-call instrumentation. Silence inside a Google Meet has three unrelated
+        # causes — RoomIO linking no participant, the agent's own track never being
+        # subscribed, and the connector's lifecycle events never arriving — and none of
+        # them used to leave a trace in this log. These lines are what tell them apart
+        # afterwards, so they are permanent rather than a debugging patch.
+        async def _watch_agent_track_subscription() -> None:
+            # RoomIO publishes the agent's microphone track and then blocks every audio
+            # frame on somebody subscribing to it. With no subscriber the assistant is
+            # silent everywhere — in the meeting and in the recording — while the realtime
+            # model is billed exactly as if it were talking.
+            deadline = time.monotonic() + 10.0
+            subscribed = None
+            while time.monotonic() < deadline:
+                subscribed = getattr(session.output.audio, "subscribed", None)
+                if subscribed is not None:
+                    break
+                await asyncio.sleep(0.5)
+
+            if subscribed is None:
+                logger.warning(
+                    "Agent audio output is not attached after 10s — nothing the assistant "
+                    "says can reach the meeting"
+                )
+                return
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(subscribed),
+                    timeout=max(deadline - time.monotonic(), 1.0),
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Agent audio track still has no subscriber after 10s — the connector's "
+                    "browser has not subscribed to it, so the meeting cannot hear the assistant"
+                )
+                return
+            logger.info("Agent audio track subscribed — assistant audio can reach the meeting")
+
+        asyncio.create_task(_watch_agent_track_subscription())
     # Tell the dispatcher's silent-agent watchdog we actually made it into the room —
     # SIP can mark a call "answered" with no agent behind it (crash, provider outage,
     # worker overload); this timestamp is the thing that tells the difference.
@@ -1340,9 +1424,11 @@ async def entrypoint(ctx: JobContext):
     logger.info("Waiting for participant...")
     try:
         if is_meeting_call:
+            # The join deadline, not the readiness one: this only asks whether the
+            # connector worker managed to join the room, which does not involve a human.
             participant = await asyncio.wait_for(
                 ctx.wait_for_participant(kind=meeting_participant_kinds),
-                timeout=settings.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS,
+                timeout=settings.MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS,
             )
         else:
             participant = await ctx.wait_for_participant()

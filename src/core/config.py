@@ -114,8 +114,26 @@ class Settings:
         self.MEETING_CONNECTOR_AGENT_NAME = os.getenv(
             "MEETING_CONNECTOR_AGENT_NAME", "meet-connector"
         )
+        # Two different questions, so two different deadlines. Both used to share one
+        # 60s setting, which meant a human who took longer than a minute to admit the bot
+        # had the room deleted out from under a connector that was still working.
+        #
+        # How long the connector participant may take to appear in the LiveKit room at
+        # all. A miss here is a dispatch or worker-capacity failure, not a slow human, so
+        # it still fails fast. Observed at ~3s.
+        self.MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS = float(
+            os.getenv("MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS", "120")
+        )
+        # How long the connector may take to report `ready`, which includes a human
+        # admitting the bot from the Google Meet waiting room.
+        #
+        # This default is coupled to the connector service: it must stay above that
+        # repository's WAITING_ROOM_TIMEOUT_SECONDS (300 at the time of writing) so the
+        # connector's own timeout fires first and fails the call with a real reason
+        # instead of this one expiring and deleting the room. Raise the connector's
+        # budget and this has to follow. tests/test_meeting_calls.py pins the contract.
         self.MEETING_CONNECTOR_READY_TIMEOUT_SECONDS = float(
-            os.getenv("MEETING_CONNECTOR_READY_TIMEOUT_SECONDS", "60")
+            os.getenv("MEETING_CONNECTOR_READY_TIMEOUT_SECONDS", "360")
         )
 
         # End-of-call webhook. Read timeout is generous on purpose: the receiver often

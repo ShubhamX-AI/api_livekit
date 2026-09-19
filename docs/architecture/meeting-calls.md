@@ -162,9 +162,23 @@ persists connector state separately from the assistant's `agent_ready_at`:
 | `meeting_connector_ended_at` | The connector entered a terminal state. |
 | `meeting_connector_status_reason` | Optional connector failure or termination detail. |
 
-The assistant waits for connector readiness before sending a configured greeting. If the connector
-does not join or become ready before `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS`, the assistant marks
-the call failed, finalizes it, sends the configured end-call webhook, and deletes the LiveKit room.
+The assistant waits for connector readiness before sending a configured greeting. Two separate
+deadlines bound that wait, because they answer two different questions. The connector participant
+must appear in the LiveKit room within `MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS` (default `120`),
+which asks only whether the connector worker was dispatched and had capacity. It must then report
+`ready` within `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` (default `360`), which includes a human
+admitting the bot from the waiting room. That second default is coupled to the connector service:
+it has to stay above that repository's own 300-second waiting-room budget so the connector's
+`failed` event arrives first and carries a real reason. `tests/test_meeting_calls.py` pins the
+contract.
+
+Readiness reaches the assistant over two independent paths — the `ready` packet on the
+`meeting_connector_events` data topic, and the `lk.meeting_connector_status` attribute the
+connector sets on its own participant at the same moment. The assistant watches both, so a dropped
+data packet does not strand the call. Handling is idempotent, so both arriving is harmless.
+
+If either deadline expires, the assistant marks the call failed, finalizes it, sends the configured
+end-call webhook, and deletes the LiveKit room.
 
 ## Ownership: recording, usage, billing, and teardown
 
