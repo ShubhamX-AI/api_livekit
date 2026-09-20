@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from src.api.routes import meeting_call
 from src.services.livekit import livekit_svc
 from src.services.livekit.livekit_svc import LiveKitService
 
@@ -104,6 +105,68 @@ class TestMeetingConnectorEvents(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(record.meeting_connector_status, "failed")
         record.save.assert_not_awaited()
+
+
+class TestAbandonedSetupReportsFailure(unittest.IsolatedAsyncioTestCase):
+    """A meeting whose setup fails has to tell the caller, like every other call type.
+
+    `end_call` resolves the end-call webhook URL from the assistant, so abandoning a room without
+    an assistant id silently skips the webhook. That is invisible in logs and leaves an API client
+    waiting for a call that will never happen.
+    """
+
+    async def _abandon(self, *, assistant_id):
+        service = SimpleNamespace(
+            update_call_status=AsyncMock(),
+            end_call=AsyncMock(),
+            delete_room=AsyncMock(),
+        )
+        original = meeting_call.livekit_services
+        meeting_call.livekit_services = service
+        try:
+            await meeting_call._abandon_room("room", assistant_id)
+        finally:
+            meeting_call.livekit_services = original
+        return service
+
+    async def test_assistant_id_reaches_end_call(self):
+        service = await self._abandon(assistant_id="assistant-1")
+
+        service.end_call.assert_awaited_once_with("room", "assistant-1")
+        service.delete_room.assert_awaited_once_with("room")
+
+    async def test_room_is_still_cleaned_up_when_marking_failed_raises(self):
+        service = SimpleNamespace(
+            update_call_status=AsyncMock(side_effect=RuntimeError("mongo down")),
+            end_call=AsyncMock(),
+            delete_room=AsyncMock(),
+        )
+        original = meeting_call.livekit_services
+        meeting_call.livekit_services = service
+        try:
+            await meeting_call._abandon_room("room", "assistant-1")
+        finally:
+            meeting_call.livekit_services = original
+
+        service.end_call.assert_awaited_once()
+        service.delete_room.assert_awaited_once()
+
+    async def test_missing_room_name_is_a_no_op(self):
+        service = SimpleNamespace(
+            update_call_status=AsyncMock(),
+            end_call=AsyncMock(),
+            delete_room=AsyncMock(),
+        )
+        original = meeting_call.livekit_services
+        meeting_call.livekit_services = service
+        try:
+            await meeting_call._abandon_room(None, "assistant-1")
+        finally:
+            meeting_call.livekit_services = original
+
+        service.update_call_status.assert_not_awaited()
+        service.end_call.assert_not_awaited()
+        service.delete_room.assert_not_awaited()
 
 
 if __name__ == "__main__":

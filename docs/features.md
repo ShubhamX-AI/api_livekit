@@ -76,6 +76,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 - **Own capacity bucket** — `MAX_CONCURRENT_MEETING_CALLS` (default `4`), separate from telephony and web, because each call holds a whole browser
 - **Same lifecycle as any other call** — `CallRecord` with `call_type="meeting"`, usage record, end-of-call webhook
 - Trade-off: no per-speaker attribution in the transcript. The roster of who is in the meeting is still tracked
+- **Connectors are replaceable** — the meeting side is a separate worker behind a documented contract; see [Build a Meeting Connector](guides/meeting-connector.md)
 
 ---
 

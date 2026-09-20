@@ -63,7 +63,9 @@ A change to models, providers or config knobs is finished only when all of these
   `docs/reference/compatibility.md`, `docs/reference/troubleshooting.md`,
   `docs/architecture/cascade-pipeline.md`, `docs/api/assistant/{create,update,index,list}.md`,
   plus `README.md` / `docs/features.md` when the feature list changes. `grep` for a sibling
-  provider's name to find them all.
+  provider's name to find them all. A change to a contract an *external* worker implements also
+  belongs in `docs/guides/`, and anything under `docs/` must be added to `nav:` in `mkdocs.yml` or
+  the strict build fails.
 - Docs build clean: `uv run mkdocs build --strict`, and diagrams parse:
   `uv run python scripts/check_mermaid.py`. The strict build cannot catch a broken Mermaid
   diagram — they render in the browser, so a bad one deploys clean and then shows an error box.

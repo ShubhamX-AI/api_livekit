@@ -331,6 +331,30 @@ On the connector side, `Mixed Google Meet audio peak amplitude:` reading a flat 
 is speaking means the browser's audio mix is empty — a different fault from the assistant simply
 hearing silence.
 
+### The meeting hears ambience but never the assistant
+
+The connector is carrying the assistant's *background audio* track and dropping its *speech* track.
+The assistant publishes the two separately, and a consumer holding one audio track per kind keeps
+whichever arrived last. Background audio starts after the greeting, so it wins.
+
+The giveaway is on the connector side: its output level is non-zero *between* the assistant's turns
+and zero *during* them. The recording is the control — it contains the assistant's speech normally,
+because the room recording captures every published track regardless of what the connector routes.
+
+The connector must sum every track it receives from the assistant into one output. See
+[Build a Meeting Connector](../guides/meeting-connector.md#4-subscribe-to-the-assistant-and-mix-what-you-get).
+
+### Nothing at all from the assistant, in the meeting or the recording
+
+If `Agent audio track subscribed` never appears even though the connector's own log shows it
+subscribing, the connector's browser is joining LiveKit as a **hidden** participant. LiveKit does
+not report a hidden participant's subscription to the publisher, so the SDK never starts forwarding
+frames.
+
+This one is distinctive because it takes out four things at once: no assistant audio in the
+meeting, none in the recording, no transcript at all, and usage billed for the full call. The
+connector's browser token must grant `canSubscribe` without `hidden`.
+
 ---
 
 ## An inbound caller hears silence after pickup

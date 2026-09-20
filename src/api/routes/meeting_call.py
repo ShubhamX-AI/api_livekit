@@ -125,11 +125,11 @@ async def join_meeting(request: TriggerMeetingCall, current_user: APIKey = Depen
     except HTTPException:
         # The room only exists once we got past reservation, and an HTTPException raised after
         # that point would otherwise leave a room with an idle agent billing against the cap.
-        await _abandon_room(room_name)
+        await _abandon_room(room_name, request.assistant_id)
         raise
     except Exception as e:
         logger.error(f"Error starting meeting call: {e!s}", exc_info=True)
-        await _abandon_room(room_name)
+        await _abandon_room(room_name, request.assistant_id)
         raise HTTPException(status_code=500, detail="Failed to start meeting call") from e
     finally:
         # Releases the reservation if we bailed out before the CallRecord took over counting it.
@@ -137,11 +137,15 @@ async def join_meeting(request: TriggerMeetingCall, current_user: APIKey = Depen
             release_slot(MEETING)
 
 
-async def _abandon_room(room_name: str | None) -> None:
+async def _abandon_room(room_name: str | None, assistant_id: str) -> None:
     """End a room we created but could not finish setting up.
 
     Without this, a failed connector dispatch leaves a LiveKit room with an agent sitting in it,
     counted against MAX_CONCURRENT_MEETING_CALLS until the worker's own timeout fires.
+
+    `assistant_id` is what lets the end-call webhook fire. `end_call` resolves the webhook URL from
+    the assistant, so calling it without one silently skips the webhook and a caller whose setup
+    failed hears nothing at all — every other call type reports its own failure.
     """
     if not room_name:
         return
@@ -154,7 +158,7 @@ async def _abandon_room(room_name: str | None) -> None:
     except Exception as e:
         logger.warning(f"Failed to mark abandoned meeting call {room_name}: {e}")
     try:
-        await livekit_services.end_call(room_name)
+        await livekit_services.end_call(room_name, assistant_id)
     except Exception as e:
         logger.warning(f"Failed to clean up room {room_name} after a failed meeting call: {e}")
     try:

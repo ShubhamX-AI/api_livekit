@@ -33,3 +33,6 @@ Dive in:
 - [Google Meet Calls](meeting-calls.md) — the single application dispatcher, dual LiveKit jobs, shared-room audio flow, connector lifecycle, recording ownership, capacity, and failure paths.
 - [Audio Pipeline](audio-pipeline.md) — inbound/outbound RTP processing, STT noise-reduction branching, hold/resume detection, per-utterance input guard.
 - [Inbound Routing](inbound.md) — Exotel inbound components, sequence, and failure paths.
+
+Building a component the platform expects but does not ship? See
+[Guides](../guides/index.md) — currently [Build a Meeting Connector](../guides/meeting-connector.md).

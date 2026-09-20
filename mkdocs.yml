@@ -94,6 +94,10 @@ nav:
     - Audio Pipeline: architecture/audio-pipeline.md
     - Inbound Routing: architecture/inbound.md
 
+  - Guides:
+    - Overview: guides/index.md
+    - Build a Meeting Connector: guides/meeting-connector.md
+
   - Reference:
     - Models & Providers: reference/models.md
     - Compatibility Matrix: reference/compatibility.md

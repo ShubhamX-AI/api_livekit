@@ -268,7 +268,7 @@ Two optional improvements to the tile, neither of them urgent:
   This also stops the connector encoding and uploading five frames per second of 1280×720 black
   video for no content.
 
-## Unrelated, observed in the same log
+## Also observed in the same log, and not a fault
 
 The connector worker failed to register twice before 15:08:55, burning sixteen retries each time:
 
@@ -277,6 +277,13 @@ failed to connect to livekit, retrying in 10s ... error: Cannot connect to host 
 RuntimeError: failed to connect to livekit after 16 attempts
 ```
 
-Inside the connector container, `LIVEKIT_URL="ws://localhost:7880"` resolves to the container
-itself. It should name the host or the compose service. This did not cause the audio fault — the
-third start registered and took the job — but it delays every cold start by roughly four minutes.
+An earlier draft of this note called `LIVEKIT_URL="ws://127.0.0.1:7880"` a misconfiguration, on the
+assumption that it resolves to the container itself. **That is wrong and the claim is retracted.**
+Both connector compose services run with `network_mode: host`, so that address is the host's
+LiveKit server, and it has to stay reachable from the container's network namespace because the
+connector proxies the browser's own LiveKit connection through its local WebSocket server. Naming
+the compose service instead would break the browser relay.
+
+The retries were simply LiveKit not yet listening when the worker started. The third start
+registered and took the job. A `depends_on` or a longer initial backoff would remove the noise;
+nothing about the URL needs changing.

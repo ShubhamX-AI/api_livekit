@@ -111,5 +111,9 @@ Meeting calls need three things on the host running the API:
 | `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` | Maximum time the assistant waits for the connector's `ready` event before failing the call. This window covers a human admitting the bot from the Google Meet waiting room, so it must stay above the connector service's own waiting-room budget (300 seconds) — otherwise this deadline expires first and deletes the room out from under a connector that is still working. Defaults to `360`. |
 
 The connector worker must be deployed and registered with LiveKit under the configured dispatch
-name. The API does not need Docker access. The connector repository still needs the worker
-conversion that consumes this metadata and publishes the lifecycle events.
+name. The API does not need Docker access.
+
+To modify that worker, or to build one for a meeting platform other than Google Meet, see
+[Build a Meeting Connector](../../guides/meeting-connector.md) — it documents the job metadata this
+endpoint sends, the audio track and lifecycle events the connector must publish, and the rules it
+has to obey to stay audible.

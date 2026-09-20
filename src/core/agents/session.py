@@ -1444,6 +1444,9 @@ async def entrypoint(ctx: JobContext):
         else:
             participant = await ctx.wait_for_participant()
     except TimeoutError:
+        # Only the meeting branch above passes a timeout, so this is reachable only for a meeting
+        # call and the reason can name the connector directly. Give the other branch a timeout and
+        # this message becomes a lie — change both together.
         logger.warning("Meeting connector did not join the LiveKit room before the deadline")
         await livekit_services.update_call_status(
             room_name=room_name,

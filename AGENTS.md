@@ -65,7 +65,9 @@ A change to models, providers or config knobs is finished only when all of these
   `docs/reference/compatibility.md`, `docs/reference/troubleshooting.md`,
   `docs/architecture/cascade-pipeline.md`, `docs/api/assistant/{create,update,index,list}.md`,
   plus `README.md` / `docs/features.md` when the feature list changes. `grep` for a sibling
-  provider's name to find them all.
+  provider's name to find them all. A change to a contract an *external* worker implements also
+  belongs in `docs/guides/`, and anything under `docs/` must be added to `nav:` in `mkdocs.yml` or
+  the strict build fails.
 - Docs build clean: `uv run mkdocs build --strict`.
 - Lint the files you touched: `uvx ruff check <paths>` — pre-existing violations live outside
   them; don't reflow unrelated files.
@@ -80,6 +82,7 @@ A change to models, providers or config knobs is finished only when all of these
 | Cascade mode specifics + validation rules | `docs/architecture/cascade-pipeline.md` |
 | Which mode × LLM × STT × TTS combinations are legal | `docs/reference/compatibility.md` |
 | What a failure looks like and which command diagnoses it | `docs/reference/troubleshooting.md` |
+| What an external worker must implement to plug into the platform | `docs/guides/` (currently the meeting connector contract) |
 | Which models/knobs/speakers exist at all | `src/core/model_support/` (dependency-free; imported by both images) |
 | Runtime configuration schemas + the per-mode rule table | `src/api/models/api_schemas/` (`config/llm_config.py`) |
 | Guards that need the stored row or a network call | `src/api/validation/assistant_guard.py` |
