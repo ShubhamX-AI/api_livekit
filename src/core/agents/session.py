@@ -1062,7 +1062,14 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Background audio
-    background_audio = build_background_audio(interaction_config)
+    #
+    # Disabled for meeting calls. BackgroundAudioPlayer publishes a second audio track from
+    # the agent's own participant, on top of the microphone track RoomIO publishes for the
+    # assistant's voice. The meeting connector's browser feeds Google Meet from a MediaStream
+    # that holds one audio track per kind, so the later of the two replaces the earlier one.
+    # Background audio starts after session.start(), so it won the slot and the meeting heard
+    # ambience instead of the assistant. Ambience is not worth being inaudible for.
+    background_audio = None if is_meeting_call else build_background_audio(interaction_config)
 
     # Text-only web chats turn off audio I/O on both sides and publish agent replies as
     # transcription text on the lk.chat topic. Regular web calls keep audio plus text input.
@@ -1330,29 +1337,39 @@ async def entrypoint(ctx: JobContext):
             # frame on somebody subscribing to it. With no subscriber the assistant is
             # silent everywhere — in the meeting and in the recording — while the realtime
             # model is billed exactly as if it were talking.
-            deadline = time.monotonic() + 10.0
+            #
+            # session.output.audio is not the track publisher. With transcription sync on
+            # (text_output=True) RoomIO wraps the publisher in a _SyncedAudioOutput, which
+            # has no `subscribed` future of its own, so walk the chain to the output that
+            # does. Reading the attribute off the wrapper always answered None and made
+            # this watcher claim the output was missing on every single call.
+            output = session.output.audio
             subscribed = None
-            while time.monotonic() < deadline:
-                subscribed = getattr(session.output.audio, "subscribed", None)
+            while output is not None:
+                subscribed = getattr(output, "subscribed", None)
                 if subscribed is not None:
                     break
-                await asyncio.sleep(0.5)
+                output = getattr(output, "next_in_chain", None)
 
             if subscribed is None:
                 logger.warning(
-                    "Agent audio output is not attached after 10s — nothing the assistant "
+                    "Agent audio output is not attached — nothing the assistant "
                     "says can reach the meeting"
                 )
                 return
 
+            # The clock has to cover the whole join, not ten seconds from here. RoomIO does
+            # not publish the microphone track until it links the connector participant, and
+            # the connector is allowed the full join budget to appear, so a short deadline
+            # warns about a call that is merely still waiting.
             try:
                 await asyncio.wait_for(
                     asyncio.shield(subscribed),
-                    timeout=max(deadline - time.monotonic(), 1.0),
+                    timeout=settings.MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS + 10.0,
                 )
             except TimeoutError:
                 logger.warning(
-                    "Agent audio track still has no subscriber after 10s — the connector's "
+                    "Agent audio track still has no subscriber — the connector's "
                     "browser has not subscribed to it, so the meeting cannot hear the assistant"
                 )
                 return
