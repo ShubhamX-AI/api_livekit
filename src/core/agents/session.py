@@ -1062,14 +1062,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Background audio
-    #
-    # Disabled for meeting calls. BackgroundAudioPlayer publishes a second audio track from
-    # the agent's own participant, on top of the microphone track RoomIO publishes for the
-    # assistant's voice. The meeting connector's browser feeds Google Meet from a MediaStream
-    # that holds one audio track per kind, so the later of the two replaces the earlier one.
-    # Background audio starts after session.start(), so it won the slot and the meeting heard
-    # ambience instead of the assistant. Ambience is not worth being inaudible for.
-    background_audio = None if is_meeting_call else build_background_audio(interaction_config)
+    background_audio = build_background_audio(interaction_config)
 
     # Text-only web chats turn off audio I/O on both sides and publish agent replies as
     # transcription text on the lk.chat topic. Regular web calls keep audio plus text input.
@@ -1358,19 +1351,20 @@ async def entrypoint(ctx: JobContext):
                 )
                 return
 
-            # The clock has to cover the whole join, not ten seconds from here. RoomIO does
-            # not publish the microphone track until it links the connector participant, and
-            # the connector is allowed the full join budget to appear, so a short deadline
-            # warns about a call that is merely still waiting.
+            # Hang the deadline off readiness rather than off a fixed budget. Until the
+            # connector reports `ready` its browser is still joining the meeting and has no
+            # reason to have subscribed yet, so a clock started here only measures how long
+            # a human took to admit the bot. A budget long enough to cover that is longer
+            # than most failing calls survive, which is how the first version of this
+            # watcher managed to never say anything at all.
+            await meeting_connector_ready.wait()
             try:
-                await asyncio.wait_for(
-                    asyncio.shield(subscribed),
-                    timeout=settings.MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS + 10.0,
-                )
+                await asyncio.wait_for(asyncio.shield(subscribed), timeout=15.0)
             except TimeoutError:
                 logger.warning(
-                    "Agent audio track still has no subscriber — the connector's "
-                    "browser has not subscribed to it, so the meeting cannot hear the assistant"
+                    "Agent audio track still has no subscriber 15s after the connector "
+                    "reported ready — its browser never subscribed, so the meeting cannot "
+                    "hear the assistant and nothing it says is recorded or transcribed"
                 )
                 return
             logger.info("Agent audio track subscribed — assistant audio can reach the meeting")
@@ -1450,6 +1444,9 @@ async def entrypoint(ctx: JobContext):
         else:
             participant = await ctx.wait_for_participant()
     except TimeoutError:
+        # Only the meeting branch above passes a timeout, so this is reachable only for a meeting
+        # call and the reason can name the connector directly. Give the other branch a timeout and
+        # this message becomes a lie — change both together.
         logger.warning("Meeting connector did not join the LiveKit room before the deadline")
         await livekit_services.update_call_status(
             room_name=room_name,

@@ -12,6 +12,42 @@ Given how this platform is used, that includes anything that changes **what a ca
 
 ---
 
+## 1.4.0
+
+Meeting-call documentation release, plus one behaviour change to how a failed meeting setup is
+reported.
+
+### A meeting call that fails during setup now sends the end-call webhook
+
+`POST /meeting_call/join` creates a LiveKit room, a call record, and two agent dispatches. If
+anything after the room creation failed, the API cleaned the room up but finalized the call record
+without the assistant, so the end-call webhook resolved no URL and silently did not fire. A client
+whose setup failed received `500` and then nothing — no webhook, while every other call type reports
+its own failure.
+
+The abandon path now carries the assistant through, so the webhook fires with the failed call
+record. **If you register `assistant_end_call_url` and handle meeting calls, you will start
+receiving end-call webhooks for setups that failed before the call ever started.** They carry
+`call_status: "failed"` and the reason `Meeting call setup failed`. No action is needed if your
+handler already branches on `call_status`.
+
+### Documentation: the meeting connector contract
+
+[Build a Meeting Connector](guides/meeting-connector.md) is a new guide, in a new **Guides**
+section, documenting the contract the meeting side implements: the dispatch name, the job metadata,
+the single mixed audio track, the `lk.publish_on_behalf` match, the four lifecycle events, and the
+two rules that decide whether the meeting can hear the assistant at all — subscribe visibly, and
+mix the assistant's tracks rather than picking one. It ends with a walkthrough of building a
+connector for a platform other than Google Meet.
+
+[Google Meet Call Architecture](architecture/meeting-calls.md) gains a census of how many workers,
+participants and audio tracks each call type puts in a LiveKit room, the mechanism of the audio
+path in both directions, and the behaviour that was previously undocumented: the agent-track
+subscription diagnostic, the third readiness-recovery path, and that recording egress starts at
+session setup rather than at connector readiness.
+
+---
+
 ## 1.3.0
 
 Usage observability and deployment-maintenance release. This release keeps the call behavior and

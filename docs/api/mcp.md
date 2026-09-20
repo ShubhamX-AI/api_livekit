@@ -6,7 +6,7 @@ This documentation is also served as an **MCP server**, so AI coding agents can 
 directly instead of you copy-pasting pages into a chat. Same markdown you are reading now,
 exposed as three callable tools over the Model Context Protocol.
 
-The server is read-only and versioned with the API release. At release `1.3.0`, it serves the
+The server is read-only and versioned with the API release. At release `1.4.0`, it serves the
 same source tree used by MkDocs, including release notes, API contracts, compatibility rules,
 usage schema versions, migration commands, runtime-mode guidance, and container dependency
 guidance. It cannot inspect your assistant records, provider account, Docker host, or current
@@ -237,7 +237,7 @@ Once connected, ask your agent things like:
 - "What fields does `assistant_tts_config` take for Cartesia?"
 - "Show me the end-of-call webhook payload."
 - "Which STT providers are supported and how do I switch?"
-- "What changed in 1.3.0, and which migrations are required?"
+- "What changed in 1.4.0, and which migrations are required?"
 - "Which container owns this dependency, and does it affect runtime RAM or only image size?"
 
 ## Example Request

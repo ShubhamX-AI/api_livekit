@@ -324,18 +324,36 @@ worker log for the room and read them in this order.
 | `Session input mode \| call_type=meeting` | The job knows it is a meeting call, so every meeting-specific branch is live. | The dispatch metadata is not carrying `call_type: "meeting"`. Nothing else will work; fix that first. |
 | `Announced agent to meeting connector via lk.publish_on_behalf=<room>` | The connector's browser can recognise the assistant's audio track. | Same cause as above. |
 | `Meeting input track subscribed \| participant=… \| kind=… \| source=…` | The assistant is receiving the meeting's mixed audio. | Nothing reaches the model, which is why there is no transcript and no reply. Check that the connector published `meet-audio-mixed`. |
-| `Agent audio track subscribed` | The connector's browser subscribed to the assistant's audio, so the meeting can hear it. | The warning `Agent audio track still has no subscriber` appears instead once the join budget has passed. Until something subscribes, the SDK blocks every audio frame the assistant produces, so it is silent in the meeting *and* in the recording while still being billed. |
+| `Agent audio track subscribed` | The connector's browser subscribed to the assistant's audio, so the meeting can hear it. | The warning `Agent audio track still has no subscriber 15s after the connector reported ready` appears instead. The connector's browser is the only thing that subscribes, so check its log for `Browser reported LiveKitTrackAdded`; no LiveKit report of any kind there means its receiver never ran at all, rather than that it rejected the track. Until something subscribes, the SDK blocks every audio frame the assistant produces, so it is silent in the meeting *and* in the recording while still being billed. |
 | `Meeting connector event received \| event=ready` | The `ready` signal arrived and the call can move to `answered`. | The connector may still have published it — check the connector's own `Published connector lifecycle event` line. If the connector logged it and the core did not, the data packet was lost; the `lk.meeting_connector_status` attribute path should have covered it, so look for `Meeting connector status attribute changed` too. |
 
 On the connector side, `Mixed Google Meet audio peak amplitude:` reading a flat `0` while somebody
 is speaking means the browser's audio mix is empty — a different fault from the assistant simply
 hearing silence.
 
-If the meeting hears ambience but never the assistant, the cause is a second audio track rather
-than a missing one. The connector's browser feeds Google Meet from a MediaStream that holds one
-audio track per kind, so whichever of the agent's tracks is subscribed last takes the slot. Meeting
-calls therefore run with background sound disabled, whatever `assistant_interaction_config` says —
-if you add another publisher on the agent's participant, it will silence the assistant the same way.
+### The meeting hears ambience but never the assistant
+
+The connector is carrying the assistant's *background audio* track and dropping its *speech* track.
+The assistant publishes the two separately, and a consumer holding one audio track per kind keeps
+whichever arrived last. Background audio starts after the greeting, so it wins.
+
+The giveaway is on the connector side: its output level is non-zero *between* the assistant's turns
+and zero *during* them. The recording is the control — it contains the assistant's speech normally,
+because the room recording captures every published track regardless of what the connector routes.
+
+The connector must sum every track it receives from the assistant into one output. See
+[Build a Meeting Connector](../guides/meeting-connector.md#4-subscribe-to-the-assistant-and-mix-what-you-get).
+
+### Nothing at all from the assistant, in the meeting or the recording
+
+If `Agent audio track subscribed` never appears even though the connector's own log shows it
+subscribing, the connector's browser is joining LiveKit as a **hidden** participant. LiveKit does
+not report a hidden participant's subscription to the publisher, so the SDK never starts forwarding
+frames.
+
+This one is distinctive because it takes out four things at once: no assistant audio in the
+meeting, none in the recording, no transcript at all, and usage billed for the full call. The
+connector's browser token must grant `canSubscribe` without `hidden`.
 
 ---
 

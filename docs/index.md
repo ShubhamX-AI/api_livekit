@@ -12,6 +12,7 @@ A production-ready backend for building and operating real-time voice AI agents 
 - **Outbound SIP calls** — queue a phone call, let the dispatcher place it when capacity is available, receive a webhook when the call ends
 - **Inbound SIP calls** — map a phone number to an assistant; incoming calls are routed automatically
 - **Web calls** — embed a voice/chat widget in any browser or mobile app, no SIP required
+- **Meeting calls** — send the assistant into a Google Meet call as a participant, hearing everyone and speaking back
 - **Caller-context enrichment** — fetch live CRM or ticket data before the assistant speaks on inbound calls
 
 ## Key Concepts

@@ -134,6 +134,10 @@ per speaker would leave the assistant deaf to everyone but the first joiner.
 a new API. Meeting calls have their own concurrency cap and write a `CallRecord` with
 `call_type="meeting"`. Full reference: `docs/api/calls/meeting-call.md`.
 
+This repository does not ship the connector worker — it dispatches one. The contract that worker
+implements, and how to build one for a platform other than Google Meet, is documented in
+`docs/guides/meeting-connector.md`.
+
 ### Dispatcher and worker topology
 
 There is only **one application-level outbound dispatcher**. It continues to process the outbound
