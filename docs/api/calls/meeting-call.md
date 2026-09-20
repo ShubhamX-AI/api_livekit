@@ -74,14 +74,6 @@ The trade-off is that the transcript does not attribute each sentence to a speak
 who is in the meeting is still tracked, so nothing about *who is present* is lost — only the
 mapping from a sentence back to a person.
 
-### Background sound is off in meetings
-
-`assistant_interaction_config.background_sound` is ignored for meeting calls. The player publishes
-its ambience as a *second* audio track on the agent's participant, and the connector's browser
-feeds Google Meet from a stream that holds one audio track per kind — so the ambience replaced the
-assistant's voice and the meeting heard only the ambience. Everything else in
-`assistant_interaction_config` behaves as it does on any other call type.
-
 ### Call records and status
 
 The connector publishes JSON lifecycle events on the `meeting_connector_events` LiveKit data topic.

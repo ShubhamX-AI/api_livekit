@@ -71,11 +71,15 @@ cancel a `Queue.get()` task that has already completed. Findings 1 and 5 below a
 still worth fixing, but they are no longer the thing standing between this feature and a working
 call.
 
-Two things the same log rules out, which earlier sections of this document treated as open:
+One thing the same log rules out, which earlier sections of this document treated as open:
 
-- A hidden, subscribe-only participant *does* satisfy the publisher's
-  `wait_for_subscription()`. The assistant's background audio reached the meeting, so finding 3 is
-  answered and is not a fault.
+- **Retracted 2026-09-20.** This document claimed that a hidden, subscribe-only participant does
+  satisfy the publisher's `wait_for_subscription()`, reasoning that the assistant's background
+  audio reached the meeting. That inference is wrong: `BackgroundAudioPlayer` publishes its own
+  track and never calls `wait_for_subscription()`, so ambience reaching the meeting says nothing
+  about the microphone track. A hidden subscriber does **not** satisfy it, and that is the fault
+  that survives the `ready` race fixed here. See
+  `02-hidden-subscriber-blocks-agent-audio.md` for the evidence and the fix. Finding 3 is real.
 - `lk.agent.session` byte streams arrive at the connector participant between 17:13:41 and
   17:13:45, so the assistant session is live and producing stream traffic while it waits.
 
@@ -293,8 +297,10 @@ reached this conclusion already and the connector implements it.
 2. **Prove whether the mix is empty**, with the peak-amplitude log described in finding 2. This is
    one line in `audio_sync.py` and it decides whether the remaining work is in the page or not.
    If it is, rebuild the audio graph whenever `addAudioTrack` fires instead of snapshotting once.
-3. **Test the hidden-subscriber question** from finding 3 in isolation: one agent publishing, one
-   hidden subscribe-only participant, and check whether `wait_for_subscription()` resolves.
+3. ~~**Test the hidden-subscriber question** from finding 3 in isolation~~ — **answered
+   2026-09-20**: it does not resolve. The connector's browser subscribes and the publisher is
+   never notified, which is the whole of the remaining audio fault. See
+   `02-hidden-subscriber-blocks-agent-audio.md`.
 4. **Do not open the realtime model before `ready`.** Move the readiness wait ahead of
    `session.start()` for meeting calls. This removes the token consumption seen in every failed run
    above, and it is worth doing even after the timeouts are fixed.
