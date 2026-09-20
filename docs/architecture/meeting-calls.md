@@ -136,6 +136,13 @@ lk.publish_on_behalf = <LiveKit room name>
 The connector uses that attribute to select the assistant's output track without needing to know
 the server-minted assistant participant identity.
 
+Selection is by participant, not by track, and the browser feeds Google Meet from a `MediaStream`
+that holds at most one audio track per kind. If the assistant's participant publishes more than one
+audio track, the one subscribed last takes the slot and the others become inaudible in the meeting.
+`BackgroundAudioPlayer` is exactly such a second publisher, so background sound is disabled for
+meeting calls in `src/core/agents/session.py`. Anything else that publishes audio from the agent's
+participant has to obey the same rule, or the connector's browser has to learn to mix.
+
 ## Lifecycle and readiness
 
 The connector publishes JSON messages on the `meeting_connector_events` data topic:
