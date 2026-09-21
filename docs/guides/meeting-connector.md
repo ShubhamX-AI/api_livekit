@@ -170,7 +170,7 @@ deadlines. Publish JSON on the `meeting_connector_events` data topic, reliably:
 | Event | Emit it when | What the assistant does |
 |---|---|---|
 | `waiting` | The bot is in the meeting's waiting room. | Records it. Informational. |
-| `ready` | The bot is admitted **and** media is flowing. | Moves the call to `answered` and greets. |
+| `ready` | The bot is admitted **and** media is flowing. | Moves the call to `answered`, starts the recording, and greets. |
 | `failed` | The join failed, for any reason. | Fails the call with your `detail` as the reason. |
 | `ended` | The meeting ended, the bot was removed, or the worker is shutting down. | Finalizes the call. |
 
@@ -180,6 +180,9 @@ when the packet went out would otherwise never learn. The attribute is the recov
 
 Emit each event once. The assistant's handling is idempotent, but a connector that re-publishes
 `ready` after `ended` is describing a lifecycle that cannot happen.
+
+`ready` is also what starts the recording, so a connector that reports it late delays the recording
+by the same amount — and a call that never reports it is never recorded.
 
 !!! warning "Your waiting-room budget must be shorter than the assistant's"
     The assistant fails a call that is not ready within `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS`

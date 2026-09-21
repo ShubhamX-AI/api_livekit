@@ -38,7 +38,11 @@ from src.core.agents.inbound_context import (
 )
 from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL
 from src.core.agents.llm import create_llm
-from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
+from src.core.agents.session_lifecycle import (
+    CallReadinessGate,
+    RecordingManager,
+    should_record_on_join,
+)
 from src.core.agents.stt import (
     NATIVE_TRANSCRIBE_MODEL,
     CascadeSttUsage,
@@ -117,6 +121,8 @@ USAGE_FLUSH_INTERVAL_S = 15.0
 # NOT verified against a live call — listen to the first ~2s of a real Exotel greeting
 # after this change and put it back up if the opening word sounds clipped or garbled.
 EXOTEL_RTP_WARMUP_SLEEP_SEC = 0.25
+# Same budget the Exotel path gives egress after `call_answered`.
+MEETING_RECORDER_START_TIMEOUT_SEC = 12.0
 
 
 def should_record(role: str | None, *, on_hold: bool, gate_active: bool) -> bool:
@@ -427,8 +433,13 @@ async def entrypoint(ctx: JobContext):
 
     transcript_worker = asyncio.create_task(_transcript_worker())
 
-    # Start recording immediately for non-Exotel calls. Text-only web chats have no audio.
-    if not is_exotel_outbound and not is_text_only:
+    # Start recording immediately for calls that are already live. Exotel outbound starts it on
+    # `call_answered` and a meeting call on the connector's `ready` — see should_record_on_join.
+    if should_record_on_join(
+        is_exotel_outbound=is_exotel_outbound,
+        is_text_only=is_text_only,
+        is_meeting_call=is_meeting_call,
+    ):
         asyncio.create_task(recorder.start_once())
 
     # --- Load Tools ---
@@ -687,7 +698,15 @@ async def entrypoint(ctx: JobContext):
             return False
 
         record = await CallRecord.find_one(CallRecord.room_name == room_name)
-        return bool(record and record.meeting_connector_status == MEETING_CONNECTOR_EVENT_READY)
+        if not (record and record.meeting_connector_status == MEETING_CONNECTOR_EVENT_READY):
+            return False
+
+        # Recording starts here, not at session setup: `ready` is the first moment the bot is
+        # admitted and media is flowing. Egress needs a second or two to attach, so wait for it
+        # the way the Exotel path does — otherwise the greeting is clipped off the front.
+        if not await recorder.ensure_started(timeout=MEETING_RECORDER_START_TIMEOUT_SEC):
+            logger.warning("Recording did not start before the meeting greeting; proceeding")
+        return True
 
     # Custom end_call tool — LLM speaks goodbye first, tool waits for playout before stopping recording
     if getattr(assistant, "assistant_end_call_enabled", False):

@@ -272,7 +272,7 @@ There is exactly one owner for call accounting: `api-agent`.
 | CallRecord | `api-agent` / core lifecycle | One record per meeting call. |
 | Transcripts | `api-agent` | Stores assistant and mixed-meeting utterances. |
 | UsageRecord | `api-agent` | Persists LLM, TTS, and STT usage. |
-| Recording | `api-agent` lifecycle | An audio-only room-composite egress, so it captures both jobs' tracks. It starts when the session is set up, not when the connector is ready, so a call that is never admitted still produces a near-empty object in S3. |
+| Recording | `api-agent` lifecycle | An audio-only room-composite egress, so it captures both jobs' tracks. It starts when the connector reports `ready`, not when the session is set up: the bot can sit in the waiting room for minutes, and recording that window put 30-40s of silence at the head of every file. A call that is never admitted produces no recording at all. |
 | End-call webhook | `api-agent` | Sent once through the normal finalization path. |
 | Browser cleanup | `meet-connector` | Job shutdown stops Chrome/Xvfb/WebSocket resources. |
 

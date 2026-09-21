@@ -105,3 +105,16 @@ class RecordingManager:
         if self._start_task and not self._start_task.cancelled():
             self._start_success = bool(self._start_task.result())
         return self._start_success
+
+
+def should_record_on_join(
+    *, is_exotel_outbound: bool, is_text_only: bool, is_meeting_call: bool
+) -> bool:
+    """Whether recording starts at job start, rather than on a later readiness signal.
+
+    Exotel outbound waits for `call_answered` and a meeting call waits for the connector's
+    `ready`: until then the room holds nothing but the ringing or the Meet waiting room, and
+    recording it put 30-40s of silence at the head of every file. A text-only web chat has no
+    audio at all.
+    """
+    return not (is_exotel_outbound or is_text_only or is_meeting_call)
