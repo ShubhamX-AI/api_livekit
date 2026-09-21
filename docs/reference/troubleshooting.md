@@ -357,6 +357,36 @@ connector's browser token must grant `canSubscribe` without `hidden`.
 
 ---
 
+## The call ended but the bot is still in the meeting
+
+The picture is a call that finished correctly on this side and a bot that did not notice. Every
+signal here says success:
+
+| What you see | State |
+|---|---|
+| `CallRecord.call_status` | `completed`, with a duration and a `call_end_reason` |
+| End-call webhook | Delivered once |
+| Recording | In S3, ends where the assistant stopped talking |
+| LiveKit room | Gone |
+| The meeting's participant list | Still shows the bot, silent |
+
+That combination is not an assistant fault. Deleting the room *is* how this platform tells a
+connector the call is over, and the room is gone — so the assistant did its part and the
+connector's teardown did not run. The bot is a browser nobody closed.
+
+Two things make it linger rather than resolve on its own. The connector's alone-in-meeting timer
+cannot rescue it, because that timer only fires when the bot is the last participant and a human is
+still in the meeting. And a browser whose driver was never quit outlives the job process, so
+nothing else comes along to kill it.
+
+Fixing it is connector-side work: see
+[step 6 of the connector contract](../guides/meeting-connector.md#6-end-the-job-cleanly), which
+covers the fifteen-second shutdown window, the cleanup guard that must be set on completion rather
+than on entry, and why a final `ended` published to an already-deleted room is what usually burns
+the window.
+
+---
+
 ## An inbound caller hears silence after pickup
 
 Expected behaviour is: ringing, then the greeting. Silence *after* the ringing stops means the
