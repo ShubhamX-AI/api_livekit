@@ -357,6 +357,35 @@ connector's browser token must grant `canSubscribe` without `hidden`.
 
 ---
 
+## The meeting never heard the greeting, but the recording has it
+
+The call looks complete everywhere you can check it. The call record is `answered` with a normal
+duration, the transcript's first assistant turn is the greeting, and the recording opens with it.
+Everything the assistant said *after* the opening was heard in the meeting normally. Only the
+opening is missing, and only for the people who were in the meeting.
+
+Neither the recording nor the transcript can settle this, because neither one observes the meeting:
+the recording is a room-composite egress of the LiveKit room, and the transcript is produced
+model-side. Both capture what the assistant published, whether or not the connector was carrying it
+into the meeting at the time.
+
+The cause is a `ready` that arrived before the connector's own microphone was live. `ready` is what
+releases the greeting, so the assistant spoke into a room the meeting was not yet listening to. The
+size of the gap is the size of whatever the connector still had to do after it reported ready —
+connecting its subscriber, waiting on a track, clicking the platform's unmute control.
+
+Confirm it from the connector's log rather than from this side: its own "microphone on" step is
+timestamped *after* the event it published as `ready`. On this side the only visible trace is that
+`Meeting connector event received | event=ready` and the first assistant turn are seconds earlier
+than the meeting's recollection of when the bot started talking.
+
+This is not something an assistant setting can fix, and re-running the call reproduces it. The
+connector must emit `ready` only once the meeting can hear it — see
+[Build a Meeting Connector](../guides/meeting-connector.md#5-emit-the-lifecycle-events), which
+states the rule and the two mistakes that usually cause it.
+
+---
+
 ## The call ended but the bot is still in the meeting
 
 The picture is a call that finished correctly on this side and a bot that did not notice. Every

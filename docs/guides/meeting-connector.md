@@ -170,7 +170,7 @@ deadlines. Publish JSON on the `meeting_connector_events` data topic, reliably:
 | Event | Emit it when | What the assistant does |
 |---|---|---|
 | `waiting` | The bot is in the meeting's waiting room. | Records it. Informational. |
-| `ready` | The bot is admitted **and** media is flowing. | Moves the call to `answered`, starts the recording, and greets. |
+| `ready` | The bot is admitted **and** the meeting can already hear whatever the assistant publishes. | Moves the call to `answered`, starts the recording, and greets. |
 | `failed` | The join failed, for any reason. | Fails the call with your `detail` as the reason. |
 | `ended` | The meeting ended, the bot was removed, or the worker is shutting down. | Finalizes the call. |
 
@@ -183,6 +183,23 @@ Emit each event once. The assistant's handling is idempotent, but a connector th
 
 `ready` is also what starts the recording, so a connector that reports it late delays the recording
 by the same amount — and a call that never reports it is never recorded.
+
+!!! danger "`ready` means the meeting can hear you, not that you were admitted"
+    **Emit `ready` only once your platform-side microphone is live.** The assistant greets within a
+    second or two of receiving it. Anything it says before the microphone is on is lost to the
+    meeting and to nobody else: the recording is an egress of the LiveKit room and the transcript is
+    produced model-side, so neither of them observes the meeting. Both will contain a greeting that
+    no participant heard. The operator sees a complete call with a normal opening turn, the
+    attendees see a bot that joined and said nothing, and every artifact agrees with the operator.
+
+    **Subscribing is not unmuting.** LiveKit fires no unmute event for a track that was already
+    unmuted when you subscribed, so a connector that turns its microphone on from a mute-change
+    handler alone never turns it on at all. Unmute when you wire the audio path up, and let the
+    mute-change handler carry only the changes after that.
+
+    **Do not wait for video before wiring up audio.** The assistant publishes one audio track and no
+    video, on every call. A fixed wait for a video track before the audio path is connected is dead
+    air on every meeting, and the greeting is what pays for it.
 
 !!! warning "Your waiting-room budget must be shorter than the assistant's"
     The assistant fails a call that is not ready within `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS`
