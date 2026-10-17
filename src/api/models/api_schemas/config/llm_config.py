@@ -5,11 +5,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.core.model_support.capabilities import (
     CASCADE_MODELS,
     DEFAULT_CASCADE_MODEL,
+    DEFAULT_DUPLEX_BACKEND_MODEL,
     DEFAULT_GEMINI_LIVE_MODEL,
     GEMINI_LIVE_MODELS,
     GEMINI_VERTEX_ONLY_MODELS,
     GEMINI_VOICES,
+    GPT_LIVE_MODELS,
+    GPT_LIVE_VOICES,
     REALTIME_MODELS,
+    REASONING_MODELS,
     unsupported_knob_reason,
 )
 from src.core.providers.keys import ProviderApiKey
@@ -17,7 +21,7 @@ from src.core.providers.keys import ProviderApiKey
 # ── Runtime mode ────────────────────────────────────
 # Selects the shape of the whole session (which stages exist, plugin vs. one realtime
 # model) — not an LLM choice. That lives in AssistantLLMConfig.provider/model below.
-AssistantMode = Literal["pipeline", "realtime", "cascade"]
+AssistantMode = Literal["pipeline", "realtime", "cascade", "duplex"]
 
 _RETIRED_MODE_KEY_ERROR = (
     "`assistant_llm_mode` has been renamed to `assistant_mode`. Update your request."
@@ -75,16 +79,18 @@ _RESPONSES_TOOL_CHOICE = Literal["auto", "required", "none"]
 class AssistantLLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Optional[Literal["gemini", "openai"]] = Field(None, description="LLM vendor. 'openai' in pipeline and cascade mode (the only value accepted there); 'gemini' (default) or 'openai' in realtime mode. Defaults to openai in pipeline/cascade and gemini in realtime.")
-    model: Optional[str] = Field(None, description="Model override for the selected provider. Validated per mode: an OpenAI realtime ID in pipeline/realtime mode, an allowlisted OpenAI chat model in cascade mode. Gemini realtime model IDs are not validated.")
-    voice: Optional[str] = Field(None, description="Voice override. Used when the model speaks its own audio (realtime mode).")
+    provider: Optional[Literal["gemini", "openai"]] = Field(None, description="LLM vendor. 'openai' in pipeline, cascade and duplex mode (the only value accepted there); 'gemini' (default) or 'openai' in realtime mode. Defaults to openai in pipeline/cascade/duplex and gemini in realtime.")
+    model: Optional[str] = Field(None, description="Model override for the selected provider. Validated per mode: an OpenAI realtime ID in pipeline/realtime mode, an allowlisted OpenAI chat model in cascade mode, gpt-live-1 in duplex mode, a Gemini Live ID for Gemini.")
+    voice: Optional[str] = Field(None, description="Voice override. Used when the model speaks its own audio (realtime and duplex mode). Duplex voices: beacon, cedar, cinder, marin (default), stone, vesper.")
+    backend_model: Optional[str] = Field(None, description="Duplex mode only. The OpenAI reasoning model GPT-Live hands its reasoning and tool calls to. Defaults to gpt-5.6-luna. reasoning_effort, verbosity, service_tier and tool_choice apply to this model.")
+    backend_instructions: Optional[str] = Field(None, max_length=4000, description="Duplex mode only. Instructions for the backend model, separate from the voice persona (assistant_prompt). Unset means a short built-in instruction: use the tools when needed and answer briefly.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Provider API key override for the selected provider (openai or gemini).")
 
     # Generation knobs. These are applied to the cascade LLM (openai.responses.LLM);
     # they are harmless (ignored) in the realtime/pipeline modes. See
     # docs/api/assistant/index.md and the OpenAI LLM docs for valid values.
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature (0–2). Higher is more random. Reasoning models (gpt-5.x) reject it, so it is dropped before the call on those; set reasoning_effort instead. Only one of temperature or top_p may be set (responses API uses temperature).")
-    max_output_tokens: Optional[int] = Field(None, gt=0, description="Cap on output tokens for the response (responses API `max_output_tokens`).")
+    max_output_tokens: Optional[int] = Field(None, ge=16, description="Cap on output tokens for the response (responses API `max_output_tokens`). At least 16, the API's own minimum.")
     reasoning_effort: Optional[REASONING_EFFORT] = Field(None, description="Reasoning depth. A gpt-5 parameter: older models reject it, so it is dropped before the call on anything outside the gpt-5 line rather than sent and failed.")
     service_tier: Optional[_SERVICE_TIERS] = Field(None, description="OpenAI processing/billing tier: auto, default, fast, flex or priority. 'flex' is gpt-5 generation only — measured: on gpt-4.1/gpt-4.1-nano it is refused with a 400 on every turn (and on nano OpenAI names no parameter at all, so the call just goes silent), so it is rejected here with a 422. 'scale' is not an OpenAI tier and is no longer accepted. Leave unset unless you have a reason: auto, default and fast all work everywhere.")
     verbosity: Optional[_VERBOSITY] = Field(None, description="Constrains response verbosity: low, medium, high. A gpt-5 parameter (`text.verbosity`), dropped before the call on older models — chat-latest counts as gpt-5 here.")
@@ -165,10 +171,69 @@ def _validate_realtime_voice(provider, voice) -> None:
         )
 
 
-def validate_mode_config(mode, llm_config, stt_model, *, has_tools: bool = False) -> None:
+def _validate_duplex(llm_config, *, has_tools: bool, greeting_audio: bool, filler_words: bool) -> None:
+    """GPT-Live: one voice model that never takes a script, plus a Responses backend.
+
+    Two features of this platform speak a fixed string through `session.say()`: the
+    prerecorded greeting and filler words. GPT-Live has no TTS to say it with, and the plugin
+    raises — so both are refused here rather than at the first call.
+    """
+    provider = getattr(llm_config, "provider", None)
+    model = getattr(llm_config, "model", None)
+    voice = getattr(llm_config, "voice", None)
+    backend_model = getattr(llm_config, "backend_model", None)
+    if provider and provider != "openai":
+        raise ValueError(
+            f"assistant_llm_config.provider '{provider}' is not supported in duplex mode — "
+            "GPT-Live is an OpenAI model, so the provider must be 'openai'."
+        )
+    if model and model not in GPT_LIVE_MODELS:
+        raise ValueError(
+            f"assistant_llm_config.model '{model}' is not a GPT-Live model — duplex mode "
+            f"runs one of: {', '.join(sorted(GPT_LIVE_MODELS))}. The reasoning model goes in "
+            "assistant_llm_config.backend_model."
+        )
+    if voice and voice not in GPT_LIVE_VOICES:
+        raise ValueError(
+            f"assistant_llm_config.voice '{voice}' is not a GPT-Live voice — must be one of: "
+            f"{', '.join(sorted(GPT_LIVE_VOICES))}."
+        )
+    if backend_model and backend_model not in REASONING_MODELS:
+        raise ValueError(
+            f"assistant_llm_config.backend_model '{backend_model}' cannot be the duplex "
+            "backend — it must be one of the OpenAI reasoning models: "
+            f"{', '.join(sorted(REASONING_MODELS))}."
+        )
+    if llm_config is not None:
+        _validate_cascade_knobs(
+            llm_config, backend_model or DEFAULT_DUPLEX_BACKEND_MODEL, has_tools=has_tools
+        )
+    if greeting_audio:
+        raise ValueError(
+            "assistant_greeting_audio cannot be enabled in duplex mode — GPT-Live speaks in "
+            "its own words and cannot play a recording. Disable the greeting audio; with "
+            "speaks_first the model greets the caller itself."
+        )
+    if filler_words:
+        raise ValueError(
+            "assistant_interaction_config.filler_words cannot be enabled in duplex mode — "
+            "GPT-Live listens while it speaks and handles backchannels itself, and it cannot "
+            "speak a scripted filler."
+        )
+
+
+def validate_mode_config(
+    mode,
+    llm_config,
+    stt_model,
+    *,
+    has_tools: bool = False,
+    greeting_audio: bool = False,
+    filler_words: bool = False,
+) -> None:
     """Reject provider/model/STT combinations the runtime cannot actually run.
 
-    One rule table for all three modes, shared by the create and update validators so a
+    One rule table for all four modes, shared by the create and update validators so a
     combination is rejected with a 422 at the API rather than accepted and then failing at
     job start with only a log line. The runtime counterparts are
     src/core/agents/session.py (pipeline/realtime) and src/core/agents/llm/factory.py
@@ -182,6 +247,24 @@ def validate_mode_config(mode, llm_config, stt_model, *, has_tools: bool = False
     """
     provider = getattr(llm_config, "provider", None)
     model = getattr(llm_config, "model", None)
+
+    if mode == "duplex":
+        _validate_duplex(
+            llm_config,
+            has_tools=has_tools,
+            greeting_audio=greeting_audio,
+            filler_words=filler_words,
+        )
+        return
+
+    # The backend fields describe GPT-Live's second model. In any other mode nothing reads
+    # them, and a field that silently does nothing is the confusion this table exists to stop.
+    for field in ("backend_model", "backend_instructions"):
+        if getattr(llm_config, field, None):
+            raise ValueError(
+                f"assistant_llm_config.{field} is only used in duplex mode — remove it, or "
+                "set assistant_mode to 'duplex'."
+            )
 
     if mode == "cascade":
         # Cascade runs a plain LLM, so there is no realtime model to speak its own audio

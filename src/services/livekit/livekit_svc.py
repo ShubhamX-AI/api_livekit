@@ -57,6 +57,11 @@ class LiveKitService:
         """Context manager kept for backward compatibility — returns shared client."""
         yield self._get_client()
 
+    async def ping(self) -> None:
+        """Authenticated round-trip to the LiveKit server, used by the /health probe. Lists
+        rooms by a name that never exists, so the answer stays empty however busy the server is."""
+        await self._get_client().room.list_rooms(api.ListRoomsRequest(names=["__health__"]))
+
     # Create livekit room
     async def create_room(self, assistant_id: str | None = None) -> str:
         """Create and return a unique LiveKit room name."""

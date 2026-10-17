@@ -261,7 +261,7 @@ chat-completions, and the same `@function_tool` contract, so DB-backed tools wor
 | `model` | `gpt-4.1` | Must be one of the documented OpenAI models — validated at creation/update. List in [Models & Providers](../reference/models.md#cascade-llm-cascade-mode-only) |
 | `api_key` | system `OPENAI_API_KEY` | per-assistant override |
 | `temperature` | SDK default (`0.8`) | `0`–`2`. **Chat models only** — reasoning models reject it |
-| `max_output_tokens` | model default | cap on output tokens |
+| `max_output_tokens` | model default | cap on output tokens, at least `16` |
 | `reasoning_effort` | unset | `none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`. **Reasoning models only**, and not on `gpt-5.2`/`gpt-5.4*` while tools are attached |
 | `service_tier` | unset | `auto`/`default`/`fast`/`priority` on any model; `flex` on the gpt-5 line only. `scale` is not an OpenAI tier — [measured](../reference/compatibility.md#service_tier-measured) |
 | `verbosity` | unset | `low`/`medium`/`high`. **gpt-5 generation only** (`text.verbosity`) |
@@ -308,6 +308,10 @@ Two cases the table exists to get right, both of which a "starts with gpt-5" tes
   `reasoning_effort` no. All three aliases were retired by OpenAI on 2026-06-19 and are off the
   allowlist now — the case is kept here because it is why membership is spelled out per model
   rather than matched by prefix, and OpenAI can ship another chat alias at any time.
+- **`gpt-6-luna` and `gpt-6-sol` behave like the `gpt-5.6` line**, measured on 2026-10-17:
+  `reasoning_effort` `none`/`low`/`medium`/`high`/`xhigh` with or without tools, `verbosity` and
+  `flex` accepted; `temperature` and effort `minimal` refused. They are in `REASONING_MODELS`,
+  and the plugin injects no effort of its own for them.
 - **`gpt-5.2` / `gpt-5.4*` reject reasoning effort once function tools are attached.** The
   OpenAI plugin injects a default `Reasoning(effort=...)` for those models when the caller
   passes none, so even an empty `assistant_llm_config` sent one; the SDK's own guard for this
@@ -428,7 +432,7 @@ code path, because they were written against a realtime model:
 | Transcripts | Written exactly once, via `conversation_item_added`. The Sarvam tap is off, so there is no double-write |
 | Sarvam TTS keepalive | Runs whenever the TTS is Sarvam, same as pipeline |
 | **`end_call` tool** | **Cascade-specific path.** A non-realtime LLM continues in the *same* speech handle across tool steps, so the goodbye has already played by the time the done-callback fires. The `speech_created` wait that realtime needs is skipped — leaving it in burned 5 s of dead air before hangup |
-| **Exotel pre-answer window** | **Cascade-specific path.** Pipeline disables the realtime model's server VAD so ring-tone RTP cannot open a spurious turn. Cascade has no such model, so the input is blanked through `SpeechGate.muted` for the duration of the gate wait instead |
+| **Exotel pre-answer window** | **Cascade-specific path.** Pipeline disables the realtime model's server VAD so ring-tone RTP cannot open a spurious turn. Cascade has no such model, so the input is blanked through `SpeechGate.muted` for the duration of the gate wait instead. When the assistant does not speak first there is no greeting wait, and every mode blanks the input the same way until the call is answered (at most 60 s) |
 | **`preferred_languages`** | **Not read by any cascade STT.** It is a BCP-47 hint for the `native` transcription prompt, and cascade has no native path. Feeding it to a provider both pinned a language nobody asked to pin and pushed BCP-47 into providers that speak ISO 639-1 or ISO 639-3 — pin on `assistant_stt_config` instead |
 
 Two consequences worth knowing:

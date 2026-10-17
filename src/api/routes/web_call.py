@@ -26,12 +26,16 @@ async def get_token(request: TriggerWebCall, current_user: APIKey = Depends(get_
         if not assistant:
             raise HTTPException(status_code=404, detail="Assistant not found")
 
-        # Text-only mode is incompatible with realtime assistants (Gemini/OpenAI realtime
-        # bundle STT+LLM+TTS in one model and do not expose a pure-text path).
-        if request.text_only and assistant.assistant_mode == "realtime":
+        # Text-only mode is incompatible with realtime and duplex assistants: both run one
+        # model that hears and speaks audio, with no pure-text path (GPT-Live has no text
+        # modality at all).
+        if request.text_only and assistant.assistant_mode in ("realtime", "duplex"):
             raise HTTPException(
                 status_code=400,
-                detail="text_only is not supported for realtime assistants. Use a pipeline-mode assistant.",
+                detail=(
+                    f"text_only is not supported for {assistant.assistant_mode} assistants. "
+                    "Use a pipeline- or cascade-mode assistant."
+                ),
             )
 
         # Web calls dispatch a real agent and write a CallRecord, so they need capacity of

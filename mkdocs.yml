@@ -89,6 +89,7 @@ nav:
     - Runtime Modes & Startup: architecture/runtime-modes.md
     - Container Dependencies: architecture/dependencies.md
     - Cascade Pipeline (STT/LLM/TTS): architecture/cascade-pipeline.md
+    - Duplex Mode (GPT-Live): architecture/duplex-mode.md
     - Call Flows & Queueing: architecture/call-flows.md
     - Google Meet Calls: architecture/meeting-calls.md
     - Audio Pipeline: architecture/audio-pipeline.md
@@ -102,6 +103,7 @@ nav:
     - Models & Providers: reference/models.md
     - Compatibility Matrix: reference/compatibility.md
     - Usage Accounting: reference/usage-accounting.md
+    - Pricing: reference/pricing.md
     - Troubleshooting: reference/troubleshooting.md
 
   - API Reference:
@@ -112,7 +114,7 @@ nav:
       - Documentation Endpoint: api/documentation.md
       - MCP Documentation Server: api/mcp.md
 
-    - Assistants (Pipeline/Realtime/Cascade):
+    - Assistants (Pipeline/Realtime/Cascade/Duplex):
       - Overview: api/assistant/index.md
       - Create Assistant: api/assistant/create.md
       - List Assistants: api/assistant/list.md

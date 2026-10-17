@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiveKit 1.8.8 Model Research</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b675f; --line: #e3dfd6; --card: #ffffff;
+    --accent: #2f5d8a; --ok: #2e7d4f; --ok-bg: #e6f3eb; --warn: #9a6400; --warn-bg: #fdf1dc;
+    --bad: #a3322b; --bad-bg: #fbe7e5; --info-bg: #e8eff7; --code: #f2efe8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ece9e2; --muted: #a29d93; --line: #34322d; --card: #1f1e1b;
+      --accent: #8db6e0; --ok: #7cc79a; --ok-bg: #1d3226; --warn: #e8b55a; --warn-bg: #352a15;
+      --bad: #ee8b82; --bad-bg: #3a1f1c; --info-bg: #1d2a38; --code: #2a2925;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ece9e2; --muted: #a29d93; --line: #34322d; --card: #1f1e1b;
+    --accent: #8db6e0; --ok: #7cc79a; --ok-bg: #1d3226; --warn: #e8b55a; --warn-bg: #352a15;
+    --bad: #ee8b82; --bad-bg: #3a1f1c; --info-bg: #1d2a38; --code: #2a2925;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 40px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card b { display: block; font-size: 22px; }
+  .card span { color: var(--muted); font-size: 13px; }
+  .note { border-left: 4px solid var(--accent); background: var(--info-bg); padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+  .note.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .note.bad { border-color: var(--bad); background: var(--bad-bg); }
+  .tbl { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .p-ok { background: var(--ok-bg); color: var(--ok); }
+  .p-warn { background: var(--warn-bg); color: var(--warn); }
+  .p-bad { background: var(--bad-bg); color: var(--bad); }
+  pre.mermaid { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+  ol li, ul li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>LiveKit 1.8.8: new models and self-host features</h1>
+<p class="sub">Research only, nothing implemented yet · 2026-10-17 · repo <code>api_livekit</code> @ <code>870b445</code></p>
+
+<div class="grid">
+  <div class="card"><b>1.8.2 → 1.8.8</b><span>pinned <code>livekit-agents~=1.8.2</code> (pyproject.toml:13); latest is 1.8.8 (2026-10-15)</span></div>
+  <div class="card"><b>2 LLMs</b><span><code>gpt-6-luna</code>, <code>gpt-6-sol</code>, for cascade and as the GPT-Live backend</span></div>
+  <div class="card"><b>1 new mode</b><span>GPT-Live full-duplex (<code>gpt-live-1</code>) through the OpenAI plugin with our own key</span></div>
+  <div class="card"><b>4 speech models</b><span><code>eleven_v4</code>, <code>eleven_v4_turbo</code>, <code>bulbul:v4-flash</code>, <code>gpt-live-transcribe</code></span></div>
+</div>
+
+<div class="note bad"><b>Nothing about OpenAI availability is verified yet.</b> <code>uv run python scripts/check_model_allowlist.py</code> failed with
+<code>GET /v1/models failed with HTTP 401: Incorrect API key provided</code>. The <code>OPENAI_API_KEY</code> in this checkout's <code>.env</code> is invalid or revoked.
+CLAUDE.md requires that model lists come from the API, not from docs, so every OpenAI model id below is a <em>candidate</em> until the script runs against a working key.</div>
+
+<h2>1. Summary</h2>
+<p>The SDK went from 1.8.2 to 1.8.8 in a month. Most of the new headline features are <b>LiveKit Inference (Cloud-only)</b>, which this platform cannot use.
+The self-hostable parts that are worth having here:</p>
+<ol>
+  <li><b>GPT-6 models</b> (<code>gpt-6-luna</code>, <code>gpt-6-sol</code>) for the cascade LLM. LiveKit already marks <code>gpt-5.1</code> and <code>gpt-5.4-nano</code> deprecated, retiring 2027-04-01, with GPT-6 as the named replacements.</li>
+  <li><b>GPT-Live</b>, OpenAI's full-duplex voice model, through <code>openai.realtime.GPTLiveModel</code>. It runs on our OpenAI key. It does not fit any of the three existing modes, so it would be a fourth mode.</li>
+  <li><b>New TTS models</b>: ElevenLabs <code>eleven_v4</code> / <code>eleven_v4_turbo</code> (a small allowlist change) and Sarvam <code>bulbul:v4-flash</code> (larger: Sarvam TTS is pinned today, and v4-flash has its own speaker roster of about 220 names).</li>
+  <li><b>Answering machine detection</b> (<code>livekit.agents.AMD</code>) for outbound calls. It works self-hosted when we pass our own LLM and STT.</li>
+  <li><b>Small wins from the bump itself</b>: prompt-cache breakpoints sent by the Responses LLM for GPT-5.6 and later, <code>e2e_latency</code> for realtime replies, sticky LLM fallback routing.</li>
+</ol>
+<p>There is also one <b>risk to check</b> that is not about new features. LiveKit Inference retired the GPT Realtime 1.5 and 2 ids and now lists only <code>gpt-realtime-2.1</code> / <code>-2.1-mini</code>. Our default is <code>DEFAULT_REALTIME_MODEL = "gpt-realtime-1.5"</code> (<code>src/core/model_support/capabilities.py:31</code>). That retirement is on LiveKit's gateway, and api.openai.com may still serve 1.5. We have no working key, so this is unknown.</p>
+
+<h2>2. Method and limits</h2>
+<ul>
+  <li>LiveKit docs MCP: <code>get_changelog pypi:livekit-agents</code> (1.8.1 to 1.8.8), the OpenAI LLM / STT / TTS / Realtime / GPT-Live pages, the ElevenLabs and Sarvam TTS pages, Answering machine detection, and Fallback strategies.</li>
+  <li>Plugin source on <code>main</code>: <code>openai/models.py</code>, <code>openai/stt.py</code>, <code>llm/_realtime/openai_types.py</code>, <code>elevenlabs/models.py</code>, <code>cartesia/models.py</code>, <code>sarvam/models.py</code>, <code>sarvam/tts.py</code>, <code>google/models.py</code>.</li>
+  <li>The repo's own allowlists: <code>src/core/model_support/capabilities.py</code>, <code>src/core/model_support/speech.py</code>, <code>src/core/agents/tts/factory.py</code>.</li>
+  <li><b>Not done</b>: <code>check_model_allowlist.py</code> (HTTP 401), Responses probes for GPT-6 knob support, and any test run against 1.8.8. The local venv was on 1.7.1 and <code>uv run</code> re-synced it to the pinned 1.8.2.</li>
+</ul>
+
+<h2>3. Current → target</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph Modes["assistant_mode"]
+    P["pipeline<br/>OpenAI realtime STT+LLM + TTS"]
+    R["realtime<br/>Gemini Live / OpenAI realtime"]
+    C["cascade<br/>STT + Responses LLM + TTS"]
+    D["duplex (new)<br/>GPTLiveModel gpt-live-1"]:::new
+  end
+  C --> L5["gpt-4.1 … gpt-5.6-*"]
+  C --> L6["gpt-6-luna / gpt-6-sol"]:::new
+  D --> BK["backend Responses model<br/>gpt-5.6-luna default, or gpt-6-*"]:::new
+  TTS["TTS"] --> EL["elevenlabs + eleven_v4, eleven_v4_turbo"]:::new
+  TTS --> SV["sarvam bulbul:v3 pinned → + bulbul:v4-flash"]:::new
+  STT["STT (cascade)"] --> OA["openai + gpt-live-transcribe (needs VAD)"]:::maybe
+  OUT["outbound call"] --> AMD["AMD voicemail / IVR detection"]:::new
+  classDef new fill:#e6f3eb,stroke:#2e7d4f,color:#1d1c1a;
+  classDef maybe fill:#fdf1dc,stroke:#9a6400,color:#1d1c1a;
+</pre>
+<p class="sub">Green: new, self-hostable. Amber: blocked by a known constraint. See its row below.</p>
+
+<h2>4. Findings</h2>
+
+<h3>4.1 LLM: cascade mode</h3>
+<div class="tbl"><table>
+<tr><th>Model</th><th>Source</th><th>Self-host</th><th>Notes</th></tr>
+<tr><td><code>gpt-6-luna</code></td><td>LiveKit OpenAI LLM table (Inference, provider <code>openai</code>)</td><td><span class="pill p-warn">verify</span></td>
+<td>Not in the plugin's <code>ChatModels</code> Literal or <code>_supports_reasoning_effort</code> on main. The plugin forwards any string, so it will run. The plugin also will not inject a default <code>reasoning</code>, so it does not belong in <code>PLUGIN_INJECTS_REASONING</code>. Knob support (<code>temperature</code>, <code>reasoning_effort</code>, <code>verbosity</code>) is <b>unknown</b>. 1.8.4 (#7414) omits temperature/top_p for "GPT-5.6 and GPT-6 on Bedrock", which suggests GPT-6 rejects temperature like the other reasoning models. That is only a hint and must be confirmed by a probe.</td></tr>
+<tr><td><code>gpt-6-sol</code></td><td>same</td><td><span class="pill p-warn">verify</span></td><td>Same as luna. LiveKit names it as the replacement for <code>gpt-5.1</code> and <code>gpt-5.3-chat-latest</code>.</td></tr>
+<tr><td><code>gpt-5.1</code>, <code>gpt-5.4-nano</code></td><td>same</td><td><span class="pill p-warn">deprecated</span></td><td>Retire <b>2027-04-01</b>. Keep them for now. Plan an audit/migration before that date (<code>scripts/audit_assistant_models.py</code>).</td></tr>
+<tr><td><code>gemini-4-argon</code></td><td>google plugin <code>ChatModels</code> (1.8.7, #7790)</td><td><span class="pill p-ok">plugin</span></td><td>A text LLM, not Live. Cascade is OpenAI-only today (<code>create_llm</code>), so using it means a second cascade LLM provider. That is a larger change. Listed for completeness.</td></tr>
+</table></div>
+
+<h3>4.2 Realtime and duplex</h3>
+<div class="tbl"><table>
+<tr><th>Model</th><th>Self-host</th><th>Notes</th></tr>
+<tr><td><code>gpt-live-1</code> (GPT-Live)</td><td><span class="pill p-ok">plugin</span></td>
+<td><code>openai.realtime.GPTLiveModel(voice=, delegation="responses", responses_options={model, instructions, reasoning, text, service_tier, tool_choice, max_output_tokens})</code>. Needs a paid OpenAI tier. Constraints that hit this codebase:
+<ul>
+<li><b>No text modality</b>, so it cannot pair with our TTS. It is not <code>pipeline</code>.</li>
+<li><b><code>session.say()</code> raises</b> without a TTS. The prerecorded greeting (<code>assistant_greeting_audio</code>, played via <code>session.say(audio=...)</code>) breaks, and so do any filler or hold features that use <code>say</code>.</li>
+<li>Instructions and voice are <b>fixed for the session</b>. Mid-session instruction updates raise <code>RealtimeError</code>. There are two instruction sets: the voice persona, and <code>responses_options.instructions</code> for the backend.</li>
+<li>Barge-in needs an explicit VAD. The session drops its default VAD for this model. <code>inference.VAD(model="silero")</code> is local, so this is fine.</li>
+<li>Usage arrives as <code>RealtimeModelMetrics.session_duration</code> (voice, billed by seconds) plus <code>LLMMetrics</code> under the backend model's name. <code>src/core/agents/usage.py</code> needs a new fold and a price row.</li>
+<li>Voice <code>aster</code> was replaced by <code>cedar</code> in 1.8.8.</li>
+</ul></td></tr>
+<tr><td><code>gpt-realtime-2.1</code>, <code>gpt-realtime-2.1-mini</code></td><td><span class="pill p-warn">verify</span></td><td>Listed only under LiveKit Inference. Not in the core <code>RealtimeModels</code> Literal on main (<code>gpt-realtime</code>, <code>-1.5</code>, <code>-2</code>, <code>-2025-08-28</code>, <code>gpt-4o-realtime-preview</code>). Whether api.openai.com serves them to our key is unknown. Add them only after <code>check_model_allowlist.py</code> confirms.</td></tr>
+<tr><td><code>gpt-realtime-1.5</code> (our default)</td><td><span class="pill p-bad">risk</span></td><td>Inference "retired GPT Realtime 1.5/2 IDs" (1.8.8). Direct-API status unknown. Check it first with a valid key.</td></tr>
+<tr><td>Gemini Live</td><td><span class="pill p-ok">no change</span></td><td>Plugin list unchanged since our 3.8 work. <code>google/gemini-live</code> is an Inference alias only.</td></tr>
+</table></div>
+
+<h3>4.3 STT</h3>
+<div class="tbl"><table>
+<tr><th>Model</th><th>Self-host</th><th>Notes</th></tr>
+<tr><td>openai <code>gpt-live-transcribe</code></td><td><span class="pill p-warn">blocked?</span></td><td>Plugin <code>stt.py</code> puts it in <code>_REALTIME_ONLY_MODELS</code> with <code>gpt-realtime-whisper</code>: no server-side endpointing, so the client commits the buffer. We already reject <code>gpt-realtime-whisper</code> because that path needs <code>livekit-plugins-silero</code> (<code>speech.py</code>, the <code>OPENAI_STT_MODELS</code> comment). The same blocker probably applies. Accepts 24 kHz PCM only, plus <code>keywords</code> and a plural <code>language</code> list. To confirm by reading the plugin at 1.8.8.</td></tr>
+<tr><td>Google <code>gemini-3.5-transcribe-live</code></td><td><span class="pill p-ok">plugin</span></td><td><code>google.beta.gemini_stt</code>, uses <code>GOOGLE_API_KEY</code> (already configured). A new cascade STT provider. Optional.</td></tr>
+<tr><td>Sarvam, Cartesia, Deepgram, ElevenLabs</td><td><span class="pill p-ok">no change</span></td><td>No new model ids. Deepgram Flux gained a configurable audio chunk duration (1.8.7). ElevenLabs STT now fails fast on 4xx.</td></tr>
+</table></div>
+
+<h3>4.4 TTS</h3>
+<div class="tbl"><table>
+<tr><th>Model</th><th>Self-host</th><th>Notes</th></tr>
+<tr><td><code>eleven_v4</code>, <code>eleven_v4_turbo</code></td><td><span class="pill p-ok">plugin</span></td><td>Added in 1.8.4 (#7519). <code>is_dialogue_model</code> matches the <code>eleven_v4</code> prefix, so both go through text-to-dialogue like v3. Very likely no <code>speed</code> either, so they go into <code>_ELEVENLABS_NO_SPEED_MODELS</code> (<code>tts/factory.py:28</code>). To verify. Change: <code>ELEVENLABS_TTS_MODELS</code> plus the factory set plus docs. ElevenLabs left LiveKit Inference on 2026-08-31, which does not affect us because we use our own key.</td></tr>
+<tr><td>Sarvam <code>bulbul:v4-flash</code></td><td><span class="pill p-ok">plugin</span></td><td>Added in 1.8.6 (#7335). Its <b>speaker roster shares no names with v3</b>: about 220 language-encoded names such as <code>simran_hi_customer</code> and <code>shubh_enhi_banking</code>. Stricter bounds: pace 0.5–2.0, pitch ±0.5, loudness 0.1–2.5, temperature 0.01–1.0. Streaming sample rate is limited to 8000/16000/22050/24000. Adds 11 IN22 languages behind a subscription flag. Today Sarvam TTS is <b>pinned</b> to <code>bulbul:v3</code> with no model field (<code>speech.py</code> comment, <code>tts/factory.py:20</code>), so this needs a new <code>model</code> field, a per-model speaker check and per-model bounds.</td></tr>
+<tr><td>Cartesia, Mistral</td><td><span class="pill p-ok">no change</span></td><td>Cartesia's TTS Literal still tops out at <code>sonic-3</code>.</td></tr>
+</table></div>
+
+<h3>4.5 Self-hostable SDK features (non-model)</h3>
+<div class="tbl"><table>
+<tr><th>Feature</th><th>Version</th><th>Value here</th></tr>
+<tr><td>Answering machine detection, <code>AMD(session, participant_identity=, llm=, stt=)</code></td><td>docs</td><td><b>High for outbound.</b> Classifies <code>human</code> / <code>machine-ivr</code> / <code>machine-vm</code> / <code>machine-unavailable</code> / <code>uncertain</code>, and pauses agent speech until it has a result. The defaults (<code>google/gemini-3.1-flash-lite</code>, <code>cartesia/ink-whisper</code>) are Inference. Without Cloud it falls back to the session's own LLM and STT transcripts, or to the plugin instances we pass. Evaluated plugin-compatible LLMs include <code>gpt-4.1-mini</code> and <code>gpt-4.1-nano</code>. The docs example creates the SIP participant inside the AMD context. Our outbound calls go through the dispatcher and the Exotel bridge, so the wiring point needs a design.</td></tr>
+<tr><td>Prompt-cache breakpoints in the Responses LLM</td><td>1.8.7</td><td>Free with the bump: lower input cost on GPT-5.6 and later in cascade. <code>cache_creation_tokens</code> is now reported, and <code>usage.py</code> may want to store it.</td></tr>
+<tr><td><code>e2e_latency</code> on realtime assistant messages</td><td>1.8.7</td><td>Needs local VAD, which we have. A cheap observability add.</td></tr>
+<tr><td>LLM <code>FallbackAdapter</code>, sticky routing</td><td>1.8.5</td><td>Cascade could fall back from one OpenAI model to another. Optional. No incident has asked for it yet.</td></tr>
+<tr><td>Tools keep running after an interruption timeout; <code>reply_required</code> in tool results</td><td>1.8.3 / 1.8.7</td><td>Behaviour change on bump. Re-run the tool tests.</td></tr>
+</table></div>
+
+<h3>4.6 Not usable here (LiveKit Cloud only)</h3>
+<p><code>inference.DuplexModel</code> / <code>llm="openai/gpt-live-1"</code>, <code>inference.RealtimeModel("openai/gpt-realtime-2.1")</code>, <code>openai/gpt-live-transcribe</code> via Inference, Grok Voice 3.0 via Inference, the Inference Fallback Adapter, and the AMD default models. The TypeSafe Jev <code>DecisionModel</code> needs OpenRouter, which is an external account. Skip it.</p>
+
+<h2>5. Upgrade notes for 1.8.2 → 1.8.8</h2>
+<ul>
+  <li>Dependency floors: <code>openai>=3.19,<4</code>, <code>mcp>=2.2,<3</code>, <code>websockets>=17.1,<17.2</code>, OpenTelemetry <code>>=1.45,<1.46</code>, <code>onnxruntime>=1.30,<1.31</code> (turn detection). Check <code>docker/requirements-agent.txt</code> and <code>docker/requirements-control.txt</code>. The control image pins <code>openai</code> for the live checks in <code>openai_live.py</code>.</li>
+  <li>Breaking changes that touch us: the removed OpenTelemetry Events API, if we emit events; tools continuing asynchronously after an interruption timeout. Not relevant: Anthropic <code>httpx2</code>, <code>inference.RealtimeModel</code> isinstance.</li>
+  <li>Sarvam STT now closes the streams it collects (1.8.6). This is worth having for <code>sarvam_parallel.py</code>.</li>
+</ul>
+
+<h2>6. Proposed phases</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>Work</th><th>Size</th><th>Gate</th></tr>
+<tr><td>0</td><td>Get a valid <code>OPENAI_API_KEY</code>, run <code>check_model_allowlist.py</code>, confirm <code>gpt-realtime-1.5</code> is still served</td><td>S</td><td>blocks 1, 2, 4</td></tr>
+<tr><td>1</td><td>Bump <code>livekit-agents~=1.8.8</code>, fix the dependency floors, run the test suite</td><td>S</td><td>tests green</td></tr>
+<tr><td>2</td><td>Add <code>gpt-6-luna</code> / <code>gpt-6-sol</code> to <code>REASONING_MODELS</code> (or another set, depending on probes), and settle the knob gating with <code>replay_cascade_request.py --bisect</code></td><td>S</td><td>probe results</td></tr>
+<tr><td>3</td><td>ElevenLabs <code>eleven_v4</code> / <code>eleven_v4_turbo</code></td><td>S</td><td>—</td></tr>
+<tr><td>4</td><td>Sarvam TTS <code>model</code> field, plus <code>bulbul:v4-flash</code> with its own speaker set and bounds</td><td>M</td><td>schema + migration-free default</td></tr>
+<tr><td>5</td><td>New <code>assistant_mode="duplex"</code> using GPT-Live: schema, <code>validate_mode_config</code> row, session builder, greeting-audio guard, usage fold and pricing, docs</td><td>L</td><td>decision below</td></tr>
+<tr><td>6</td><td>AMD on outbound calls: config flag, voicemail action (hang up or leave a message), webhook field</td><td>M–L</td><td>decision below</td></tr>
+</table></div>
+
+<h2>7. Decisions needed before planning</h2>
+<ol>
+  <li>Which items are in scope (phases 2–6)?</li>
+  <li>GPT-Live: a new <code>duplex</code> mode, or a model choice under <code>realtime</code>? What happens to the prerecorded greeting when GPT-Live is selected (reject at the API, or fall back to a model greeting)?</li>
+  <li>Sarvam <code>bulbul:v4-flash</code>: expose the full roster of about 220 speakers, or a curated subset?</li>
+  <li>AMD: on <code>machine-vm</code>, hang up or leave a voicemail message? Is it opt-in per assistant?</li>
+  <li>A working <code>OPENAI_API_KEY</code> for the allowlist check, or should someone with the key run the script and share its output?</li>
+</ol>
+
+<div class="note"><b>Agreed scope (2026-10-17).</b> In: phases 1–5 (the 1.8.8 bump, GPT-6, ElevenLabs v4, Sarvam <code>bulbul:v4-flash</code>, and GPT-Live as a new <code>assistant_mode="duplex"</code>). Out: AMD. The user is fixing <code>OPENAI_API_KEY</code>. Phase 0 runs before any model list is edited. Sarvam <code>bulbul:v4-flash</code>: expose the full roster. Duplex with greeting audio enabled: rejected with a 422 at create/update.</div>
+
+<h2>7b. Verification results (2026-10-17, valid key)</h2>
+<p><code>uv run python scripts/check_model_allowlist.py</code> exited 0. The account serves 149 model ids, and every allowlisted model is servable, including the default <code>gpt-realtime-1.5</code>. That closes the risk in §1. Served but not yet allowlisted: <code>gpt-6-luna</code>, <code>gpt-6-sol</code>, <code>gpt-live-1</code>, <code>gpt-realtime-2.1</code> and <code>gpt-realtime-2.1-mini</code>. The account also serves <code>gpt-6-astra</code> and <code>gpt-6.1-sol</code>. LiveKit does not document either, so both stay out of scope. The <code>gpt-5.x-chat-latest</code> aliases still appear in <code>/v1/models</code> even though LiveKit reports them retired on 2026-06-19. Do not re-add them.</p>
+<p>Direct <code>POST /v1/responses</code> probes, with <code>gpt-5.6-luna</code> as the control:</p>
+<div class="tbl"><table>
+<tr><th>Request</th><th>gpt-6-luna</th><th>gpt-6-sol</th><th>gpt-5.6-luna</th></tr>
+<tr><td>bare, tools, <code>verbosity=low</code>, <code>service_tier</code> flex / priority</td><td>OK</td><td>OK</td><td>OK</td></tr>
+<tr><td><code>reasoning.effort</code> none / low / high / xhigh, also with tools</td><td>OK</td><td>OK</td><td>OK</td></tr>
+<tr><td><code>reasoning.effort=minimal</code></td><td>400</td><td>400</td><td>400</td></tr>
+<tr><td><code>temperature</code>, also with tools</td><td>400</td><td>400</td><td>400</td></tr>
+<tr><td><code>temperature</code> with <code>effort=none</code></td><td>OK</td><td>OK</td><td>OK</td></tr>
+</table></div>
+<p>Conclusion: GPT-6 behaves exactly like the gpt-5.6 family. Both models go into <code>REASONING_MODELS</code>, which also puts them in <code>GPT5_GENERATION</code> and the flex tier. They do not go into <code>REASONING_TOOL_INCOMPATIBLE</code> or <code>PLUGIN_INJECTS_REASONING</code>. The probes ran against the API directly, and the plugin version does not change these results.</p>
+
+<h2>8. Sources</h2>
+<ul>
+  <li>Changelog: <a href="https://github.com/livekit/agents/releases">github.com/livekit/agents/releases</a> (1.8.1 to 1.8.8)</li>
+  <li><a href="https://docs.livekit.io/agents/models/llm/openai.md">docs.livekit.io/agents/models/llm/openai</a> (rendered 2026-10-17)</li>
+  <li><a href="https://docs.livekit.io/agents/models/realtime/gpt-live.md">docs.livekit.io/agents/models/realtime/gpt-live</a></li>
+  <li><a href="https://docs.livekit.io/agents/models/realtime.md">docs.livekit.io/agents/models/realtime</a>, <a href="https://docs.livekit.io/agents/models/realtime/openai.md">…/realtime/openai</a></li>
+  <li><a href="https://docs.livekit.io/agents/models/stt/openai.md">…/stt/openai</a>, <a href="https://docs.livekit.io/agents/models/tts/elevenlabs.md">…/tts/elevenlabs</a>, <a href="https://docs.livekit.io/agents/models/tts/sarvam.md">…/tts/sarvam</a></li>
+  <li><a href="https://docs.livekit.io/telephony/features/answering-machine-detection.md">…/telephony/features/answering-machine-detection</a></li>
+  <li>Plugin source (main @ <code>f548149</code>): <code>livekit-plugins-openai/…/models.py</code>, <code>…/stt.py</code>; <code>livekit-agents/…/llm/_realtime/openai_types.py</code>; <code>livekit-plugins-elevenlabs/…/models.py</code>; <code>livekit-plugins-sarvam/…/models.py</code>, <code>…/tts.py</code>; <code>livekit-plugins-google/…/models.py</code></li>
+</ul>
+
+</main>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral" });
+  for (const [i, el] of document.querySelectorAll("pre.mermaid").entries()) {
+    const { svg } = await mermaid.render(`mmd-${i}`, el.textContent);
+    el.innerHTML = svg;
+  }
+</script>
+</body>
+</html>

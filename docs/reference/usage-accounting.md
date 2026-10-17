@@ -29,8 +29,8 @@ New records contain `estimated_cost_usd`, `pricing_schema_version`, `pricing_com
 the usage dimensions needed to price it; the call still succeeds and the known entries are
 included in the partial total. Unknown pricing is never represented as a misleading zero.
 
-Gemini Live calls are priced too (list price per 1M tokens, per model — see
-[Models & Providers → Gemini Live pricing](models.md#gemini-live-pricing)). Cartesia and
+Every rate is listed on [Pricing](pricing.md). Gemini Live calls are priced too (list price per
+1M tokens, per model). Cartesia and
 Mistral are priced as well, so
 every provider this platform can run now has a rate. Two of those numbers are weaker than the
 rest and say so in the rate table: **Cartesia is derived** from its published plan tiers, since

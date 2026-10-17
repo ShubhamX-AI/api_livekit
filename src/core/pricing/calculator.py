@@ -56,6 +56,7 @@ def _cost(entry: dict, rate: ModelRate) -> Decimal:
         + rate.output_text * output_text
         + rate.output_audio * output_audio
         + rate.audio_second * _number(entry, "audio_duration")
+        + rate.session_second * _number(entry, "session_duration")
         + rate.character * _number(entry, "characters_count")
     )
 

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Search and ElevenLabs Settings</title>
+<style>
+  :root { --bg:#faf9f6; --fg:#1d1c1a; --muted:#6b675f; --line:#e2ded5; --card:#fff; --ok:#1f7a45; --code:#f1eee7; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#161614; --fg:#ece9e2; --muted:#a29d93; --line:#34322d; --card:#1f1e1b; --ok:#7cc79a; --code:#2a2925; } }
+  :root[data-theme="dark"] { --bg:#161614; --fg:#ece9e2; --muted:#a29d93; --line:#34322d; --card:#1f1e1b; --ok:#7cc79a; --code:#2a2925; }
+  body { background:var(--bg); color:var(--fg); font:15px/1.55 system-ui, sans-serif; margin:0 auto; max-width:960px; padding:24px 16px; }
+  h1 { font-size:24px; margin:0 0 4px } h2 { font-size:18px; margin:28px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px }
+  .muted { color:var(--muted) } code { background:var(--code); padding:1px 4px; border-radius:3px; font-size:13px }
+  table { border-collapse:collapse; width:100%; font-size:14px } th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top }
+  .cards { display:flex; gap:12px; flex-wrap:wrap } .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 14px; min-width:150px }
+  .card b { display:block; font-size:20px } .ok { color:var(--ok); font-weight:600 }
+  .mermaid { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px; overflow-x:auto }
+</style>
+</head>
+<body>
+<h1>MCP docs search, and ElevenLabs voice settings per model</h1>
+<p class="muted">2026-10-17 · plan: <code>agent-tracking/plan/08-mcp-search-and-elevenlabs-settings.md</code> · nothing committed</p>
+
+<h2>Summary</h2>
+<p>Two known limits from the 1.6.0 work, fixed. The <code>/mcp</code> docs search now ranks with BM25, so the page that answers a question beats a long page that merely mentions its words, and <code>changelog.md</code> is reachable again. ElevenLabs voice settings that a model does not read are now dropped per model, not only <code>speed</code>.</p>
+<div class="cards">
+  <div class="card"><b>18 → 25</b><span>of 26 questions: right page in top 3</span></div>
+  <div class="card"><b>0.48 → 0.91</b><span>mean reciprocal rank</span></div>
+  <div class="card"><b>628 → 646</b><span>tests, all passing</span></div>
+</div>
+
+<h2>Current → Target</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph MCP["/mcp (streamable HTTP)"]
+    L[list_docs] --> I[(page index)]
+    G[get_doc] --> I
+    S[search_docs] --> R1[raw substring count]
+    S --> R2[BM25 + title boost]:::added
+    I --> C[changelog.md indexed]:::added
+  end
+  subgraph EL["ElevenLabs TTS factory"]
+    V[voice_settings] --> D1[drop speed on v3/v4]
+    V --> D2[drop unread settings per model]:::added
+    D2 --> H[HTTP /stream request]
+  end
+  classDef added fill:#d8f0df,stroke:#1f7a45,color:#1d1c1a
+</pre>
+
+<h2>Request path</h2>
+<pre class="mermaid">
+sequenceDiagram
+  participant A as Agent (MCP client)
+  participant M as /mcp handler
+  participant S as search_docs
+  A->>M: tools/call search_docs("outbound call queue status")
+  M->>S: query
+  S->>S: words, rarity per word, BM25 per page, title/path boost
+  S-->>M: ranked paths + snippets
+  M-->>A: api/calls/queue-status.md first
+  A->>M: tools/call get_doc("api/calls/queue-status.md")
+  M-->>A: raw markdown
+</pre>
+
+<h2>What changed</h2>
+<table>
+<tr><th>Area</th><th>Change</th><th>Files</th></tr>
+<tr><td>MCP search</td><td>BM25 over whole words, plural <code>s</code> folded, title/path boost; constants tuned on 26 real questions</td><td><code>src/api/mcp_docs.py</code></td></tr>
+<tr><td>MCP pages</td><td><code>changelog.md</code> indexed again, so <code>get_doc</code>/<code>list_docs</code> serve it, as the server instructions promise</td><td><code>src/api/mcp_docs.py</code></td></tr>
+<tr><td>ElevenLabs</td><td>Per-model unread settings dropped with one warning: dropped per model from ElevenLabs' <code>/v1/models</code> flags and model notes (v3 keeps only <code>stability</code>). v3 no longer receives the 0.5 similarity default.</td><td><code>src/core/agents/tts/factory.py</code>, <code>src/services/elevenlabs/v3_nonstream.py</code></td></tr>
+<tr><td>Schema text</td><td>Each voice setting says which models ignore it</td><td><code>src/api/models/api_schemas/config/tts_config.py</code></td></tr>
+<tr><td>Docs</td><td>Per-model table; MCP ranking explained; changelog</td><td><code>docs/reference/models.md</code>, <code>docs/api/assistant/create.md</code>, <code>docs/features.md</code>, <code>docs/api/mcp.md</code>, <code>docs/changelog.md</code></td></tr>
+</table>
+
+<h2>Follow-up: ignored settings refused</h2>
+<p>On request, a setting the chosen TTS model ignores is now a <code>422</code> instead of being stored and dropped: ElevenLabs <code>voice_settings</code> per model, and Sarvam <code>temperature</code> on <code>bulbul:v4-flash</code>. The retired <code>eleven_monolingual_v1</code> / <code>eleven_multilingual_v1</code> (400 <code>unsupported_model</code> from ElevenLabs) are rejected too. <code>scripts/migrate_tts_settings.py --apply</code> cleans stored rows.</p>
+
+<h2>Tests added</h2>
+<table>
+<tr><th>Test</th><th>Checks</th></tr>
+<tr><td><code>test_search_ranks_the_page_that_answers_the_question</code></td><td>10 questions, right page in the top 3</td></tr>
+<tr><td><code>test_search_finds_plural_and_singular_forms</code></td><td><code>tools</code> matches <code>tool</code></td></tr>
+<tr><td><code>test_the_changelog_is_reachable</code></td><td><code>get_doc</code> and <code>list_docs</code> serve it</td></tr>
+<tr><td><code>TestMcpOverHttp</code></td><td>initialize, tools/list, tools/call search and the traversal refusal through the real streamable-HTTP handler</td></tr>
+<tr><td>ElevenLabs (4 tests)</td><td>v3 and v4 drops, the serialised body, older models untouched</td></tr>
+</table>
+
+<h2>Verification</h2>
+<table>
+<tr><th>Command</th><th>Before</th><th>After</th></tr>
+<tr><td><code>uv run python -m unittest discover -s tests</code></td><td>628 OK</td><td class="ok">646 OK</td></tr>
+<tr><td><code>uv run mkdocs build --strict</code></td><td>clean</td><td class="ok">clean</td></tr>
+<tr><td><code>uv run python scripts/check_mermaid.py</code></td><td>21 OK</td><td class="ok">21 OK</td></tr>
+<tr><td><code>uvx ruff check</code> on touched files</td><td>baseline counts</td><td class="ok">unchanged</td></tr>
+<tr><td>MCP smoke over HTTP: <code>get_doc("changelog.md")</code></td><td>"No page"</td><td class="ok">served</td></tr>
+</table>
+
+<h2>Known limits</h2>
+<ul>
+<li>No stemming beyond plural <code>s</code>: <code>attaching</code> does not match <code>attach</code>.</li>
+<li>Settled after the first pass: ElevenLabs' <code>GET /v1/models</code> flags show only <code>eleven_multilingual_v2</code> reads <code>style</code>, and only it and <code>eleven_v3_conversational</code> read speaker boost. The drop table follows those flags.</li>
+</ul>
+
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad: true, theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default" });
+</script>
+</body>
+</html>

@@ -201,7 +201,11 @@ ends. Most are now refused at create/update time instead:
 | A provider with no API key (per-assistant or system) | `422` at create, `400` at update |
 | An STT/TTS model id that does not exist (`nova-9`, `saaras:v9`) | `422` — the accepted sets are in `src/core/model_support/speech.py` |
 | A Sarvam STT model the vendor has sunset (`saaras:v2.5`, `saarika:v2.5`) | `422` — migrate to `saaras:v3` or `saaras:v4`; `scripts/audit_assistant_models.py` finds stored assistants still holding one |
-| A `bulbul:v2` Sarvam speaker (`anushka`, `manisha`, …) on the pinned `bulbul:v3` | `422` — v2 and v3 share no speaker names |
+| `gpt-5.1` or `gpt-5.4-nano` (removed in 1.6.0, retired by OpenAI on 2027-04-01) | `422` at create, `400` at update — `scripts/migrate_retired_models.py --apply` moves stored assistants to `gpt-6-sol` / `gpt-6-luna` |
+| A Sarvam speaker from another Bulbul generation (`anushka` on `bulbul:v3`, `shubh` on `bulbul:v4-flash`) | `422` — no two generations share a speaker name |
+| An IN22 language code (`as-IN`, `ur-IN`, …) on `bulbul:v3` | `422` — only `bulbul:v4-flash` speaks them |
+| An ElevenLabs voice setting the model ignores (`speed` on `eleven_v3`, …), or `temperature` on `bulbul:v4-flash` | `422` naming the setting and the models that read it; `scripts/migrate_tts_settings.py` cleans stored rows |
+| `eleven_monolingual_v1` / `eleven_multilingual_v1` | `422` — ElevenLabs retired them; the migration script moves stored rows to `eleven_multilingual_v2` |
 | `assistant_stt_model: "native"` in cascade mode | `422` — there is no realtime model to self-transcribe |
 | A Gemini chat model (`gemini-2.5-flash`) in realtime mode | `422` — only the four Gemini API Live models can hold a session |
 | `gemini-live-2.5-flash-native-audio` in realtime mode | `422` — Vertex AI only; the worker would refuse it after the call connects |
@@ -235,6 +239,39 @@ uv run python -c "import livekit.agents as a; print(a.__version__)"
 ```
 
 Anything below `1.8.2` reproduces the symptom regardless of which model is configured.
+
+---
+
+## Duplex mode: the greeting never comes, or the agent ignores a barge-in { #duplex-mode }
+
+GPT-Live (`assistant_mode: "duplex"`) decides for itself when to speak and when to stop. Three
+behaviours follow from that, and none of them is a fault.
+
+**No greeting.** With `speaks_first`, the start instruction is passed to GPT-Live as commentary,
+and the model phrases the greeting itself. It can decline. Then the worker logs one warning and the
+caller can speak first:
+
+```text
+WARNING  GPT-Live did not speak the greeting: …
+```
+
+Make the start instruction a plain request ("Greet the caller and ask how you can help"), not a
+script to read word for word. GPT-Live cannot read a script, which is also why a prerecorded
+greeting is refused in this mode.
+
+**It talks over a barge-in.** When the caller interrupts, the worker stops playing GPT-Live's audio,
+but the model may still finish its sentence internally, and it does not know which part the caller
+heard. That limit is GPT-Live's own: it has no message truncation.
+
+**Every delegated answer fails.** Tool calls and reasoning run on `backend_model`. A knob that
+model refuses fails every delegated turn; the worker log shows `gpt-live returned an error`, with
+OpenAI's error body attached. The API checks this when the assistant is saved
+(one Responses probe against the backend), so it only happens to a row edited outside the API, or
+after OpenAI changes what a model accepts. Re-save the assistant to re-run the check.
+
+**A long history is cut.** GPT-Live accepts at most 128 messages and 8192 tokens of startup
+history. When inbound context makes the prompt history longer than that, the oldest messages are
+dropped, and the plugin logs `gpt-live startup history exceeds what a session accepts`.
 
 ---
 

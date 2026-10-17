@@ -19,6 +19,7 @@ from src.api.validation import (
     enforce_provider_keys,
     enforce_stored_mode_constraints,
     resolve_probe_tools,
+    uses_responses_tools,
     will_attach_tools,
 )
 from src.core.db.db_schemas import (
@@ -109,7 +110,7 @@ async def create_assistant(
         status_code=422,
         tools=await resolve_probe_tools(
             probe_assistant,
-            strict_schemas=assistant_data.get("assistant_mode") == "cascade",
+            strict_schemas=uses_responses_tools(assistant_data.get("assistant_mode")),
         ),
         has_tools=will_attach_tools(probe_assistant),
     )
@@ -200,11 +201,20 @@ async def update_assistant(
             update_data["assistant_llm_config"] = None
 
     # Partial LLM config: merge over the stored dict so a PATCH naming one key does not drop
-    # the rest. Leaving realtime mode is the one exception — the stored config there is a
-    # Gemini one (voice, Gemini api_key) that must not survive under an OpenAI provider, and
-    # the guard above already documents it as cleared.
+    # the rest. Two switches replace it instead. Leaving realtime: the stored config there is
+    # a Gemini one (voice, Gemini api_key) that must not survive under an OpenAI provider, and
+    # the guard above already documents it as cleared. Into or out of duplex: no model id is
+    # valid on both sides (gpt-live-1 plus a backend), so the old config cannot carry over.
     leaving_realtime = assistant.assistant_mode == "realtime" and new_mode in ("pipeline", "cascade")
-    if update_data.get("assistant_llm_config") is not None and not leaving_realtime:
+    switching_duplex = (
+        new_mode is not None
+        and new_mode != assistant.assistant_mode
+        and "duplex" in (new_mode, assistant.assistant_mode)
+    )
+    replace_llm_config = leaving_realtime or switching_duplex
+    if switching_duplex and "assistant_llm_config" not in update_data:
+        update_data["assistant_llm_config"] = None
+    if update_data.get("assistant_llm_config") is not None and not replace_llm_config:
         update_data["assistant_llm_config"] = merge_llm_config(
             assistant.assistant_llm_config,
             update_data["assistant_llm_config"],
@@ -229,7 +239,7 @@ async def update_assistant(
         effective_llm_config(assistant, update_data),
         status_code=400,
         tools=await resolve_probe_tools(
-            assistant, update_data, strict_schemas=effective_mode == "cascade"
+            assistant, update_data, strict_schemas=uses_responses_tools(effective_mode)
         ),
         has_tools=will_attach_tools(assistant, update_data),
     )

@@ -5,10 +5,12 @@ The same markdown under ``docs/`` that MkDocs renders into the static site at
 at ``/mcp``. Raw markdown, not the built HTML — that is what an LLM wants.
 
 Three tools: ``list_docs`` (table of contents), ``get_doc`` (one page verbatim),
-``search_docs`` (keyword ranking across every page).
+``search_docs`` (BM25 keyword ranking across every page).
 """
 
+import math
 import re
+from collections import Counter
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -19,11 +21,20 @@ from src.core.version import __version__
 DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
 
 MAX_SNIPPET_CHARS = 300
-TITLE_WEIGHT = 5
+# Ranking constants, tuned on 26 real questions (agent-tracking/plan/08-…): the right page is
+# first for 22 and in the top three for 25, against 18 in the top three for the raw word count
+# this replaced. TITLE_BOOST: a query word in the page's title or path adds this many times the
+# word's rarity — the title names what the page is about, the body only mentions things.
+# K1 caps how much repeating a word helps; B discounts long pages, which is what stops a page
+# that mentions everything from outranking the short page that is about the question.
+TITLE_BOOST = 2.0
+BM25_K1 = 1.2
+BM25_B = 0.5
 
 # ponytail: index built once on first tool call, never invalidated — docs are
 # baked into the Docker image and immutable for the life of the process.
 _index: dict[str, tuple[str, str]] | None = None
+_terms: dict[str, tuple[Counter, int, set[str]]] | None = None
 
 
 def _title_of(text: str, relpath: str) -> str:
@@ -34,11 +45,12 @@ def _title_of(text: str, relpath: str) -> str:
     return relpath
 
 
-# Pages that are documentation of the project's history rather than of its behaviour. They are
-# excluded from the index because they mention every feature at once, so they outrank the specific
-# page for almost any query — an agent asked how to check queue status should be handed
-# api/calls/queue-status.md, not a release note that happens to mention queues.
-_NOT_REFERENCE = frozenset({"changelog.md"})
+def _words(text: str) -> list[str]:
+    """Lowercase whole words with a trailing plural `s` folded, so "calls" matches "call"."""
+    return [
+        w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+        for w in re.findall(r"[a-z0-9]+", text.lower())
+    ]
 
 
 def _load_index() -> dict[str, tuple[str, str]]:
@@ -49,8 +61,6 @@ def _load_index() -> dict[str, tuple[str, str]]:
 
     index: dict[str, tuple[str, str]] = {}
     for path in sorted(DOCS_DIR.rglob("*.md")):
-        if path.relative_to(DOCS_DIR).as_posix() in _NOT_REFERENCE:
-            continue
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -62,6 +72,17 @@ def _load_index() -> dict[str, tuple[str, str]]:
     logger.info(f"MCP docs: indexed {len(index)} pages from {DOCS_DIR}")
     _index = index
     return _index
+
+
+def _term_index() -> dict[str, tuple[Counter, int, set[str]]]:
+    """Per page: body word counts, body length in words, and the words of title and path."""
+    global _terms
+    if _terms is None:
+        _terms = {}
+        for relpath, (title, text) in _load_index().items():
+            body = _words(text)
+            _terms[relpath] = (Counter(body), len(body), set(_words(f"{title} {relpath.removesuffix('.md')}")))
+    return _terms
 
 
 def _resolve(path: str) -> str | None:
@@ -161,37 +182,51 @@ def get_doc(path: str) -> str:
 def search_docs(query: str, limit: int = 8) -> str:
     """Search all documentation pages for keywords and return the best matches.
 
-    Scores pages by how often the query's words appear, weighting title matches
-    higher. Returns path, title and a short snippet per hit — follow up with
-    get_doc to read a promising page in full.
+    Ranks pages with BM25: a word counts for more when few pages use it, repeating it helps
+    less and less, long pages are discounted, and a word in the page title or path counts extra.
+    Returns path, title and a short snippet per hit — follow up with get_doc to read a
+    promising page in full.
 
     Args:
         query: Words to look for, e.g. "trigger outbound call payload".
         limit: Maximum number of pages to return (default 8).
     """
-    terms = [t for t in re.split(r"\W+", query.lower()) if t]
+    terms = list(dict.fromkeys(_words(query)))
     if not terms:
         return "Empty query. Pass some keywords."
 
-    scored: list[tuple[int, str, str, str]] = []
-    for relpath, (title, text) in _load_index().items():
-        haystack = text.lower()
-        title_hay = f"{title} {relpath}".lower()
-        score = sum(
-            haystack.count(term) + TITLE_WEIGHT * title_hay.count(term)
-            for term in terms
-        )
+    pages = _term_index()
+    if not pages:
+        return "No documentation pages are indexed."
+    avg_len = max(1.0, sum(length for _, length, _ in pages.values()) / len(pages))
+    rarity = {}
+    for term in terms:
+        df = sum(1 for counts, _, title in pages.values() if counts[term] or term in title)
+        rarity[term] = math.log(1 + (len(pages) - df + 0.5) / (df + 0.5))
+
+    scored: list[tuple[float, str]] = []
+    for relpath, (counts, length, title) in pages.items():
+        norm = BM25_K1 * (1 - BM25_B + BM25_B * length / avg_len)
+        score = 0.0
+        for term in terms:
+            tf = counts[term]
+            score += rarity[term] * tf * (BM25_K1 + 1) / (tf + norm)
+            if term in title:
+                score += TITLE_BOOST * rarity[term]
         if score:
-            hit = next((t for t in terms if t in haystack), terms[0])
-            scored.append((score, relpath, title, _snippet(text, hit)))
+            scored.append((score, relpath))
 
     if not scored:
         return f"No pages match '{query}'. Try fewer or broader keywords, or call list_docs."
 
     scored.sort(key=lambda row: (-row[0], row[1]))
+    index = _load_index()
+    limit = max(1, limit)
     lines = [f"{len(scored)} matches, top {min(limit, len(scored))}:"]
-    for score, relpath, title, snippet in scored[: max(1, limit)]:
-        lines.append(f"\n### {title}\npath: {relpath} (score {score})\n{snippet}")
+    for score, relpath in scored[:limit]:
+        title, text = index[relpath]
+        hit = next((t for t in terms if t in text.lower()), terms[0])
+        lines.append(f"\n### {title}\npath: {relpath} (score {score:.2f})\n{_snippet(text, hit)}")
     return "\n".join(lines)
 
 

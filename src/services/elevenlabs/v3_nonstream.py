@@ -88,7 +88,7 @@ def _encoding_to_mimetype(encoding: TTSEncoding) -> str:
 @dataclass
 class VoiceSettings:
     stability: float
-    similarity_boost: float
+    similarity_boost: float | None = None  # None: not sent (eleven_v3 does not read it)
     style: NotGivenOr[float] = NOT_GIVEN
     speed: NotGivenOr[float] = NOT_GIVEN
     use_speaker_boost: NotGivenOr[bool] = NOT_GIVEN

@@ -732,6 +732,36 @@ class TestCreateLLM(unittest.TestCase):
         )
         self.assertEqual(llm._opts.reasoning.effort, "medium")
 
+    def test_gpt6_keeps_effort_and_verbosity_with_tools_and_drops_temperature(self):
+        from livekit.agents.types import NOT_GIVEN
+
+        for model in ("gpt-6-luna", "gpt-6-sol"):
+            with self.subTest(model=model):
+                llm = create_llm(
+                    make_assistant(
+                        assistant_llm_config={
+                            "api_key": "k",
+                            "model": model,
+                            "temperature": 0.4,
+                            "reasoning_effort": "low",
+                            "verbosity": "low",
+                        }
+                    ),
+                    has_tools=True,
+                )
+                self.assertIs(llm._opts.temperature, NOT_GIVEN)
+                self.assertEqual(llm._opts.reasoning.effort, "low")
+                self.assertEqual(llm._opts.verbosity, "low")
+
+    def test_plugin_injects_no_reasoning_on_gpt6(self):
+        """If the plugin starts injecting one, GPT-6 belongs in PLUGIN_INJECTS_REASONING."""
+        from livekit.agents.types import NOT_GIVEN
+
+        for model in ("gpt-6-luna", "gpt-6-sol"):
+            with self.subTest(model=model):
+                llm = create_llm(make_assistant(assistant_llm_config={"api_key": "k", "model": model}))
+                self.assertIs(llm._opts.reasoning, NOT_GIVEN)
+
     def test_built_llm_is_logged_without_the_api_key(self):
         """A Responses 400 arrives with no detail, so the knobs must be in our own log."""
         with mock.patch("src.core.agents.llm.factory.logger") as log:
@@ -1047,6 +1077,32 @@ class TestCascadeSchemaRules(unittest.TestCase):
                         assistant_stt_model="sarvam",
                         assistant_llm_config=llm_config,
                     )
+
+    def test_cascade_accepts_gpt6_with_the_knobs_it_reads(self):
+        """Probed 2026-10-17: effort, verbosity and flex are accepted on both GPT-6 models."""
+        for model in ("gpt-6-luna", "gpt-6-sol"):
+            with self.subTest(model=model):
+                request = CreateAssistant(
+                    **self.BASE,
+                    assistant_stt_model="sarvam",
+                    assistant_llm_config={
+                        "model": model,
+                        "reasoning_effort": "xhigh",
+                        "verbosity": "low",
+                        "service_tier": "flex",
+                    },
+                )
+                self.assertEqual(request.assistant_llm_config.model, model)
+
+    def test_cascade_rejects_temperature_on_gpt6(self):
+        """Probed 2026-10-17: both GPT-6 models answer temperature with a 400."""
+        for model in ("gpt-6-luna", "gpt-6-sol"):
+            with self.subTest(model=model), self.assertRaises(ValidationError):
+                CreateAssistant(
+                    **self.BASE,
+                    assistant_stt_model="sarvam",
+                    assistant_llm_config={"model": model, "temperature": 0.3},
+                )
 
     def test_cascade_knob_rules_use_the_default_model_when_none_is_set(self):
         """No model means gpt-4.1, so the knobs are judged against gpt-4.1."""
@@ -1365,6 +1421,8 @@ class TestCreateTTS(unittest.TestCase):
                 assistant_tts_config={
                     "voice_id": "v",
                     "api_key": "k",
+                    # A model that reads similarity; on eleven_v3 it is never sent.
+                    "model": "eleven_multilingual_v2",
                     "voice_settings": {"style": 0.4},
                 },
             )
@@ -1467,6 +1525,91 @@ class TestSarvamTTSLanguageGuard(unittest.TestCase):
         self.assertEqual(self._tts(target_language_code=None)._opts.target_language_code, "en-IN")
 
 
+class TestSarvamTTSModel(unittest.TestCase):
+    """bulbul:v4-flash: chosen per assistant, its own roster, tighter limits, IN22 codes."""
+
+    def _tts(self, **config):
+        from src.core.agents.tts.factory import create_tts
+
+        return create_tts(
+            SimpleNamespace(
+                assistant_id="assistant-1",
+                assistant_tts_model="sarvam",
+                assistant_tts_config={"api_key": "k", **config},
+            )
+        )
+
+    def test_a_row_without_a_model_keeps_v3(self):
+        self.assertEqual(self._tts(speaker="shubh")._opts.model, "bulbul:v3")
+
+    def test_v4_flash_is_built_with_its_own_speaker(self):
+        opts = self._tts(model="bulbul:v4-flash", speaker="shubh_hi_customer")._opts
+        self.assertEqual(opts.model, "bulbul:v4-flash")
+        self.assertEqual(opts.speaker, "shubh_hi_customer")
+
+    def test_a_v3_speaker_on_v4_is_refused_before_the_plugin_raises(self):
+        with mock.patch("src.core.agents.stt.lang.logger"):
+            self.assertIsNone(self._tts(model="bulbul:v4-flash", speaker="shubh"))
+
+    def test_an_in22_code_is_kept_on_v4_flash(self):
+        tts = self._tts(model="bulbul:v4-flash", speaker="kangkana_as_conversational", target_language_code="as-IN")
+        self.assertEqual(tts._opts.target_language_code, "as-IN")
+
+    def test_an_in22_code_falls_back_on_v3(self):
+        with mock.patch("src.core.agents.tts.factory.logger") as log:
+            tts = self._tts(speaker="shubh", target_language_code="as-IN")
+        self.assertEqual(tts._opts.target_language_code, "en-IN")
+        self.assertIn("bulbul:v4-flash", log.error.call_args[0][0])
+
+    def test_the_schema_defaults_to_v3(self):
+        from src.api.models.api_schemas.config.tts_config import SarvamTTSConfig
+
+        self.assertEqual(SarvamTTSConfig(speaker="shubh").model, "bulbul:v3")
+
+    def test_the_schema_checks_the_speaker_against_the_chosen_model(self):
+        from src.api.models.api_schemas.config.tts_config import SarvamTTSConfig
+
+        SarvamTTSConfig(model="bulbul:v4-flash", speaker="simran_enhi_customer")
+        for model, speaker in (("bulbul:v4-flash", "shubh"), ("bulbul:v3", "shubh_hi_customer")):
+            with self.subTest(model=model, speaker=speaker), self.assertRaises(ValidationError):
+                SarvamTTSConfig(model=model, speaker=speaker)
+
+    def test_the_schema_applies_the_v4_limits_only_to_v4(self):
+        from src.api.models.api_schemas.config.tts_config import SarvamTTSConfig
+
+        v4 = {"model": "bulbul:v4-flash", "speaker": "shubh_hi_customer"}
+        for knob, value in (
+            ("pace", 0.4),
+            ("pace", 2.5),
+            ("temperature", 0.5),
+            ("speech_sample_rate", 48000),
+        ):
+            with self.subTest(knob=knob, value=value):
+                with self.assertRaises(ValidationError):
+                    SarvamTTSConfig(**v4, **{knob: value})
+                # The same value is still fine on v3, whose limits are wider.
+                SarvamTTSConfig(speaker="shubh", **{knob: value})
+        SarvamTTSConfig(**v4, pace=2.0, speech_sample_rate=8000)
+
+    def test_an_unknown_model_is_rejected(self):
+        from src.api.models.api_schemas.config.tts_config import SarvamTTSConfig
+
+        with self.assertRaises(ValidationError):
+            SarvamTTSConfig(model="bulbul:v2", speaker="anushka")
+
+    def test_an_in22_language_needs_v4_flash(self):
+        """v3 cannot speak it; stored anyway, every call would fall back to en-IN."""
+        from src.api.models.api_schemas.config.tts_config import SarvamTTSConfig
+
+        with self.assertRaises(ValidationError):
+            SarvamTTSConfig(speaker="shubh", target_language_code="as-IN")
+        SarvamTTSConfig(
+            model="bulbul:v4-flash",
+            speaker="kangkana_as_conversational",
+            target_language_code="as-IN",
+        )
+
+
 class TestSarvamTTSSpeakerGuard(unittest.TestCase):
     """The speaker roster is per Bulbul generation, and the plugin raises on a mismatch.
 
@@ -1505,7 +1648,7 @@ class TestSarvamTTSSpeakerGuard(unittest.TestCase):
 
 
 class TestElevenLabsSpeedGuard(unittest.TestCase):
-    """`speed` is not a v3 knob, and v3 is this platform's default ElevenLabs model."""
+    """v3 and v4 read fewer voice settings than the older models; v3 is the default model."""
 
     def _tts(self, model, **voice_settings):
         from src.core.agents.tts.factory import create_tts
@@ -1529,6 +1672,41 @@ class TestElevenLabsSpeedGuard(unittest.TestCase):
         # The settings the model does read are untouched by the drop.
         self.assertEqual(opts.voice_settings.stability, 0.4)
 
+    def test_speed_is_dropped_on_v4(self):
+        # ElevenLabs: v4 uses stability and similarity only, no speed.
+        for model in ("eleven_v4", "eleven_v4_turbo"):
+            with self.subTest(model=model):
+                opts = self._tts(model, speed=1.2)._opts
+                self.assertIsNone(opts.voice_settings.speed)
+                self.assertEqual(opts.voice_settings.stability, 0.4)
+
+    def test_each_model_keeps_only_the_settings_it_reads(self):
+        """Per ElevenLabs' /v1/models flags and model notes, checked 2026-10-17."""
+        everything = {"similarity_boost": 0.9, "style": 0.3, "use_speaker_boost": True}
+        expected = {
+            "eleven_v3": set(),
+            "eleven_v3_conversational": {"use_speaker_boost"},
+            "eleven_v4": {"similarity_boost"},
+            "eleven_v4_turbo": {"similarity_boost"},
+            "eleven_flash_v2_5": {"similarity_boost"},
+            "eleven_turbo_v2_5": {"similarity_boost"},
+            "eleven_multilingual_v2": {"similarity_boost", "style", "use_speaker_boost"},
+        }
+        for model, kept in expected.items():
+            with self.subTest(model=model):
+                opts = self._tts(model, **everything)._opts.voice_settings
+                sent = {k for k in everything if getattr(opts, k) is not None}
+                self.assertEqual(sent, kept)
+
+    def test_an_unread_setting_is_not_sent(self):
+        """Through the client's own serialisation: dropped means absent from the request."""
+        from dataclasses import asdict
+
+        from src.services.elevenlabs.v3_nonstream import _strip_nones
+
+        sent = _strip_nones(asdict(self._tts("eleven_v3", similarity_boost=0.9)._opts.voice_settings))
+        self.assertEqual(sent, {"stability": 0.4})
+
     def test_speed_survives_on_a_model_that_has_it(self):
         opts = self._tts("eleven_multilingual_v2", speed=1.2)._opts
         self.assertEqual(opts.voice_settings.speed, 1.2)
@@ -1540,6 +1718,52 @@ class TestElevenLabsSpeedGuard(unittest.TestCase):
         self.assertIn("eleven_v3", message)
         self.assertIn("assistant-1", message)
         self.assertIn("eleven_multilingual_v2", message)
+
+
+class TestElevenLabsSettingsAtTheAPI(unittest.TestCase):
+    """A setting the chosen model ignores is a 422, not a value that silently does nothing."""
+
+    def _config(self, model, **voice_settings):
+        from src.api.models.api_schemas.config.tts_config import ElevenLabsTTSConfig
+
+        return ElevenLabsTTSConfig(voice_id="v", model=model, voice_settings=voice_settings)
+
+    def test_an_unread_setting_is_rejected_and_named(self):
+        with self.assertRaises(ValidationError) as ctx:
+            self._config("eleven_v3", stability=0.5, speed=1.2)
+        message = str(ctx.exception)
+        self.assertIn("eleven_v3 does not read voice_settings speed", message)
+        # Names where the setting does work, so the fix is obvious.
+        self.assertIn("eleven_multilingual_v2", message)
+
+    def test_each_model_accepts_exactly_what_it_reads(self):
+        from src.core.model_support.speech import ELEVENLABS_UNREAD_SETTINGS
+
+        values = {
+            "stability": 0.5,
+            "similarity_boost": 0.5,
+            "style": 0.3,
+            "speed": 1.1,
+            "use_speaker_boost": True,
+        }
+        for model in ("eleven_v3", "eleven_v3_conversational", "eleven_v4", "eleven_turbo_v2_5", "eleven_multilingual_v2"):
+            unread = ELEVENLABS_UNREAD_SETTINGS.get(model, frozenset())
+            for setting, value in values.items():
+                with self.subTest(model=model, setting=setting):
+                    if setting in unread:
+                        with self.assertRaises(ValidationError):
+                            self._config(model, **{setting: value})
+                    else:
+                        self._config(model, **{setting: value})
+
+    def test_unset_settings_never_count(self):
+        """A null in a resent config is not a setting."""
+        self._config("eleven_v3", stability=0.5, speed=None, style=None)
+
+    def test_the_retired_v1_models_are_rejected(self):
+        for model in ("eleven_monolingual_v1", "eleven_multilingual_v1"):
+            with self.subTest(model=model), self.assertRaises(ValidationError):
+                self._config(model)
 
 
 class TestSarvamTTSRanges(unittest.TestCase):
@@ -1603,6 +1827,12 @@ class TestModeGuardrails(unittest.TestCase):
     def test_pipeline_accepts_a_realtime_model(self):
         created = self._create(assistant_llm_config={"model": "gpt-realtime-1.5"})
         self.assertEqual(created.assistant_llm_config.model, "gpt-realtime-1.5")
+
+    def test_pipeline_accepts_the_realtime_2_1_line(self):
+        for model in ("gpt-realtime-2.1", "gpt-realtime-2.1-mini"):
+            with self.subTest(model=model):
+                created = self._create(assistant_llm_config={"model": model})
+                self.assertEqual(created.assistant_llm_config.model, model)
 
     def test_realtime_still_accepts_gemini_and_free_form_models(self):
         created = CreateAssistant(

@@ -1,6 +1,6 @@
 # LiveKit Agent Service
 
-FastAPI backend plus LiveKit worker for real-time voice assistants with `pipeline`, `realtime` and `cascade` modes.
+FastAPI backend plus LiveKit worker for real-time voice assistants with `pipeline`, `realtime`, `cascade` and `duplex` modes.
 
 ## What This Project Does
 
@@ -9,13 +9,13 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Supports web calls with both text (`lk.chat`) and voice input, plus an opt-in **text-only mode** (`text_only: true`) that disables mic/TTS/STT/recording for pure-chatbot use.
 - Supports outbound calling and Exotel inbound routing.
 - Queues outbound call requests and dispatches them in the background at a controlled rate.
-- Supports three assistant runtime modes (mode = how many models are in the loop, `assistant_llm_config.provider` = vendor):
+- Supports four assistant runtime modes (mode = how many models are in the loop, `assistant_llm_config.provider` = vendor):
   - `pipeline` (half-cascade): a realtime model emits text + separate TTS provider. Vendor `openai` only.
   - `realtime`: LLM speaks its own audio. Vendor `gemini` (default) or `openai`.
   - `cascade`: a true STT → LLM → TTS pipeline — plugin STT, plain OpenAI chat model, plugin TTS, each separately metered and swappable.
-- Supports start greetings in all modes when `assistant_interaction_config.speaks_first=true`.
+  - `duplex`: OpenAI GPT-Live — listens while it speaks and decides its own turns, with a backend reasoning model (e.g. `gpt-6-luna`) for thinking and tools.
+- Supports start greetings in all modes when `assistant_interaction_config.speaks_first=true` (in `duplex`, GPT-Live phrases the greeting itself and may decline).
 - Stores transcripts and call records in MongoDB.
-- Sends post-call webhook notifications.
 - Sends post-call webhook notifications with both actual and billable call duration.
 - Writes activity logs for tool calls, inbound context lookup, and end-call webhook delivery.
 - Tracks per-call usage via SDK metrics: LLM tokens, TTS characters, and — in `cascade` mode — STT audio duration attributed to its own stage.
@@ -24,7 +24,9 @@ FastAPI backend plus LiveKit worker for real-time voice assistants with `pipelin
 - Includes versioned estimated AI-provider cost in per-call usage, webhooks, and token analytics;
   public-rate gaps are reported as partial pricing rather than silently treated as free.
 - Super-admin endpoints for cross-tenant analytics and token usage visibility.
-- Protects worker capacity by buffering outbound requests and limiting new job intake under higher CPU load.
+- Protects worker capacity by buffering outbound requests and capping concurrent sessions per call type
+  (`MAX_CONCURRENT_JOBS`, `MAX_CONCURRENT_WEB_CALLS`, `MAX_CONCURRENT_MEETING_CALLS`,
+  `MAX_CONCURRENT_SESSIONS`); the worker counts its own active jobs, not machine CPU.
 
 ## Provider Support
 
@@ -242,73 +244,107 @@ Use `GET /call/records?passthrough_only=true` to list all passthrough call recor
 ## Architecture
 
 1. API service (`src/api/server.py`) exposes REST endpoints (multiple Gunicorn workers in production).
-2. SIP dispatcher (`sip_dispatcher_run.py`) — dedicated process that owns the inbound SIP listener and outbound dispatcher loop. See `docs/architecture.md` for the single-container vs. multi-container deployment model.
+2. SIP dispatcher (`sip_dispatcher_run.py`) — dedicated process that owns the inbound SIP listener and outbound dispatcher loop. See `docs/architecture/index.md` for the single-container vs. multi-container deployment model.
 3. `api-agent` worker (`agent_run.py` → `src/core/agents/session.py`) joins LiveKit rooms and runs the assistant.
 4. `meet-connector` worker joins the same room only for meeting calls and bridges Chrome/Google Meet audio.
 5. MongoDB stores assistants, tools, trunks, queued outbound calls, call records, usage, and logs.
 6. LiveKit handles media transport, explicit worker dispatch, shared rooms, and room orchestration.
 
+## Response Envelope
+
+Every REST endpoint returns the same JSON shape (`src/api/models/response_models.py`). Errors use
+it too — `HTTPException`, validation errors (`422`) and unhandled exceptions are rewritten by the
+handlers in `src/api/server.py`, with secrets redacted from the message.
+
+```json
+{ "success": true, "message": "Human-readable result", "data": { } }
+```
+
+On failure `success` is `false` and `data` is `{}` (or the list of field errors for a `422`).
+
 ## Requirements
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
-- MongoDB
+- MongoDB (Change Streams are used by the dispatcher, so a replica set in production)
 - LiveKit server (cloud or self-hosted)
-- API keys for providers you use (OpenAI, Google Gemini, Cartesia/Sarvam/ElevenLabs/Mistral, LiveKit)
+- API keys for the providers you use (OpenAI, Google Gemini, Cartesia, Sarvam, Deepgram,
+  ElevenLabs, Mistral)
+- Exotel SIP trunk for inbound calls and Exotel outbound; Twilio for Twilio outbound
 
 ## Environment Variables
 
-Create `.env` in the project root.
+Copy `.env.example` to `.env` in the project root. General settings are read in `src/core/config.py`; the Exotel
+SIP/RTP bridge reads its own in `src/services/exotel/custom_sip_reach/config.py` and
+`inbound_bridge.py`. Empty default = unset; a provider key left empty disables that provider
+unless the assistant supplies its own key.
 
-```ini
-PORT=8000
-BACKEND_URL=http://localhost:8000  # Worker callback URL for webhook routing
-
-# Container role controls (default "true" keeps single-container / dev setups working)
-ENABLE_SIP_LISTENER=true   # Set "false" on api container when sip_dispatcher container is used
-ENABLE_DISPATCHER=true     # Set "false" on api container when sip_dispatcher container is used
-GUNICORN_WORKERS=1
-MAX_CONCURRENT_JOBS=12
-
-# End-of-call webhook delivery (see docs/api/calls/webhook.md)
-END_CALL_WEBHOOK_TIMEOUT=30   # Seconds to wait for your endpoint to answer
-END_CALL_WEBHOOK_ATTEMPTS=3   # Retries on timeout / connection error / 429 / 5xx
-
-MONGODB_URL=mongodb://admin:secretpassword@localhost:27017
-DATABASE_NAME=livekit_db
-
-LIVEKIT_URL=ws://127.0.0.1:7880
-LIVEKIT_API_KEY=devkey
-LIVEKIT_API_SECRET=secret
-
-OPENAI_API_KEY=<your-openai-api-key>
-GOOGLE_API_KEY=<your-google-api-key>
-CARTESIA_API_KEY=<optional>
-SARVAM_API_KEY=<optional>
-ELEVENLABS_API_KEY=<optional>
-MISTRAL_API_KEY=<optional>
-
-# Email (optional — needed for email tool)
-SMTP_HOST=smtp.sendgrid.net
-SMTP_PORT=587
-SMTP_USER=apikey
-SMTP_PASSWORD=<your-sendgrid-api-key>
-FROM_EMAIL=noreply@yourdomain.com
-FROM_NAME=Your App Name
-
-AWS_ACCESS_KEY_ID=<optional-for-recording-upload>
-AWS_SECRET_ACCESS_KEY=<optional-for-recording-upload>
-AWS_REGION=us-east-1
-S3_BUCKET_NAME=<optional-for-recording-upload>
-S3_RECORDINGS_PREFIX=recordings/
-S3_GREETING_PREFIX=greeting_audio/
-
-LOG_LEVEL=INFO
-LOG_JSON_FORMAT=False
-LOG_FILE=app.log
-LOG_MAX_BYTES=10485760
-LOG_BACKUP_COUNT=5
-```
+| Variable | Default | Note |
+|---|---|---|
+| `PORT` | `8000` | API listen port |
+| `GUNICORN_WORKERS` | `1` | API worker processes (`server_run.py`) |
+| `BACKEND_URL` | `http://localhost:8000` | URL the worker calls back for webhook routing |
+| `ENABLE_SIP_LISTENER` | `true` | `false` on the API container when the `sip_dispatcher` container runs |
+| `ENABLE_DISPATCHER` | `true` | `false` on the API container when the `sip_dispatcher` container runs |
+| `MONGODB_URL` | `mongodb://admin:secretpassword@localhost:27017` | Dev default only — always set in production |
+| `DATABASE_NAME` | `livekit_db` | |
+| `LIVEKIT_URL` | `ws://127.0.0.1:7880` | |
+| `LIVEKIT_API_KEY` | `devkey` | Dev default only |
+| `LIVEKIT_API_SECRET` | `secret` | Dev default only |
+| `OPENAI_API_KEY` | — | Pipeline, cascade, duplex, OpenAI STT; also the config guards |
+| `GOOGLE_API_KEY` | — | Gemini realtime |
+| `CARTESIA_API_KEY` | — | Cartesia STT/TTS |
+| `SARVAM_API_KEY` | — | Sarvam STT/TTS (default STT) |
+| `DEEPGRAM_API_KEY` | — | Deepgram STT (cascade) |
+| `ELEVENLABS_API_KEY` | — | ElevenLabs STT + TTS |
+| `MISTRAL_API_KEY` | — | Mistral TTS |
+| `HEALTH_PROBE_TIMEOUT_S` | `3` | Per-probe deadline for `GET /health` |
+| `OPENAI_MODEL_CACHE_TTL` | `3600` | Seconds the `GET /v1/models` answer is cached by the config guard |
+| `MAX_CONCURRENT_JOBS` | `12` | Live telephony calls (incl. passthrough) |
+| `MAX_CONCURRENT_WEB_CALLS` | `40` | Live web calls — not load-tested, set from your own test |
+| `MAX_CONCURRENT_MEETING_CALLS` | `4` | Live meeting calls |
+| `MAX_CONCURRENT_SESSIONS` | `48` | Hard ceiling across all call types; the worker stops taking jobs here |
+| `MAX_CONCURRENT_INVITE_SETUPS` | `24` | Inbound INVITEs in setup, not live calls |
+| `MEETING_CONNECTOR_AGENT_NAME` | `meet-connector` | LiveKit dispatch name of the meeting connector worker |
+| `MEETING_CONNECTOR_JOIN_TIMEOUT_SECONDS` | `120` | Connector must appear in the room by then |
+| `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS` | `360` | Time for a human to admit the bot |
+| `END_CALL_WEBHOOK_TIMEOUT` | `30` | Read timeout in seconds (`docs/api/calls/webhook.md`) |
+| `END_CALL_WEBHOOK_ATTEMPTS` | `3` | Retries on timeout / connection error / 429 / 5xx |
+| `AWS_ACCESS_KEY_ID` | — | Recording + audio-library upload |
+| `AWS_SECRET_ACCESS_KEY` | — | |
+| `AWS_REGION` | `us-east-1` | |
+| `S3_BUCKET_NAME` | — | |
+| `S3_RECORDINGS_PREFIX` | `recordings/` | |
+| `S3_GREETING_PREFIX` | `greeting_audio/` | |
+| `SMTP_HOST` | `smtp.sendgrid.net` | Email tool only |
+| `SMTP_PORT` | `587` | |
+| `SMTP_USER` | `apikey` | |
+| `SMTP_PASSWORD` | — | |
+| `FROM_EMAIL` | `noreply@yourdomain.com` | |
+| `FROM_NAME` | `Your App Name` | |
+| `LOG_LEVEL` | `INFO` | |
+| `LOG_JSON_FORMAT` | `False` | |
+| `LOG_FILE` | `app.log` | |
+| `LOG_MAX_BYTES` | `10485760` | |
+| `LOG_BACKUP_COUNT` | `5` | |
+| `EXOTEL_SIP_HOST` | `pstn.in1.exotel.com` | |
+| `EXOTEL_SIP_PORT` | `5070` | |
+| `EXOTEL_CUSTOMER_IP` | — | Public/Elastic IP of this host — never `0.0.0.0` or a private IP |
+| `EXOTEL_CUSTOMER_SIP_PORT` | `5061` | |
+| `EXOTEL_MEDIA_IP` | — | Public/Elastic IP Exotel sends RTP to |
+| `EXOTEL_CALLER_ID` | `08044319240` | Default outbound caller ID |
+| `EXOTEL_FROM_DOMAIN` | `lokaviveka1m.pstn.exotel.com` | |
+| `EXOTEL_AUTH_USERNAME` | — | SIP digest auth |
+| `EXOTEL_AUTH_PASSWORD` | — | SIP digest auth |
+| `EXOTEL_SIP_ALLOWED_IPS` | — | Inbound INVITE source allowlist |
+| `INBOUND_SIP_LISTEN` | `true` | |
+| `INBOUND_RING_UNTIL_AGENT_READY` | `true` | Keep the caller ringing until the agent can speak |
+| `INBOUND_MAX_RING_SECONDS` | `15` | Answered on expiry, never dropped |
+| `INBOUND_MEDIA_READY_TIMEOUT` | `20` | Bridge must bind RTP and join the room by then |
+| `SIP_BRIDGE_PORT_RANGE_START` | `41000` | Falls back to `RTP_PORT_START` |
+| `SIP_BRIDGE_PORT_RANGE_END` | `42000` | Falls back to `RTP_PORT_END` |
+| `NO_RTP_AFTER_ANSWER_SECONDS` | `60` | |
+| `RTP_SILENCE_TIMEOUT_SECONDS` | `30` | |
 
 ## Run Locally
 
@@ -439,27 +475,66 @@ Use these pages as the canonical payload contracts:
 - End-call webhook payload: `docs/api/calls/webhook.md`
 - Per-call usage: `docs/api/calls/usage.md`
 
-## API Areas
+## Endpoints
 
-- `/auth`
-- `/assistant`
-- `/tool`
-- `/sip`
-- `/call`
-- `/call/queue/{queue_id}`
-- `/call/outbound_passthrough` — start a passthrough call (web ↔ SIP, no agent)
-- `/call/records` — list call records with optional filters; `passthrough_only=true` for passthrough-only view
-- `/call/records/{room_name}/usage` — retrieve one owned call's full usage record, including `model_usage`
-- `/inbound`
-- `/inbound_context_strategy`
-- `/logs`
-- `/web_call/get_token` — supports `text_only: true` for chatbot mode (no audio, no recording; `pipeline` and `cascade` assistants, not `realtime`)
-- `/analytics` — per-user call and token analytics (dashboard, call breakdowns, token summary, tokens by model)
-- `/admin` — super-admin cross-tenant analytics and token usage (requires `is_super_admin` flag)
+Auth: `key` = `Authorization: Bearer <lvk_ api key>`; `super admin` = a key whose user has
+`is_super_admin`. Full request/response docs live under `docs/api/`.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/health` | none | Pings MongoDB and LiveKit; **always HTTP 200 — read `data.status`** (`ok` / `degraded`) |
+| — | `/mcp` | none | Read-only MCP server over `docs/` (`src/api/mcp_docs.py`) |
+| POST | `/auth/create-key` | none | Create an `lvk_` API key for an email |
+| GET | `/auth/check-key` | key | Validate the caller's key |
+| POST | `/assistant/create` | key | Create an assistant (all four gates run) |
+| PATCH | `/assistant/update/{assistant_id}` | key | Partial update, re-validated against the stored row |
+| GET | `/assistant/list` | key | List assistants |
+| GET | `/assistant/details/{assistant_id}` | key | One assistant |
+| DELETE | `/assistant/delete/{assistant_id}` | key | Delete an assistant |
+| GET | `/assistant/call-logs/{assistant_id}` | key | Call logs for one assistant |
+| POST | `/audio/upload` | key | Upload audio; transcoded to WAV 48 kHz mono, ≤ 30 s |
+| GET | `/audio/list` | key | List audio assets |
+| GET | `/audio/{audio_id}` | key | One audio asset |
+| DELETE | `/audio/{audio_id}` | key | Soft-delete an audio asset |
+| POST | `/tool/create` | key | Create a function tool |
+| PATCH | `/tool/update/{tool_id}` | key | Update a tool |
+| GET | `/tool/list` | key | List tools |
+| GET | `/tool/details/{tool_id}` | key | One tool |
+| DELETE | `/tool/delete/{tool_id}` | key | Delete a tool |
+| POST | `/tool/attach/{assistant_id}` | key | Attach tools (re-runs the config guards) |
+| POST | `/tool/detach/{assistant_id}` | key | Detach tools (re-runs the config guards) |
+| POST | `/sip/create-outbound-trunk` | key | Create an outbound trunk (`twilio` or `exotel`) |
+| GET | `/sip/list` | key | List trunks |
+| DELETE | `/sip/deactivate/{trunk_id}` | key | Deactivate a trunk |
+| POST | `/call/outbound` | key | Queue an outbound call → `202` with `queue_id` |
+| GET | `/call/queue/{queue_id}` | key | Queue state: `pending` / `dispatching` / `dispatched` / `failed` |
+| POST | `/call/outbound_passthrough` | key | Web ↔ SIP call with no agent → `202` |
+| GET | `/call/records` | key | List call records; `passthrough_only=true` filter |
+| GET | `/call/records/{room_name}/usage` | key | One owned call's usage, including `model_usage` |
+| POST | `/call/end_call` | none | Echo endpoint for testing the end-call webhook |
+| POST | `/web_call/get_token` | key | LiveKit token for a web call; `text_only: true` for chatbot mode (`pipeline` and `cascade` only) |
+| POST | `/meeting_call/join` | key | Send the assistant into a Google Meet |
+| POST | `/inbound/assign` | key | Map an inbound number to an assistant |
+| PATCH | `/inbound/update/{inbound_id}` | key | Update a mapping |
+| POST | `/inbound/detach/{inbound_id}` | key | Detach the assistant from a number |
+| DELETE | `/inbound/delete/{inbound_id}` | key | Delete a mapping |
+| GET | `/inbound/list` | key | List inbound numbers |
+| POST | `/inbound_context_strategy/create` | key | Create a caller-context webhook strategy |
+| PATCH | `/inbound_context_strategy/update/{strategy_id}` | key | Update a strategy |
+| GET | `/inbound_context_strategy/list` | key | List strategies |
+| GET | `/inbound_context_strategy/details/{strategy_id}` | key | One strategy |
+| DELETE | `/inbound_context_strategy/delete/{strategy_id}` | key | Delete a strategy |
+| GET | `/logs` | key | Activity logs (tool calls, context lookups, webhook delivery) |
+| GET | `/analytics/dashboard` | key | Per-user call and token dashboard |
+| GET | `/analytics/calls/{by-assistant,by-phone-number,by-time,by-service}` | key | Call breakdowns |
+| GET | `/analytics/tokens/{summary,by-model}` | key | Token and cost summaries |
+| GET | `/admin/analytics/dashboard` | super admin | Cross-tenant dashboard |
+| GET | `/admin/analytics/calls/{by-user,by-phone-number,by-service}` | super admin | Cross-tenant call breakdowns |
+| GET | `/admin/analytics/tokens/{summary,by-model,by-user,by-assistant}` | super admin | Cross-tenant token usage |
 
 ## Assistant Modes
 
-Two axes: **mode** (`assistant_mode`) = how many models are in the loop, **provider** (`assistant_llm_config.provider`) = LLM vendor. `gemini` is valid in `realtime` mode only; `pipeline` and `cascade` are OpenAI-only and reject it with a `422`. Full table: `docs/reference/compatibility.md`.
+Two axes: **mode** (`assistant_mode`) = how many models are in the loop, **provider** (`assistant_llm_config.provider`) = LLM vendor. `gemini` is valid in `realtime` mode only; `pipeline`, `cascade` and `duplex` are OpenAI-only and reject it with a `422`. Full table: `docs/reference/compatibility.md`.
 
 - `pipeline` mode (default, half-cascade) — a realtime model emits text, separate TTS speaks it:
   - Requires `assistant_tts_model` and `assistant_tts_config`
@@ -479,11 +554,17 @@ Two axes: **mode** (`assistant_mode`) = how many models are in the loop, **provi
   - Reports **per-component usage** like the other modes: `stt_provider` / `stt_model` / `stt_audio_duration` land on `UsageRecord` and the end-of-call webhook alongside the LLM and TTS numbers
   - Does not use the Sarvam parallel tap; turn detection is local (in-process Silero VAD + a bundled audio end-of-utterance model), so nothing here needs LiveKit Cloud
 
-Note: `assistant_start_instruction` is honored in all three modes whenever `assistant_interaction_config.speaks_first` is enabled.
+- `duplex` mode — OpenAI GPT-Live (`gpt-live-1`), full duplex:
+  - Needs no TTS or STT fields; `assistant_llm_config` is optional (`voice`, `backend_model` — default `gpt-5.6-luna`, any reasoning model such as `gpt-6-luna` — `backend_instructions`, and the backend's knobs)
+  - `assistant_prompt` is the voice persona; `backend_instructions` steers the backend that runs the tools. Both are fixed for the call
+  - Rejects an enabled greeting audio, filler words and `text_only` web calls, since GPT-Live cannot speak a fixed string
+  - Billed per second of session ($0.05/min) plus the backend's tokens
+
+Note: `assistant_start_instruction` is honored in all four modes whenever `assistant_interaction_config.speaks_first` is enabled (in `duplex` the model phrases it and may decline).
 
 ## Audio Library & Prerecorded Greeting
 
-Instead of generating the opening line with the model, an assistant can play a prerecorded greeting. This skips the LLM + TTS (pipeline and cascade) or the realtime audio generation (realtime) for the greeting, cutting token cost and latency. It works in all three modes.
+Instead of generating the opening line with the model, an assistant can play a prerecorded greeting. This skips the LLM + TTS (pipeline and cascade) or the realtime audio generation (realtime) for the greeting, cutting token cost and latency. It works in `pipeline`, `realtime` and `cascade` — not `duplex`, where GPT-Live cannot play a recording.
 
 The design is modular: audio files live in a reusable **library** (the `audio_assets` collection) and assistants reference one by id. Auth: `Authorization: Bearer <api_key>`.
 
@@ -515,7 +596,8 @@ Each assistant can cap its own call length via `assistant_interaction_config.max
 ```text
 api_livekit/
 ├── README.md
-├── CLAUDE.md
+├── AGENTS.md              # the one agent instruction file: rules, commands, architecture, structure
+├── CLAUDE.md              # one line: @AGENTS.md
 ├── pyproject.toml
 ├── uv.lock
 ├── Dockerfile
@@ -531,21 +613,23 @@ api_livekit/
 ├── agent_run.py
 ├── deploy.sh
 ├── .agents/
-│   ├── workflows/
 │   └── skills/
+├── agent-tracking/        # agent plans, research, reports — not published
 ├── assets/
 │   └── audio/
 ├── docs/                  # MkDocs source
 │   └── architecture/
 │       └── meeting-calls.md            # Google Meet dispatch, audio, lifecycle, and ownership
 ├── scripts/               # migration/backfill one-offs + the three diagnostics below
-├── tests/
+├── tests/                 # flat test_<topic>.py, stdlib unittest
 ├── src/
 │   ├── api/
 │   │   ├── dependencies/
 │   │   │   └── auth.py                # Bearer api-key auth (get_current_user / get_super_admin)
 │   │   ├── models/
-│   │   │   ├── api_schemas/           # Pydantic request/response schemas + validators, split by domain
+│   │   │   ├── api_schemas/           # Pydantic request schemas + validators
+│   │   │   │   ├── config/            # llm / stt / tts / interaction config + validate_mode_config
+│   │   │   │   └── telephony/         # calls, trunks, inbound, inbound context strategy
 │   │   │   └── response_models.py
 │   │   ├── validation/
 │   │   │   └── assistant_guard.py     # guards needing the stored row or a provider call
@@ -579,9 +663,12 @@ api_livekit/
 │   │   │   ├── audio_denoise.py
 │   │   │   ├── utils.py               # render_prompt
 │   │   │   ├── llm/
-│   │   │   │   └── factory.py         # cascade LLM (openai.responses.LLM)
+│   │   │   │   └── factory.py         # create_llm (cascade) + create_gpt_live (duplex)
 │   │   │   ├── stt/
 │   │   │   │   ├── factory.py         # STT resolver (pipeline) + cascade builder (create_stt)
+│   │   │   │   ├── lang.py            # per-provider language-code validation
+│   │   │   │   ├── cascade_usage.py   # cascade STT usage metering
+│   │   │   │   ├── native_usage.py    # Realtime API transcription usage metering
 │   │   │   │   ├── native_prompt.py   # transcription prompt + noise-reduction pick (native path)
 │   │   │   │   └── sarvam_parallel.py # Sarvam Saras v3 parallel STT tap + fragment coalescer
 │   │   │   ├── models/
@@ -598,9 +685,12 @@ api_livekit/
 │   │   │   ├── __init__.py
 │   │   │   └── keys.py                # provider key registry + masking helpers
 │   │   ├── billing.py                 # actual vs billable duration
+│   │   ├── pricing/                   # rates.py + calculator.py: estimated provider cost
+│   │   ├── version.py
 │   │   ├── db/
 │   │   │   ├── database.py
-│   │   │   └── db_schemas.py          # Beanie documents
+│   │   │   ├── db_schemas.py          # Beanie documents
+│   │   │   └── usage_aggregations.py  # analytics pipelines
 │   │   ├── config.py                  # Settings / env config
 │   │   └── logger.py
 │   └── services/
@@ -625,9 +715,48 @@ api_livekit/
 │       │       ├── sip_client.py
 │       │       ├── inbound_listener.py
 │       │       ├── inbound_bridge.py
+│       │       ├── inbound_worker.py      # one inbound call's media half (own process)
 │       │       ├── digest_auth.py
 │       │       ├── port_pool.py
 │       │       └── config.py
 │       └── livekit/
 │           └── livekit_svc.py
 ```
+
+## Data Stores
+
+MongoDB through Beanie (`src/core/db/db_schemas.py`).
+
+| Collection | Keyed by | Holds |
+|---|---|---|
+| `api_keys` | `api_key`, `user_email` (both unique) | API keys and the `is_super_admin` flag |
+| `assistants` | `assistant_id` | Mode, prompts, LLM / STT / TTS config, greeting audio ref |
+| `audio_assets` | `audio_id` | Audio-library metadata; the WAV lives in S3 |
+| `tools` | `tool_id` | Function-tool definitions and their webhook |
+| `outbound_sip` | `trunk_id` | Outbound trunks (`twilio` / `exotel`) |
+| `inbound_sip` | `inbound_id` | Inbound number → assistant mappings |
+| `inbound_context_strategies` | `strategy_id` | Caller-context webhook settings |
+| `outbound_call_queue` | `queue_id` | Queued outbound calls and their dispatch state |
+| `call_records` | `room_name` | One row per call: transcript, durations, end reason |
+| `usage_records` | `room_name` (1:1 with `call_records`) | Per-component usage and estimated cost |
+| `activity_logs` | `user_email` | Tool calls, context lookups, webhook deliveries |
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Language / packaging | Python 3.12+, uv |
+| HTTP API | FastAPI served by Gunicorn |
+| Voice runtime | LiveKit Agents `~=1.8.8` (OpenAI, Google, Cartesia, Deepgram, ElevenLabs, Sarvam plugins), local Silero VAD on onnxruntime |
+| Telephony | Custom Exotel SIP/RTP bridge; Twilio via LiveKit SIP |
+| Database | MongoDB via Beanie + Motor |
+| Storage | S3 via boto3; PyAV for audio transcoding |
+| Templating | chevron (Mustache prompts) |
+| Docs | MkDocs Material; served to agents over MCP (`mcp`) |
+| Tests | stdlib `unittest` |
+| Deploy | Docker / docker compose, `deploy.sh` (`control`, `agent`, `full`) |
+
+## Licence
+
+No licence is declared: the repository has no `LICENSE` file and `pyproject.toml` has no
+`license` field. Add one before distributing the code.

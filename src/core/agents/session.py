@@ -37,7 +37,7 @@ from src.core.agents.inbound_context import (
     resolve_inbound_context,
 )
 from src.core.agents.llm import DEFAULT_MODEL as DEFAULT_CASCADE_LLM_MODEL
-from src.core.agents.llm import create_llm
+from src.core.agents.llm import create_gpt_live, create_llm
 from src.core.agents.session_lifecycle import (
     CallReadinessGate,
     RecordingManager,
@@ -191,6 +191,22 @@ async def _wait_to_speak_or_hangup(
     return False
 
 
+async def _mute_until_answered(gate: CallReadinessGate, speech_gate, timeout: float = 60.0) -> None:
+    """Keep the caller's input blank until an outbound Exotel call is answered.
+
+    Before the answer the line carries the ring tone, and every mode's model hears it as
+    speech: realtime models reply to it, cascade starts a user turn, GPT-Live answers it.
+    The greeting path has its own mute; this one covers an assistant that does not speak
+    first. Unmuted on answer, on timeout, or if the task is cancelled.
+    """
+    speech_gate.muted = True
+    try:
+        if not await gate.wait_until_ready(timeout=timeout):
+            logger.warning("[EXOTEL] Timed out waiting for call_answered — unmuting the caller")
+    finally:
+        speech_gate.muted = False
+
+
 # Helper to build background audio player based on interaction config
 def build_background_audio(interaction_config) -> BackgroundAudioPlayer | None:
     ambient_sound = None
@@ -293,21 +309,26 @@ async def entrypoint(ctx: JobContext):
         _greeting_prefetch_task = asyncio.create_task(_prefetch_greeting_audio(_greeting_cfg.audio_id))
 
     logger.info(f"Loaded assistant config: {assistant.assistant_name} (ID: {assistant.assistant_id})")
-    # Three modes, one discriminator each. "pipeline" (half-cascade) is the implicit
-    # third case: a realtime model emitting text, spoken by an external TTS.
+    # Four modes, one discriminator each. "pipeline" (half-cascade) is the implicit
+    # fourth case: a realtime model emitting text, spoken by an external TTS.
     #   realtime — one model does STT + LLM + TTS (audio out)
+    #   duplex   — GPT-Live: listens while it speaks, hands reasoning and tools to a backend
     #   cascade  — a true pipeline: plugin STT -> plain LLM -> plugin TTS
     #   pipeline — realtime model emits text, external TTS speaks it
     _mode = assistant.assistant_mode
     is_realtime = _mode == "realtime"
+    is_duplex = _mode == "duplex"
     is_cascade = _mode == "cascade"
+    # Realtime and duplex both speak in the model's own voice: no TTS to build, nothing that
+    # can `session.say()` a fixed string, and spoken features go through generate_reply.
+    speaks_own_audio = is_realtime or is_duplex
     # assistant_mode is a plain string in the DB (see src/core/db/db_schemas.py), so a row
     # written outside the API can hold anything. Anything unrecognised lands in the pipeline
     # branch below; say so rather than letting it look intentional.
-    if _mode not in {"pipeline", "realtime", "cascade"}:
+    if _mode not in {"pipeline", "realtime", "cascade", "duplex"}:
         logger.warning(
             f"Unknown assistant_mode '{_mode}' — treating as 'pipeline'. "
-            "Valid values are 'pipeline', 'realtime' and 'cascade'."
+            "Valid values are 'pipeline', 'realtime', 'cascade' and 'duplex'."
         )
 
     # Extract metadata from job metadata
@@ -392,10 +413,10 @@ async def entrypoint(ctx: JobContext):
 
 
     interaction_config = assistant.assistant_interaction_config
-    # Filler words require external TTS (session.say), disabled in realtime mode.
+    # Filler words require external TTS (session.say), disabled in realtime and duplex mode.
     # Voice-only features (filler, silence reprompts, background/thinking sounds) all
     # off for text-only chats — no audio in or out.
-    filler_words_enabled = bool(interaction_config.filler_words) and not is_realtime and not is_text_only
+    filler_words_enabled = bool(interaction_config.filler_words) and not speaks_own_audio and not is_text_only
     silence_reprompts_enabled = bool(interaction_config.silence_reprompts) and not is_text_only
     background_sound_enabled = bool(getattr(interaction_config, "background_sound_enabled", True)) and not is_text_only
     thinking_sound_enabled = bool(getattr(interaction_config, "thinking_sound_enabled", True)) and not is_text_only
@@ -450,10 +471,10 @@ async def entrypoint(ctx: JobContext):
                 user_email=assistant.assistant_created_by_email,
                 room_name=room_name,
                 assistant_id=assistant_id,
-                # Only cascade talks to the Responses API, which is where `strict` on a
-                # function tool means anything. The Realtime API has no such field and
-                # errors on the unknown key.
-                strict_schemas=is_cascade,
+                # Only cascade and duplex (GPT-Live's backend) talk to the Responses API,
+                # which is where `strict` on a function tool means anything. The Realtime
+                # API has no such field and errors on the unknown key.
+                strict_schemas=is_cascade or is_duplex,
             )
             logger.info(f"Loaded {len(tools)} tool(s) for assistant {assistant.assistant_id}")
         except Exception as e:
@@ -520,7 +541,7 @@ async def entrypoint(ctx: JobContext):
                 user_email=assistant.assistant_created_by_email,
                 mode=assistant.assistant_mode,
                 llm_realtime_provider=llm_realtime_provider,
-                tts_provider=assistant.assistant_tts_model if not is_realtime else None,
+                tts_provider=assistant.assistant_tts_model if not speaks_own_audio else None,
                 stt_provider=stt_billed_to,
                 call_service=telephony_provider,
                 call_duration_minutes=call_duration,
@@ -841,7 +862,12 @@ async def entrypoint(ctx: JobContext):
         if realtime_supports_truncation(_openai_realtime_model)
         else None
     )
-    if _realtime_truncation is None and not is_cascade and realtime_provider == "openai":
+    if (
+        _realtime_truncation is None
+        and not is_cascade
+        and not is_duplex
+        and realtime_provider == "openai"
+    ):
         logger.info(
             "Realtime model %s predates session.truncation — running without it "
             "(context is truncated by the API's own default instead).",
@@ -873,6 +899,13 @@ async def entrypoint(ctx: JobContext):
             llm_config.get("model") or DEFAULT_CASCADE_LLM_MODEL,
             assistant.assistant_tts_model,
         )
+    elif is_duplex:
+        # GPT-Live: one voice model that hears and speaks at once and decides its own turns,
+        # plus a backend Responses model for reasoning and tools (see create_gpt_live). No
+        # STT, no TTS, and the instructions and voice are fixed once the session starts.
+        llm = create_gpt_live(assistant, has_tools=bool(tools))
+        if llm is None:
+            return
     elif is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
         if realtime_provider == "gemini":
@@ -958,9 +991,9 @@ async def entrypoint(ctx: JobContext):
             return
         logger.info("Half-cascade mode | llm=%s | tts=%s", realtime_provider, assistant.assistant_tts_model)
 
-    # --- Build TTS (pipeline mode only) ---
+    # --- Build TTS (pipeline and cascade only) ---
     tts = None
-    if not is_realtime and not is_text_only:
+    if not speaks_own_audio and not is_text_only:
         tts = create_tts(assistant)
         if tts is None:
             return
@@ -971,6 +1004,10 @@ async def entrypoint(ctx: JobContext):
     # Text-only chats reuse the realtime branch shape (no TTS, no audio knobs).
     if is_realtime or is_text_only:
         session = AgentSession(llm=llm)
+    elif is_duplex:
+        # Explicit VAD: the session drops its default for a duplex model, and barge-in needs it.
+        # Local Silero, same as cascade.
+        session = AgentSession(llm=llm, vad=inference.VAD(model="silero", min_silence_duration=0.4))
     elif is_cascade:
         session = AgentSession(
             stt=cascade_stt,
@@ -1056,7 +1093,7 @@ async def entrypoint(ctx: JobContext):
             on_silence_exhausted=_end_call_on_silence,
             reprompt_interval_sec=interaction_config.silence_reprompt_interval,
             max_reprompts=interaction_config.silence_max_reprompts,
-            use_llm_for_speech=is_realtime,
+            use_llm_for_speech=speaks_own_audio,
         ) if silence_reprompts_enabled else None
     )
     # Filler words always go through OpenAI, so the assistant's LLM key only fits
@@ -1073,9 +1110,12 @@ async def entrypoint(ctx: JobContext):
     )
     # Enabled in realtime mode too: the guard now blanks audio through SpeechGate instead
     # of detaching the input, so the model keeps receiving a continuous feed (the reason
-    # realtime used to be excluded). Text-only chats have no audio to guard.
+    # realtime used to be excluded). Text-only chats have no audio to guard. Never in duplex:
+    # GPT-Live listens *while* it speaks and decides its own turns from what it hears, so
+    # blanking the caller at the start of each reply would deafen it exactly when a barge-in
+    # or a backchannel matters.
     _guard_window = interaction_config.input_guard_window_sec
-    input_guard = None if (speech_gate is None or _guard_window <= 0) else InputGuardController(
+    input_guard = None if (speech_gate is None or _guard_window <= 0 or is_duplex) else InputGuardController(
         logger=logger,
         gate=speech_gate,
         window_sec=_guard_window,
@@ -1614,6 +1654,13 @@ async def entrypoint(ctx: JobContext):
 
     # --- Start Instruction ---
     should_speak_first = interaction_config.speaks_first
+    # No greeting means no greeting-path mute, so the ring tone would reach the model.
+    if (
+        speech_gate is not None
+        and not gate.is_active
+        and not (should_speak_first and agent_instance.start_instruction)
+    ):
+        asyncio.create_task(_mute_until_answered(gate, speech_gate))
     if should_speak_first:
         start_instruction = agent_instance.start_instruction
         if start_instruction:
@@ -1631,9 +1678,14 @@ async def entrypoint(ctx: JobContext):
                     llm.update_options(turn_detection=None)
                 # Cascade has no realtime model whose VAD can be switched off, and its own
                 # VAD + turn detector are live — so the same pre-answer ring tone would
-                # create a spurious user turn. Blank the input at the gate instead, the
-                # same lever InputGuardController uses. Unmuted in the finally below.
-                elif is_exotel_bridge and not allow_int and is_cascade and speech_gate is not None:
+                # create a spurious user turn. GPT-Live would answer the ring tone, so in duplex
+                # the mute is always on. Blank the input at the gate, the same lever
+                # InputGuardController uses. Unmuted in the finally.
+                elif (
+                    is_exotel_bridge
+                    and speech_gate is not None
+                    and ((is_cascade and not allow_int) or is_duplex)
+                ):
                     speech_gate.muted = True
                     _gate_muted_for_answer = True
 
@@ -1666,7 +1718,9 @@ async def entrypoint(ctx: JobContext):
                     # Prefer a prerecorded greeting when configured — skips LLM + TTS for both modes.
                     greeting_cfg = assistant.assistant_greeting_audio
                     played_prerecorded = False
-                    if greeting_cfg.enabled and greeting_cfg.audio_id:
+                    # Never in duplex: GPT-Live cannot play a recording (the API refuses the
+                    # pair, so only a row edited outside it gets here).
+                    if greeting_cfg.enabled and greeting_cfg.audio_id and not is_duplex:
                         transcript = await play_prerecorded_greeting(
                             session, greeting_cfg.audio_id, allow_int, prefetch=_greeting_prefetch_task,
                         )
@@ -1675,7 +1729,26 @@ async def entrypoint(ctx: JobContext):
                             spoken_text = transcript
 
                     if not played_prerecorded:
-                        if is_realtime:
+                        if is_duplex:
+                            # GPT-Live takes the instruction as commentary and phrases the
+                            # greeting itself. It may decline; then the handle ends with an
+                            # error instead of raising, and the caller can still speak first.
+                            logger.info("Start instruction strategy | mode=duplex_speaks_first_via_commentary")
+                            try:
+                                if not allow_int:
+                                    agent_instance._allow_interruptions = False
+                                handle = session.generate_reply(
+                                    instructions=start_instruction, allow_interruptions=allow_int
+                                )
+                                await handle
+                            finally:
+                                agent_instance._allow_interruptions = NOT_GIVEN
+                            if handle.exception() is not None:
+                                logger.warning(
+                                    f"GPT-Live did not speak the greeting: {handle.exception()}"
+                                )
+                                spoken_text = None
+                        elif is_realtime:
                             logger.info("Start instruction strategy | mode=realtime_speaks_first_via_user_input | provider = %s", realtime_provider)
 
                             if realtime_provider == "gemini":

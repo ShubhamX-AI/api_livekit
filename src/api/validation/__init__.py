@@ -21,6 +21,7 @@ from src.api.validation.assistant_guard import (
     enforce_stored_mode_constraints,
     enforce_tool_change,
     resolve_probe_tools,
+    uses_responses_tools,
     will_attach_tools,
 )
 
@@ -32,5 +33,6 @@ __all__ = [
     "enforce_stored_mode_constraints",
     "enforce_tool_change",
     "resolve_probe_tools",
+    "uses_responses_tools",
     "will_attach_tools",
 ]

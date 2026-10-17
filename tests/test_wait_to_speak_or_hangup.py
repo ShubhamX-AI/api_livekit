@@ -1,8 +1,9 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from src.core.agents.session import _wait_to_speak_or_hangup
+from src.core.agents.session import _mute_until_answered, _wait_to_speak_or_hangup
 from src.core.agents.session_lifecycle import CallReadinessGate, RecordingManager
 
 
@@ -74,6 +75,27 @@ class TestWaitToSpeakOrHangup(unittest.IsolatedAsyncioTestCase):
             warmup_sec=0.01,
         )
         self.assertFalse(should_speak)
+
+
+
+class TestMuteUntilAnswered(unittest.IsolatedAsyncioTestCase):
+    """An assistant that does not speak first must not hear the outbound ring tone."""
+
+    async def test_muted_until_answered(self):
+        gate = CallReadinessGate(is_exotel_outbound=True)
+        speech_gate = SimpleNamespace(muted=False)
+        task = asyncio.create_task(_mute_until_answered(gate, speech_gate))
+        await asyncio.sleep(0)
+        self.assertTrue(speech_gate.muted)
+
+        gate.mark_answered()
+        await task
+        self.assertFalse(speech_gate.muted)
+
+    async def test_unmuted_when_the_answer_never_comes(self):
+        speech_gate = SimpleNamespace(muted=False)
+        await _mute_until_answered(CallReadinessGate(is_exotel_outbound=True), speech_gate, timeout=0.01)
+        self.assertFalse(speech_gate.muted)
 
 
 if __name__ == "__main__":

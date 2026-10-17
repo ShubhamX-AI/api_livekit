@@ -49,7 +49,7 @@ class TestProviderPricing(unittest.TestCase):
         self.assertEqual(len(result.unpriced_model_usage), 0)
         self.assertAlmostEqual(
             float(result.estimated_cost_usd),
-            float(Decimal("0.10") + Decimal(30) / Decimal("83.75")),
+            float(Decimal("0.08") + Decimal(30) / Decimal("83.75")),
             places=12,
         )
 
@@ -117,6 +117,44 @@ class TestProviderPricing(unittest.TestCase):
             with self.subTest(model=model):
                 self.assertIsNotNone(get_rate("llm_usage", "gemini", model))
 
+
+    def test_every_allowlisted_openai_llm_has_a_rate(self):
+        """Cascade and realtime models alike: a missing rate prices a whole call as zero."""
+        from src.core.model_support.capabilities import CASCADE_MODELS, REALTIME_MODELS
+        from src.core.pricing.rates import get_rate
+
+        for model in CASCADE_MODELS | REALTIME_MODELS:
+            with self.subTest(model=model):
+                self.assertIsNotNone(get_rate("llm_usage", "openai", model))
+
+    def test_every_rated_model_is_on_the_pricing_page(self):
+        """docs/reference/pricing.md is hand-written; this keeps it from falling behind."""
+        from pathlib import Path
+
+        from src.core.pricing import rates
+
+        page = (Path(__file__).parent.parent / "docs/reference/pricing.md").read_text()
+        tables = [value for name, value in vars(rates).items() if name.endswith("_RATES")]
+        for table in tables:
+            for model in table:
+                with self.subTest(model=model):
+                    self.assertIn(f"`{model}`", page)
+
+    def test_every_allowlisted_elevenlabs_tts_model_has_a_rate(self):
+        from src.core.model_support.speech import ELEVENLABS_TTS_MODELS
+        from src.core.pricing.rates import get_rate
+
+        for model in ELEVENLABS_TTS_MODELS:
+            with self.subTest(model=model):
+                self.assertIsNotNone(get_rate("tts_usage", "elevenlabs", model))
+
+    def test_every_sarvam_tts_model_has_a_rate(self):
+        from src.core.model_support.speech import SARVAM_TTS_MODELS
+        from src.core.pricing.rates import get_rate
+
+        for model in SARVAM_TTS_MODELS:
+            with self.subTest(model=model):
+                self.assertIsNotNone(get_rate("tts_usage", "sarvam", model))
 
     def test_cartesia_tts_and_stt_are_priced(self):
         """Cartesia publishes no per-unit price; the rate is derived from the Startup tier."""

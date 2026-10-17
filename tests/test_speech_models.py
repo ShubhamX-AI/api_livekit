@@ -20,12 +20,16 @@ from typing import get_args
 from src.core.model_support.speech import (
     CARTESIA_STT_MODELS,
     DEEPGRAM_STT_MODELS,
+    ELEVENLABS_RETIRED_TTS_MODELS,
     ELEVENLABS_STT_MODELS,
     ELEVENLABS_TTS_MODELS,
     OPENAI_STT_MODELS,
     SARVAM_STT_MODELS,
+    SARVAM_TTS_MODELS,
     SARVAM_TTS_SPEAKERS,
     SARVAM_V2_SPEAKERS,
+    SARVAM_V4_FLASH_ONLY_LANGUAGES,
+    SARVAM_V4_FLASH_SPEAKERS,
     unsupported_sarvam_speaker_reason,
     unsupported_speech_model_reason,
 )
@@ -100,7 +104,20 @@ class TestTTSModelSetsMatchThePlugins(unittest.TestCase):
     def test_elevenlabs(self):
         from livekit.plugins.elevenlabs.models import TTSModels
 
-        self.assertEqual(ELEVENLABS_TTS_MODELS, literal_values(TTSModels))
+        # The plugin still lists the two v1 models ElevenLabs retired; they are kept out on
+        # purpose, and this keeps any other plugin addition from slipping past.
+        self.assertEqual(
+            ELEVENLABS_TTS_MODELS | ELEVENLABS_RETIRED_TTS_MODELS, literal_values(TTSModels)
+        )
+        self.assertEqual(ELEVENLABS_TTS_MODELS & ELEVENLABS_RETIRED_TTS_MODELS, set())
+
+    def test_every_model_has_a_settings_entry_or_reads_everything(self):
+        """A new model with no entry in the table would be allowed every setting."""
+        from src.core.model_support.speech import ELEVENLABS_UNREAD_SETTINGS
+
+        self.assertEqual(
+            ELEVENLABS_TTS_MODELS - set(ELEVENLABS_UNREAD_SETTINGS), {"eleven_multilingual_v2"}
+        )
 
     def test_the_default_elevenlabs_model_is_allowlisted(self):
         self.assertIn("eleven_v3", ELEVENLABS_TTS_MODELS)
@@ -133,6 +150,55 @@ class TestSarvamSpeakerRoster(unittest.TestCase):
 
     def test_no_speaker_is_not_this_check_s_problem(self):
         self.assertIsNone(unsupported_sarvam_speaker_reason(None))
+
+
+class TestSarvamV4FlashRoster(unittest.TestCase):
+    def test_the_v4_only_languages_match_the_plugin(self):
+        from src.core.agents.stt.lang import SARVAM_IN22_TTS_LANGUAGES
+
+        self.assertEqual(SARVAM_V4_FLASH_ONLY_LANGUAGES, SARVAM_IN22_TTS_LANGUAGES)
+
+    def test_the_roster_matches_the_plugin(self):
+        from livekit.plugins.sarvam.tts import MODEL_SPEAKER_COMPATIBILITY
+
+        self.assertEqual(
+            SARVAM_V4_FLASH_SPEAKERS,
+            set(MODEL_SPEAKER_COMPATIBILITY["bulbul:v4-flash"]["all"]),
+        )
+
+    def test_every_allowlisted_model_has_a_plugin_roster(self):
+        from livekit.plugins.sarvam.tts import MODEL_SPEAKER_COMPATIBILITY
+
+        self.assertEqual(SARVAM_TTS_MODELS - set(MODEL_SPEAKER_COMPATIBILITY), set())
+
+    def test_the_v4_roster_shares_no_name_with_v3(self):
+        self.assertEqual(SARVAM_V4_FLASH_SPEAKERS & SARVAM_TTS_SPEAKERS, set())
+
+    def test_a_v4_speaker_is_accepted_on_v4(self):
+        self.assertIsNone(unsupported_sarvam_speaker_reason("shubh_hi_customer", "bulbul:v4-flash"))
+
+    def test_a_v3_name_on_v4_suggests_the_same_voice(self):
+        reason = unsupported_sarvam_speaker_reason("shubh", "bulbul:v4-flash")
+        self.assertIn("not a bulbul:v4-flash speaker", reason)
+        self.assertIn("shubh_hi_customer", reason)
+        self.assertNotIn("simran_", reason)
+
+    def test_an_unknown_name_on_v4_is_rejected(self):
+        self.assertIn(
+            "not a bulbul:v4-flash speaker",
+            unsupported_sarvam_speaker_reason("zaphod", "bulbul:v4-flash"),
+        )
+
+    def test_a_v4_name_on_v3_points_at_the_model_field(self):
+        reason = unsupported_sarvam_speaker_reason("shubh_hi_customer", "bulbul:v3")
+        self.assertIn("set model to 'bulbul:v4-flash'", reason)
+
+    def test_the_longest_v4_name_fits_the_schema(self):
+        from src.api.models.api_schemas.config.tts_config import SarvamTTSConfig
+
+        longest = max(SARVAM_V4_FLASH_SPEAKERS, key=len)
+        config = SarvamTTSConfig(model="bulbul:v4-flash", speaker=longest)
+        self.assertEqual(config.speaker, longest)
 
 
 class TestUnsupportedSpeechModelReason(unittest.TestCase):

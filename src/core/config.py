@@ -148,4 +148,8 @@ class Settings:
         # retirement sooner; 0 disables the cache and asks on every write.
         self.OPENAI_MODEL_CACHE_TTL = float(os.getenv("OPENAI_MODEL_CACHE_TTL", "3600"))
 
+        # Per-probe deadline for GET /health. Deliberately far below the real call timeouts:
+        # a probe that hangs for a minute is a probe nobody polls.
+        self.HEALTH_PROBE_TIMEOUT_S = float(os.getenv("HEALTH_PROBE_TIMEOUT_S", "3"))
+
 settings = Settings()

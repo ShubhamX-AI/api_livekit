@@ -5,27 +5,28 @@ import asyncio
 from livekit.agents.types import NOT_GIVEN
 from livekit.plugins import cartesia, sarvam
 
-from src.core.agents.stt.lang import validate_language, validate_sarvam_speaker
+from src.core.agents.stt.lang import (
+    SARVAM_IN22_TTS_LANGUAGES,
+    validate_language,
+    validate_sarvam_speaker,
+)
 from src.core.config import settings
 from src.core.logger import logger
+from src.core.model_support.speech import (
+    DEFAULT_SARVAM_TTS_MODEL,
+    ELEVENLABS_UNREAD_SETTINGS,
+    unread_elevenlabs_settings,
+)
 from src.services.elevenlabs.v3_nonstream import (
     ElevenLabsNonStreamingTTS,
     VoiceSettings,
 )
 from src.services.mistral.tts import MistralTTS
 
-# The Bulbul generation this platform speaks. Pinned rather than configurable: the speaker
-# roster changes wholesale between generations (v2 and v3 share no speaker at all), so a
-# model field would need a matching speaker field and a matrix between them.
-SARVAM_TTS_MODEL = "bulbul:v3"
-
-# ElevenLabs models with no speed control: the whole v3 family, which includes this
-# platform's default, so a `speed` stored against one is the likely case, not the rare one.
-# https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech ("Speed is not
-# available for the Eleven v3 model"). Dropped rather than sent: v3 also reads stability as
-# three discrete modes (creative/natural/robust) rather than a continuum, so its
-# voice_settings surface is genuinely narrower, not just differently tuned.
-_ELEVENLABS_NO_SPEED_MODELS = frozenset({"eleven_v3", "eleven_v3_conversational"})
+# The Bulbul generation an assistant speaks when its config names none — every row written
+# before `assistant_tts_config.model` existed. The speaker roster changes wholesale between
+# generations, which is why the API checks the speaker against the chosen model.
+SARVAM_TTS_MODEL = DEFAULT_SARVAM_TTS_MODEL
 
 # Per-provider system key, used when the assistant config carries no api_key of its own.
 # One variable per vendor: ELEVENLABS_API_KEY and SARVAM_API_KEY each serve both the STT and the
@@ -91,38 +92,45 @@ def create_tts(assistant):
         if not speaker:
             logger.error(f"Missing speaker for Sarvam assistant {assistant_id}")
             return None
+        sarvam_model = tts_config.get("model") or SARVAM_TTS_MODEL
         # Checked before construction, not after: the plugin raises on a speaker its model
         # cannot use, and that exception escapes create_tts and entrypoint() — the job dies
-        # with a traceback and the caller hears nothing. A speaker from the v2 roster is the
-        # easy way in: none of the seven work on bulbul:v3.
-        speaker = validate_sarvam_speaker(
-            SARVAM_TTS_MODEL, speaker, assistant_id=assistant_id
-        )
+        # with a traceback and the caller hears nothing. A speaker from another generation's
+        # roster is the easy way in: v2, v3 and v4-flash share no names.
+        speaker = validate_sarvam_speaker(sarvam_model, speaker, assistant_id=assistant_id)
         if not speaker:
             return None
         api_key = _resolve_api_key(model, tts_config, assistant_id)
         if not api_key:
             return None
+        # Bulbul speaks Indic BCP-47 codes and nothing else — 'en-US' in particular is not
+        # one of them, however reasonable it looks in a language picker. An unusable code
+        # falls back to en-IN rather than failing every synthesis. `or`, not a .get
+        # default: the schema always serializes the key, as None when the caller omits it.
+        language = validate_language(
+            "sarvam_tts",
+            tts_config.get("target_language_code"),
+            assistant_id=assistant_id,
+            field="assistant_tts_config.target_language_code",
+        )
+        # The plugin's language Literal also lists the IN22 codes, but only bulbul:v4-flash
+        # speaks them; on v3 they would fail every synthesis.
+        if language in SARVAM_IN22_TTS_LANGUAGES and sarvam_model != "bulbul:v4-flash":
+            logger.error(
+                f"Sarvam language {language!r} needs bulbul:v4-flash; assistant "
+                f"{assistant_id} runs {sarvam_model}. Falling back to en-IN."
+            )
+            language = None
         return sarvam.TTS(
-            model=SARVAM_TTS_MODEL,
+            model=sarvam_model,
             pace=tts_config.get("pace", 1.0),
             speech_sample_rate=tts_config.get("speech_sample_rate", 24000),
-            # Bulbul speaks 11 Indic BCP-47 codes and nothing else — 'en-US' in particular
-            # is not one of them, however reasonable it looks in a language picker. An
-            # unusable code falls back to en-IN rather than failing every synthesis.
-            # `or`, not a .get default: the schema always serializes the key, as None when
-            # the caller omits it.
-            target_language_code=validate_language(
-                "sarvam_tts",
-                tts_config.get("target_language_code"),
-                assistant_id=assistant_id,
-                field="assistant_tts_config.target_language_code",
-            ) or "en-IN",
+            target_language_code=language or "en-IN",
             speaker=speaker,
             api_key=api_key,
             min_buffer_size=30,
             max_chunk_length=50,
-            temperature=tts_config.get("temperature", 0.3),
+            temperature=tts_config.get("temperature") or 0.3,
         )
 
     if model == "elevenlabs":
@@ -140,29 +148,31 @@ def create_tts(assistant):
         # would crash on the first synthesis. NOT_GIVEN reproduces the pre-existing
         # behaviour (serializes `"voice_settings": null`, which means "use API defaults").
         elevenlabs_model = tts_config.get("model", "eleven_v3")
-        voice_settings = tts_config.get("voice_settings") or NOT_GIVEN
-        speed = (
-            voice_settings.get("speed") if voice_settings is not NOT_GIVEN else None
-        )
-        if speed is not None and elevenlabs_model in _ELEVENLABS_NO_SPEED_MODELS:
-            logger.warning(
-                f"Dropping voice_settings.speed={speed!r} for assistant {assistant_id}: "
-                f"{elevenlabs_model} has no speed control. Use eleven_multilingual_v2, "
-                "eleven_turbo_v2_5 or eleven_flash_v2_5 to change speaking rate, or pace "
-                "the delivery through the prompt."
+        voice_settings = tts_config.get("voice_settings")
+        settings_obj = NOT_GIVEN
+        if voice_settings:
+            # The API refuses these since 1.6.0; a row saved before that can still hold one.
+            # ElevenLabs would ignore it anyway, so drop it rather than send it.
+            unread = ELEVENLABS_UNREAD_SETTINGS.get(elevenlabs_model, frozenset())
+            dropped = unread_elevenlabs_settings(elevenlabs_model, voice_settings)
+            if dropped:
+                logger.warning(
+                    f"Dropping voice_settings {', '.join(dropped)} for assistant "
+                    f"{assistant_id}: {elevenlabs_model} does not read them. "
+                    "eleven_multilingual_v2 reads every setting; eleven_turbo_v2_5 and "
+                    "eleven_flash_v2_5 read speed. Or steer delivery through the prompt."
+                )
+            kept = {k: v for k, v in voice_settings.items() if k not in unread}
+            settings_obj = VoiceSettings(
+                stability=kept.get("stability", 0.5),
+                # The 0.5 default only for a model that reads similarity at all.
+                similarity_boost=(
+                    None if "similarity_boost" in unread else kept.get("similarity_boost", 0.5)
+                ),
+                style=kept.get("style"),
+                speed=kept.get("speed"),
+                use_speaker_boost=kept.get("use_speaker_boost"),
             )
-            speed = None
-        settings_obj = (
-            VoiceSettings(
-                stability=voice_settings.get("stability", 0.5),
-                similarity_boost=voice_settings.get("similarity_boost", 0.5),
-                style=voice_settings.get("style"),
-                speed=speed,
-                use_speaker_boost=voice_settings.get("use_speaker_boost"),
-            )
-            if voice_settings is not NOT_GIVEN
-            else NOT_GIVEN
-        )
         return ElevenLabsNonStreamingTTS(
             model=elevenlabs_model,
             voice_id=voice_id,

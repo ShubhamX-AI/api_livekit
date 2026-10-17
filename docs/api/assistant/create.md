@@ -17,7 +17,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 | `assistant_name` | string | Yes | Assistant name (1-100 chars). |
 | `assistant_description` | string | Yes | Assistant description. |
 | `assistant_prompt` | string | Yes | System prompt. |
-| `assistant_mode` | string | No | Runtime mode: `pipeline`, `realtime` or `cascade`. Default: `pipeline`. |
+| `assistant_mode` | string | No | Runtime mode: `pipeline`, `realtime`, `cascade` or `duplex`. Default: `pipeline`. |
 | `assistant_start_instruction` | string | No | Opening response text. Used when `assistant_interaction_config.speaks_first=true` (max 500 chars). |
 | `assistant_interaction_config` | object | No | Interaction settings (see below). |
 | `assistant_greeting_audio` | object | No | Prerecorded greeting reference: `{ "enabled": bool, "audio_id": string }`. `audio_id` must reference one of your active [audio assets](../../api/audio/index.md). When `enabled` and `speaks_first=true`, the clip plays instead of a model-generated greeting. |
@@ -97,11 +97,12 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
-        | `speaker` | string | Yes | Sarvam speaker identifier, from the **bulbul:v3** roster: `aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`, `kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`, `shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`. The older bulbul:v2 names (`anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`, `hitesh`) are rejected with a `422`: v2 and v3 share no speaker names, and the Sarvam plugin raises on a speaker its model cannot use, which used to end the call at start. |
-        | `target_language_code` | string | No | BCP-47 code, and only one of the 11 Bulbul speaks: `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN`. Note `en-IN`, **not** `en-US` — anything outside the list is rejected and falls back to `en-IN`. Default: `en-IN`. |
-        | `pace` | number | No | Speaking pace multiplier, `0.3`–`3.0`. Default: `1.0` (`>1.0` faster, `<1.0` slower). |
-        | `speech_sample_rate` | number | No | Output sample rate in Hz. One of `8000`, `16000`, `22050`, `24000`, `32000`, `44100`, `48000` — other values are rejected. Default: `24000`; use `8000` only for narrowband telephony. |
-        | `temperature` | number | No | TTS sampling temperature, `0.01`–`2.0`. Default: `0.3`. Lower = more stable. |
+        | `model` | string | No | `bulbul:v3` (default) or `bulbul:v4-flash` — faster and cheaper, with its own speaker roster and tighter limits (noted per field below). |
+        | `speaker` | string | Yes | Sarvam speaker identifier from the chosen model's roster. **bulbul:v4-flash** names carry the language and style, such as `shubh_hi_customer` or `simran_enhi_customer` — all 224 are listed in [Models & Providers](../../reference/models.md#tts), and a v3 name is rejected there. **bulbul:v3** roster: `aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`, `kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`, `shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`. The older bulbul:v2 names (`anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`, `hitesh`) are rejected with a `422`: v2 and v3 share no speaker names, and the Sarvam plugin raises on a speaker its model cannot use, which used to end the call at start. |
+        | `target_language_code` | string | No | BCP-47 code, and only one of the 11 every Bulbul model speaks: `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN`. Note `en-IN`, **not** `en-US` — anything outside the list is rejected and falls back to `en-IN`. `bulbul:v4-flash` also takes the IN22 codes (`as-IN`, `ur-IN`, `ne-IN`, …) on a Sarvam subscription that has them enabled. Default: `en-IN`. |
+        | `pace` | number | No | Speaking pace multiplier, `0.3`–`3.0` (`0.5`–`2.0` on `bulbul:v4-flash`). Default: `1.0` (`>1.0` faster, `<1.0` slower). |
+        | `speech_sample_rate` | number | No | Output sample rate in Hz. One of `8000`, `16000`, `22050`, `24000`, `32000`, `44100`, `48000` — other values are rejected; `bulbul:v4-flash` takes only the first four. Default: `24000`; use `8000` only for narrowband telephony. |
+        | `temperature` | number | No | TTS sampling temperature, `0.01`–`2.0`. Default: `0.3`. Lower = more stable. `bulbul:v3` only: rejected on `bulbul:v4-flash`, where Sarvam fixes it at `0.6`. |
         | `api_key` | string | No | Optional Sarvam API key. Falls back to system `SARVAM_API_KEY`. |
 
     === "ElevenLabs"
@@ -109,8 +110,8 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | Field | Type | Required | Description |
         | :--- | :--- | :--- | :--- |
         | `voice_id` | string | Yes | ElevenLabs voice ID. |
-        | `model` | string | No | TTS model. Default: `eleven_v3`. Also `eleven_v3_conversational`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`. |
-        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. **`speed` has no effect on `eleven_v3` or `eleven_v3_conversational`** (the first is the default model) — it is dropped before the call and logged; pick `eleven_multilingual_v2`, `eleven_turbo_v2_5` or `eleven_flash_v2_5` if you need to change the speaking rate. On the v3 models, `stability` reads as three modes: `0.0` creative, `0.5` natural, `1.0` robust. |
+        | `model` | string | No | TTS model. Default: `eleven_v3`. Also `eleven_v3_conversational`, `eleven_v4`, `eleven_v4_turbo`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`. |
+        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. **Most models read only some of these.** `eleven_v3` (the default) reads only `stability`; `eleven_v3_conversational` adds `use_speaker_boost`; `eleven_v4` / `eleven_v4_turbo` read `stability` and `similarity_boost`; `eleven_turbo_v2_5` / `eleven_flash_v2_5` read all but `style` and `use_speaker_boost`; only `eleven_multilingual_v2` reads all five. The rest are accepted, then dropped before the call and logged. Table: [Models & Providers → TTS](../../reference/models.md#tts). On the v3 models, `stability` reads as three modes: `0.0` creative, `0.5` natural, `1.0` robust. |
         | `api_key` | string | No | Optional ElevenLabs API key. Falls back to system `ELEVENLABS_API_KEY`. |
 
     === "Mistral"
@@ -296,7 +297,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
     | `model` | string | No | One of the documented OpenAI models. Default: `gpt-4.1`. Full list and knobs: [Models & Providers](../../reference/models.md#cascade-llm-cascade-mode-only). |
     | `api_key` | string | No | Falls back to system `OPENAI_API_KEY`. |
     | `temperature` | number | No | Sampling temperature `0`–`2`. Higher = more random. **Chat models only** — sending it with a reasoning model (`gpt-5`, `gpt-5.x`) is a `422`. |
-    | `max_output_tokens` | integer | No | Cap on the number of output tokens in the response. |
+    | `max_output_tokens` | integer | No | Cap on the number of output tokens in the response. At least `16`. |
     | `reasoning_effort` | string | No | Reasoning depth: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. **Reasoning models only** — a `422` on `gpt-4.1`/`gpt-4o`. Which *values* a given reasoning model accepts is checked against OpenAI, not guessed: a value it refuses is also a `422`, quoting OpenAI's message. |
     | `service_tier` | string | No | OpenAI processing/billing tier: `auto`, `default`, `fast`, `flex`, `priority`. `auto`, `default`, `fast` and `priority` work on every model. **`flex` is gpt-5 generation only** — on `gpt-4.1`/`gpt-4.1-nano` it is a `422` here, because OpenAI refuses it with a `400` on every turn and on nano does not even name the parameter, which is how an assistant ends up answering calls in silence. `scale` is not an OpenAI tier and is no longer accepted. Leave unset unless you have a reason. Full measured table: [Compatibility Matrix](../../reference/compatibility.md#service_tier-measured). |
     | `verbosity` | string | No | Constrains response length: `low`, `medium`, `high`. **gpt-5 generation only**; a `422` on `gpt-4.1`/`gpt-4o`. |
@@ -513,6 +514,50 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
       }'
     ```
 
+=== "Duplex Mode"
+
+    OpenAI **GPT-Live**: one voice model that listens while it speaks and decides its own turns,
+    plus a backend reasoning model that does the thinking and runs the tools. The most natural
+    turn-taking of the four modes, and the least scripted — see
+    [Compatibility Matrix → Duplex mode](../../reference/compatibility.md#duplex-mode) for what
+    it cannot do.
+
+    **Required fields:** none beyond the common ones. TTS and STT fields are ignored.
+
+    **`assistant_llm_config`** (optional)
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `model` | string | No | `gpt-live-1` (the only value). |
+    | `voice` | string | No | `beacon`, `cedar`, `cinder`, `marin` (default), `stone` or `vesper`. Fixed for the call. |
+    | `backend_model` | string | No | The reasoning model GPT-Live delegates to. Default: `gpt-5.6-luna`. Any reasoning model from [Models & Providers](../../reference/models.md#documented-models), e.g. `gpt-6-luna`, `gpt-6-sol`. |
+    | `backend_instructions` | string | No | Instructions for the backend model, up to 4000 characters. `assistant_prompt` is the voice persona; this tells the backend how to handle delegated work. Default: a short built-in instruction to use the tools when needed and answer briefly. |
+    | `reasoning_effort`, `verbosity`, `service_tier`, `tool_choice`, `parallel_tool_calls`, `max_output_tokens` | | No | Backend knobs, with the same rules as cascade, checked against `backend_model`. `temperature` is rejected. |
+    | `api_key` | string | No | Optional OpenAI key. Falls back to system `OPENAI_API_KEY`. |
+
+    Rejected in this mode: an enabled `assistant_greeting_audio`, `filler_words: true`, and
+    `text_only` web calls. GPT-Live cannot speak a fixed string.
+
+    **Example request**
+
+    ```bash
+    curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/assistant/create" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_name": "Support (GPT-Live)",
+        "assistant_description": "Full-duplex support agent",
+        "assistant_prompt": "You are a friendly support agent for an online furniture store. Keep replies short. Delegate any question about an order, a delivery or a price, and say what you are checking while you wait.",
+        "assistant_mode": "duplex",
+        "assistant_llm_config": {
+          "voice": "cedar",
+          "backend_model": "gpt-6-luna",
+          "backend_instructions": "Use the order tools for anything about orders. Answer in one short sentence.",
+          "reasoning_effort": "low"
+        }
+      }'
+    ```
+
 ---
 
 ## Interaction Configuration
@@ -522,8 +567,8 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `speaks_first` | boolean | No | If `true` (default), assistant sends an opening response first in all three modes. |
-| `filler_words` | boolean | No | Enables filler words while user is speaking. Requires an external TTS — available in `pipeline` and `cascade`, not `realtime`. |
+| `speaks_first` | boolean | No | If `true` (default), assistant sends an opening response first in all four modes. In `duplex`, GPT-Live phrases the greeting itself and may decline, in which case the caller speaks first. |
+| `filler_words` | boolean | No | Enables filler words while user is speaking. Requires an external TTS — available in `pipeline` and `cascade`, not `realtime`; rejected with `422` in `duplex`. |
 | `silence_reprompts` | boolean | No | Enables reprompts during prolonged user silence. |
 | `silence_reprompt_interval` | number | No | Reprompt interval in seconds (1.0-60.0). Default: `10.0`. |
 | `silence_max_reprompts` | number | No | Maximum reprompts before the call is ended (0-5). Default: `2`. The call is torn down gracefully (recording, transcripts, usage and webhook all finalize) and the termination reason is reported as `silence_timeout`. |
