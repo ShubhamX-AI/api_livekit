@@ -9,7 +9,8 @@ Complete inventory of what this platform provides.
 - **Pipeline mode** (half-cascade) — an OpenAI realtime LLM emits text; a separate TTS provider synthesises speech output
 - **Realtime mode** — LLM speaks its own audio (Gemini default, or OpenAI); no external TTS required
 - **Cascade mode** — a true three-stage STT → LLM → TTS pipeline: plugin STT, a plain OpenAI chat model, plugin TTS. Each stage separately metered and swappable; the only mode with per-component cost visibility. See [Cascade Pipeline](architecture/cascade-pipeline.md)
-- **Provider is chosen per mode** — `assistant_llm_config.provider` accepts `gemini` or `openai` in realtime mode; pipeline and cascade are OpenAI-only. Invalid combinations are rejected at create/update rather than at call time — see the [Compatibility Matrix](reference/compatibility.md)
+- **Duplex mode** — OpenAI GPT-Live: listens while it speaks and decides its own turns, with a backend reasoning model (`gpt-5.6-luna` by default, or `gpt-6-luna` / `gpt-6-sol`) for thinking and tools. No TTS; no greeting audio, filler words or text-only. See [Models & Providers → GPT-Live](reference/models.md#gpt-live-duplex-mode-only)
+- **Provider is chosen per mode** — `assistant_llm_config.provider` accepts `gemini` or `openai` in realtime mode; pipeline, cascade and duplex are OpenAI-only. Invalid combinations are rejected at create/update rather than at call time — see the [Compatibility Matrix](reference/compatibility.md)
 - **Configurable system prompt** — full control over assistant persona, instructions, and behavior
 - **Dynamic prompt placeholders** — embed call metadata (`{{caller_number}}`, `{{assistant_name}}`, etc.) and caller-fetched CRM data (`{{context.*}}`) directly in prompts via Mustache templates
 - **Speaks-first / wait-for-caller** — toggle whether the assistant greets first or waits for the caller to speak
@@ -25,14 +26,14 @@ Complete inventory of what this platform provides.
 ## 2. TTS Providers
 
 Four synthesis providers, used identically in pipeline and cascade modes and ignored in realtime
-mode. The synthesis model is fixed per provider except ElevenLabs, which accepts a `model` key. Full
+mode. The synthesis model is fixed per provider except ElevenLabs and Sarvam, which accept a `model` key. Full
 table in [Models & Providers](reference/models.md#tts).
 
 | Provider | Voice selected by | Configurable synthesis params |
 |---|---|---|
 | **Cartesia** | `voice_id` | `language`, `speed` (float `0`–`3`), `volume`, `emotion`, `pronunciation_dict_id` |
-| **Sarvam** | `speaker` | `target_language_code`, `pace`, `speech_sample_rate`, `temperature` |
-| **ElevenLabs** | `voice_id` | `model`, `voice_settings` (`stability`, `similarity_boost`, `style`, `speed` — not on the `eleven_v3` models, `use_speaker_boost`); non-streaming (HTTP chunked) |
+| **Sarvam** | `speaker` (from the chosen model's roster) | `model` (`bulbul:v3`, `bulbul:v4-flash`), `target_language_code`, `pace`, `speech_sample_rate`, `temperature` |
+| **ElevenLabs** | `voice_id` | `model`, `voice_settings` (`stability`, `similarity_boost`, `style`, `speed`, `use_speaker_boost` — most models read only some of them); non-streaming (HTTP chunked) |
 | **Mistral** | `voice_id` | none; non-streaming |
 
 - Per-assistant TTS config; API key override per assistant

@@ -5,7 +5,7 @@ from the factories in `src/core/agents/{llm,stt,tts}/factory.py` and `src/core/a
 from any other doc. If this page and another doc disagree, this page is correct; file an issue against
 the other one.
 
-`assistant_mode` selects the *shape* of the session (`pipeline`, `realtime`, `cascade`) — see
+`assistant_mode` selects the *shape* of the session (`pipeline`, `realtime`, `cascade`, `duplex`) — see
 [Runtime Modes](../architecture/runtime-modes.md). This page covers what each stage of each mode can
 actually be configured to run.
 
@@ -20,6 +20,32 @@ Both modes route through a realtime model — `pipeline` uses it in text-only mo
 | `model` | **Both validated.** OpenAI: one of `REALTIME_MODELS`. Gemini: `gemini-3.8-live`, `gemini-3.8-live-extended-thinking`, `gemini-3.1-flash-live-preview` or `gemini-2.5-flash-native-audio-preview-12-2025` (the plugin also lists `gemini-live-2.5-flash-native-audio`, which is Vertex-only and rejected). The Live API is a much smaller set than the Gemini chat models, and a chat id such as `gemini-2.5-flash` opens a socket the API then closes | `gemini-3.8-live` (gemini), `gpt-realtime-1.5` (openai) |
 | `voice` | Validated per vendor: the 30-name Gemini Live roster for `gemini`; for `openai`, anything that is not a Gemini name | `Puck` (gemini), `marin` (openai). **Honored only in `realtime` mode** — `pipeline` mode emits text, so voice is meaningless there and the field is silently ignored. |
 | `api_key` | string | falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY` |
+
+### Voices
+
+**OpenAI realtime** (`realtime` mode): `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`,
+`verse`, `marin` (default) and `cedar`. OpenAI recommends `marin` or `cedar` for the best quality
+([voice options](https://developers.openai.com/docs/guides/realtime-conversations#voice-options),
+checked 2026-10-17). The API does not keep its own list here — OpenAI ships new voices without an
+SDK release — so it accepts any name that is not a Gemini voice. Check a new name against
+OpenAI's list before using it.
+
+**Gemini Live** (`realtime` mode, all 30, checked against the plugin): `Achernar`, `Achird`,
+`Algenib`, `Algieba`, `Alnilam`, `Aoede`, `Autonoe`, `Callirrhoe`, `Charon`, `Despina`,
+`Enceladus`, `Erinome`, `Fenrir`, `Gacrux`, `Iapetus`, `Kore`, `Laomedeia`, `Leda`, `Orus`,
+`Puck` (default), `Pulcherrima`, `Rasalgethi`, `Sadachbia`, `Sadaltager`, `Schedar`, `Sulafat`,
+`Umbriel`, `Vindemiatrix`, `Zephyr`, `Zubenelgenubi`.
+
+**GPT-Live** (`duplex` mode): see [GPT-Live](#gpt-live-duplex-mode-only). **TTS voices** for
+`pipeline` and `cascade` are set in `assistant_tts_config`: a Sarvam `speaker` from the rosters in
+[TTS](#tts), or a `voice_id` from the Cartesia, ElevenLabs or Mistral voice library.
+
+### OpenAI realtime models
+
+The OpenAI realtime models accepted (`REALTIME_MODELS`) are `gpt-realtime`, `gpt-realtime-1.5`
+(default), `gpt-realtime-2`, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`, `gpt-realtime-2025-08-28`
+and `gpt-realtime-mini`. The two `2.1` models were added on 2026-10-17 after a live session probe
+with this platform's exact session shape, in both audio (realtime) and text (pipeline) output.
 
 OpenAI realtime additionally runs fixed turn-taking params not exposed to the API: `TurnDetection(type="semantic_vad", eagerness="high", create_response=True, interrupt_response=False)`, and
 `RealtimeTruncationRetentionRatio(retention_ratio=0.75, post_instructions=8000)`.
@@ -55,7 +81,7 @@ row can still hold one, so the rule remains. See
 
 ### Gemini Live pricing
 
-Google's public list price, paid tier, per 1M tokens
+All rates, for every provider, are on [Pricing](pricing.md). Google's public list price, paid tier, per 1M tokens
 ([pricing](https://ai.google.dev/gemini-api/docs/pricing), checked 2026-09-22). Estimated
 per-call cost uses these numbers — see the `estimated_cost_usd` field on the usage record.
 
@@ -78,6 +104,40 @@ In `realtime` mode both vendors transcribe the caller: OpenAI is given
 Google plugin enables `input_audio_transcription` whenever the argument is omitted. Neither
 needs `assistant_stt_model` — that field is ignored in this mode.
 
+## GPT-Live (`duplex` mode only)
+
+OpenAI's full-duplex voice model, built by `create_gpt_live` (`src/core/agents/llm/factory.py`) as
+`openai.realtime.GPTLiveModel` with this deployment's own `OPENAI_API_KEY`. It listens while it
+speaks and decides its own turns. A second model — the **backend**, an ordinary Responses model —
+does the reasoning and runs the tools. Configured via `assistant_llm_config`. How a call runs:
+[Duplex Mode](../architecture/duplex-mode.md).
+
+| Field | Values | Default |
+|---|---|---|
+| `provider` | `openai` only | `openai` |
+| `model` | `gpt-live-1` | `gpt-live-1` |
+| `voice` | `beacon`, `cedar`, `cinder`, `marin`, `stone`, `vesper` (`aster` was removed in livekit-agents 1.8.8) | `marin` |
+| `backend_model` | any reasoning model from the [cascade table](#documented-models) | `gpt-5.6-luna` |
+| `backend_instructions` | string, up to 4000 characters | a short built-in instruction: use the tools when needed, answer briefly |
+| `reasoning_effort`, `verbosity`, `service_tier`, `tool_choice`, `parallel_tool_calls`, `max_output_tokens` | as in [cascade](#cascade-llm-cascade-mode-only), checked against `backend_model` | unset |
+| `temperature` | rejected — every backend model is a reasoning model | — |
+| `api_key` | string | falls back to system `OPENAI_API_KEY` |
+
+The **voice persona** is `assistant_prompt`; `backend_instructions` is a separate set for the
+backend. GPT-Live fixes both, and the voice, for the whole session. OpenAI's
+[Prompting GPT-Live](https://developers.openai.com/api/docs/guides/live-prompting) guide explains
+how to split a prompt between the two.
+
+Duplex ignores `assistant_tts_*` and `assistant_stt_*`. It refuses, with a `422` at create or a
+`400` at update, three things GPT-Live cannot do: a prerecorded greeting
+(`assistant_greeting_audio`), filler words, and `text_only` web calls. See
+[Compatibility Matrix → Duplex mode](compatibility.md#duplex-mode).
+
+**Pricing.** GPT-Live is billed per second of open session, at $0.05 per minute
+([OpenAI pricing](https://developers.openai.com/api/docs/pricing), checked 2026-10-17). The backend's
+tokens are billed separately at that model's own rate. The usage record carries both: the voice
+model's seconds in `llm_session_duration`, and the backend's tokens as their own `model_usage` entry.
+
 ## Cascade LLM (`cascade` mode only)
 
 Built by `create_llm` (`src/core/agents/llm/factory.py`) as `openai.responses.LLM` — cheaper than
@@ -89,7 +149,7 @@ chat-completions, same `@function_tool` contract. Configured via `assistant_llm_
 | `model` | one of the documented model IDs below — **validated against the allowlist at creation/update time** | `gpt-4.1` |
 | `api_key` | string | falls back to system `OPENAI_API_KEY` |
 | `temperature` | `0.0`–`2.0` — **chat models only** | SDK default (`0.8`) |
-| `max_output_tokens` | positive int | unset (model default) |
+| `max_output_tokens` | int, at least 16 | unset (model default) |
 | `reasoning_effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — **reasoning models only** | unset |
 | `service_tier` | `auto`, `default`, `fast`, `priority` — all models. `flex` — **gpt-5 generation only**. `scale` is not an OpenAI tier and is rejected. [Measured table](compatibility.md#service_tier-measured) | unset (recommended) |
 | `verbosity` | `low`, `medium`, `high` — **gpt-5 generation only** | unset |
@@ -110,11 +170,15 @@ that rejects it is a `422` at create/update. Full matrix:
 | `gpt-4o`, `gpt-4o-mini` | chat | multimodal legacy chat models |
 | `gpt-5` | reasoning | rejects `temperature`, takes `reasoning_effort` |
 | `gpt-5-mini`, `gpt-5-nano` | reasoning | smaller + cheaper |
-| `gpt-5.1` | reasoning | |
 | `gpt-5.2` | reasoning | rejects `reasoning_effort` **when tools are attached** |
-| `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` | reasoning | same tool restriction as `gpt-5.2` |
+| `gpt-5.4`, `gpt-5.4-mini` | reasoning | same tool restriction as `gpt-5.2` |
 | `gpt-5.5` | reasoning | |
 | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | reasoning | |
+| `gpt-6-luna`, `gpt-6-sol` | reasoning | added 2026-10-17; accept `reasoning_effort` `none`/`low`/`medium`/`high`/`xhigh` (not `minimal`) with tools, `verbosity` and `flex`; reject `temperature` |
+
+**`gpt-5.1`** and **`gpt-5.4-nano`** were removed from the allowlist in 1.6.0; OpenAI retires both on
+**2027-04-01**. `uv run python scripts/migrate_retired_models.py --apply` moves stored assistants to
+the replacements LiveKit names: `gpt-5.1` to `gpt-6-sol`, `gpt-5.4-nano` to `gpt-6-luna`.
 
 **Reasoning-model rule:** reasoning models reject `temperature` and take `reasoning_effort`;
 chat models are the reverse. The families are listed per model in
@@ -194,7 +258,7 @@ don't always agree, see the quirks below.
     the caller hears nothing. The sets are checked against the installed plugins' own definitions
     by `tests/test_speech_models.py`, so a LiveKit SDK upgrade that renames a model fails the test
     suite instead of a call. A provider whose model is **pinned** in the factory (Cartesia TTS,
-    Sarvam TTS, Mistral) takes no `model` field at all.
+    Mistral) takes no `model` field at all.
 
 | Provider | Valid in | Model default | Other config |
 |---|---|---|---|
@@ -339,14 +403,14 @@ These are the easy-to-miss traps. All statements match the plugin behaviour in L
 ## TTS
 
 `assistant_tts_model` + `assistant_tts_config`. The synthesis **model is hardcoded per provider
-except ElevenLabs** (which now accepts a `model` key). Synthesis params are configurable via
+except ElevenLabs and Sarvam** (both accept a `model` key). Synthesis params are configurable via
 `assistant_tts_config`.
 
 | Provider | Model (default) | Required config | Configurable synthesis params |
 |---|---|---|---|
 | `cartesia` | `sonic-3` (fixed) | `voice_id` | `language` (default `en`), `speed` (float `0`–`3`, default `1.0`), `volume` (default `1.0`), `emotion`, `pronunciation_dict_id` |
-| `sarvam` | `bulbul:v3` (fixed) | `speaker` — **v3 roster only**, see below | `target_language_code` (default `en-IN`), `pace` (`0.3`–`3.0`, default `1.0`), `speech_sample_rate` (one of `8000`/`16000`/`22050`/`24000`/`32000`/`44100`/`48000`, default `24000`), `temperature` (`0.01`–`2.0`, default `0.3`) |
-| `elevenlabs` | `eleven_v3` (default) | `voice_id` | `model` (`eleven_v3`, `eleven_v3_conversational`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`), `voice_settings` (`stability`, `similarity_boost`, `style`, `speed` — **not on the v3 models**, `use_speaker_boost`); non-streaming (HTTP chunked) |
+| `sarvam` | `bulbul:v3` (default) | `speaker` — **from the chosen model's roster**, see below | `model` (`bulbul:v3`, `bulbul:v4-flash`), `target_language_code` (default `en-IN`), `pace` (`0.3`–`3.0`; `0.5`–`2.0` on v4-flash; default `1.0`), `speech_sample_rate` (one of `8000`/`16000`/`22050`/`24000`/`32000`/`44100`/`48000`; v4-flash takes only the first four; default `24000`), `temperature` (`0.01`–`2.0`, default `0.3`; **`bulbul:v3` only** — rejected on v4-flash, where Sarvam fixes it at `0.6`) |
+| `elevenlabs` | `eleven_v3` (default) | `voice_id` | `model` (`eleven_v3`, `eleven_v3_conversational`, `eleven_v4`, `eleven_v4_turbo`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`), `voice_settings` (`stability`, `similarity_boost`, `style`, `speed`, `use_speaker_boost` — **most models read only some of them**, see below); non-streaming (HTTP chunked) |
 | `mistral` | `voxtral-mini-tts-2603` (fixed) | `voice_id` | `response_format="opus"`, non-streaming |
 
 All four accept an optional `api_key`, falling back to the matching system key
@@ -356,37 +420,57 @@ Speed is therefore **configurable per assistant** for Cartesia, Sarvam and Eleve
 providers whose SDK exposes a rate knob). See each tab in [create](../api/assistant/create.md) for
 valid ranges.
 
-**ElevenLabs `speed` does not apply to `eleven_v3` or `eleven_v3_conversational`**, and the first
-of those is the default model here — the v3 family has no speed control at all
-([ElevenLabs docs](https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech)). A `speed`
-stored against either is dropped before the call with a log line naming the models that do support it
-(`eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`); the rest of `voice_settings`
-is sent unchanged. On v3, `stability` also behaves as three modes — creative (`0.0`), natural
-(`0.5`), robust (`1.0`) — rather than a continuum.
+**ElevenLabs `voice_settings` depend on the model.** Only `eleven_multilingual_v2` reads all five,
+and the default, `eleven_v3`, reads only `stability`. What each one reads, checked 2026-10-17:
+`style` and `use_speaker_boost` from the `can_use_style` / `can_use_speaker_boost` flags ElevenLabs'
+own `GET /v1/models` reports per model; `speed` and `similarity_boost` from its model notes
+([text-to-speech guide](https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech)),
+since `/v1/models` has no flag for them.
 
-```json title="Valid — eleven_v3, the settings that model reads"
+| Model | `stability` | `similarity_boost` | `style` | `speed` | `use_speaker_boost` |
+|---|---|---|---|---|---|
+| `eleven_v3` (default) | yes | **no** | **no** | **no** | **no** |
+| `eleven_v3_conversational` | yes | **no** | **no** | **no** | yes |
+| `eleven_v4`, `eleven_v4_turbo` | yes | yes | **no** | **no** | **no** |
+| `eleven_turbo_v2_5`, `eleven_flash_v2_5` (and the `_v2` versions) | yes | yes | **no** | yes | **no** |
+| `eleven_multilingual_v2` | yes | yes | yes | yes | yes |
+
+A setting marked **no** is **rejected with a `422`** at create and update, naming the setting and the
+models that do read it. ElevenLabs itself accepts and ignores it (a live request on 2026-10-17
+showed v4 taking `speed` and doing nothing with it), so a stored value would look like it was
+shaping the voice. An assistant saved before 1.6.0 can still hold one: the worker drops it before
+the request with one warning, and `uv run python scripts/migrate_tts_settings.py --apply` removes
+it from the row. On v3, `stability` behaves as three modes, creative (`0.0`), natural (`0.5`) and
+robust (`1.0`), rather than a continuum.
+
+`eleven_monolingual_v1` and `eleven_multilingual_v1` are **rejected**: ElevenLabs retired them, and
+every synthesis answers `400 unsupported_model`. The migration script moves stored rows to
+`eleven_multilingual_v2`.
+
+```json title="Valid — eleven_v3, the one setting that model reads"
 {
   "assistant_tts_model": "elevenlabs",
   "assistant_tts_config": {
     "voice_id": "a167e0f3-df7e-4277-976b-be2f952fa275",
     "model": "eleven_v3",
-    "voice_settings": { "stability": 0.5, "similarity_boost": 0.7 }
+    "voice_settings": { "stability": 0.5 }
   }
 }
 ```
 
-```text title="What a v3-rejected speed looks like in the worker log"
-WARNING  Dropping voice_settings.speed=1.2 for assistant asst_9f2: eleven_v3 has no speed
-         control. Use eleven_multilingual_v2, eleven_turbo_v2_5 or eleven_flash_v2_5 to change
-         speaking rate, or pace the delivery through the prompt.
+```text title="What a setting the model ignores looks like at the API (422)"
+eleven_v3 does not read voice_settings speed. Remove it, or pick a model that reads it
+(speed: eleven_flash_v2, eleven_flash_v2_5, eleven_multilingual_v2, eleven_turbo_v2,
+eleven_turbo_v2_5). See docs/reference/models.md.
 ```
 
-The rest of `voice_settings` is forwarded unchanged — only the dropped `speed` is missing from
-what the model receives.
-
-**Sarvam `target_language_code` defaults to `en-IN`, and accepts 11 codes only.** Bulbul speaks
+**Sarvam `target_language_code` defaults to `en-IN`.** Every Bulbul model speaks these 11 codes:
 `bn-IN`, `en-IN`, `gu-IN`, `hi-IN`, `kn-IN`, `ml-IN`, `mr-IN`, `od-IN`, `pa-IN`, `ta-IN`, `te-IN` —
-note `en-IN`, **not** `en-US`, which reads like a reasonable value and is not one. Anything outside
+note `en-IN`, **not** `en-US`, which reads like a reasonable value and is not one. `bulbul:v4-flash`
+also speaks 12 more Indic languages (the IN22 set: `as-IN`, `brx-IN`, `doi-IN`, `kok-IN`, `ks-IN`,
+`mai-IN`, `mni-IN`, `ne-IN`, `sa-IN`, `sat-IN`, `sd-IN`, `ur-IN`), but only on a Sarvam subscription
+that has them enabled; on `bulbul:v3` an IN22 code is a `422` (a row stored before 1.6.0 is logged and
+replaced with `en-IN`). Anything outside
 the list is logged and replaced with `en-IN` rather than failing every synthesis. Omitting it stores
 `null`, and the factory substitutes `en-IN`. (Earlier builds defaulted the schema to `bn-IN`, which silently overrode the
 factory fallback and synthesized Bengali for every assistant that left the field out. Assistants
@@ -400,13 +484,32 @@ gateway model, and Inference needs LiveKit Cloud credentials this deployment doe
 (the `"slow"`/`"fast"` presets belong to the older models and are rejected by the plugin), so making
 the model configurable means gating those three per model.
 
-**Sarvam `speaker` must come from the bulbul:v3 roster.** The two Bulbul generations share no
-speaker at all, so every v2 name — `anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`,
-`hitesh` — is invalid on the v3 model this platform pins. The v3 speakers are:
+**Sarvam `speaker` must come from the chosen model's roster.** No two Bulbul generations share a
+speaker, so every v2 name — `anushka`, `manisha`, `vidya`, `arya`, `abhilash`, `karun`, `hitesh` —
+is invalid on v3, and no v3 name is valid on v4-flash. The API checks the speaker against the model
+and answers `422`, naming the v4-flash voices built on the same name when there are any. The v3
+speakers are:
 
 `aayan`, `aditya`, `advait`, `amelia`, `amit`, `ashutosh`, `dev`, `ishita`, `kabir`, `kavitha`,
 `kavya`, `manan`, `neha`, `pooja`, `priya`, `rahul`, `ratan`, `ritu`, `rohan`, `roopa`, `rupali`,
 `shreya`, `shruti`, `shubh`, `simran`, `sophia`, `suhani`, `sumit`, `tanya`, `varun`.
+
+The `bulbul:v4-flash` speakers carry their language and style in the name
+(`<voice>_<language>_<style>`). All 224:
+
+| Language tag | Speakers |
+|---|---|
+| `as` — Assamese (2) | `kangkana_as_conversational`, `mouchumi_as_conversational` |
+| `bn` — Bengali (3) | `bappa_bn_conversation`, `bimal_bn_suspense`, `roopa_bn_conversational` |
+| `en` — English (62) | `aditi_en_stories`, `amelia_en_conversational`, `aparna_en_companion`, `aparna_en_edtech`, `ashwin_en_sports`, `ashwin_en_sports_energetic`, `chandrika_en_stories`, `dev_en_conversational`, `dev_en_recovery`, `deven_en_conversation`, `girish_en_devotional`, `girish_en_documentary`, `ishita_en_customer`, `ishita_en_medical`, `ishita_en_numbers`, `ishita_en_social`, `ishita_en_stories`, `kalpit_en_edtech`, `nachiket_en_ads`, `neha_en_customer`, `neha_en_latenight`, `nupur_en_kids`, `ojas_en_social`, `payal_en_edtech`, `ritu_en_edtech`, `ritu_en_latenight`, `ritu_en_medical`, `ritu_en_reels`, `rohan_en_recovery`, `roopa_en_conversational`, `rustom_en_suspense`, `sanchita_en_companion`, `sanchita_en_insurance`, `sanchita_en_market`, `sanchita_en_recovery`, `sanchita_en_social`, `sarang_en_narration`, `shabana_en_edtech`, `shalini_en_companion`, `shalini_en_customer`, `shubh_en_ads`, `shubh_en_audiobook`, `shubh_en_narration`, `shubh_en_narration_gentle`, `shubh_en_numbers`, `shubh_en_recovery`, `shubh_en_sports`, `simran_en_ads`, `simran_en_automobile`, `simran_en_conversation`, `simran_en_customer`, `simran_en_edtech`, `simran_en_edtech_bot`, `simran_en_narration`, `simran_en_recovery`, `simran_en_sales`, `simran_en_therapist`, `sophia_en_conversational`, `sunny_en_social`, `varun_en_ads`, `varun_en_suspense`, `zarina_en_conversation` |
+| `enhi` — English + Hindi (code-mixed) (13) | `ishita_enhi_companion`, `ishita_enhi_customer`, `ishita_enhi_customer_expressive`, `sanchita_enhi_companion`, `shalini_enhi_companion`, `shalini_enhi_customer`, `shubh_enhi_ads`, `shubh_enhi_banking`, `shubh_enhi_companion`, `simran_enhi_banking_expressive`, `simran_enhi_companion`, `simran_enhi_customer`, `sunny_enhi_customer` |
+| `gu` — Gujarati (3) | `bhavik_gu_conversation`, `pooja_gu_conversational`, `pooja_gu_customer` |
+| `hi` — Hindi (116) | `aarti_hi_customer`, `aayan_hi_conversational`, `aditya_hi_conversational`, `aditya_hi_sales`, `advait_hi_character`, `amit_hi_conversational`, `anand_hi_documentary`, `anand_hi_news`, `aparna_hi_customer`, `aparna_hi_kyc`, `aryaman_hi_ads`, `ashok_hi_character`, `ashok_hi_news`, `ashutosh_hi_conversational`, `chaitra_hi_customer`, `chhavi_hi_kids`, `chirag_hi_social`, `girish_hi_devotional`, `ishita_hi_ads`, `ishita_hi_ads_informal`, `ishita_hi_banking`, `ishita_hi_devotional`, `ishita_hi_edtech`, `ishita_hi_numbers`, `ishita_hi_social`, `kabir_hi_conversational`, `kavya_hi_conversational`, `kunal_hi_kids`, `mahesh_hi_documentary`, `manan_hi_conversational`, `mani_hi_conversational`, `mani_hi_devotional`, `mohit_hi_conversational`, `mukul_hi_ads`, `mukul_hi_suspense`, `nachiket_hi_devotional`, `priya_hi_recovery`, `rahul_hi_conversational`, `ratan_hi_customer_expressive`, `ratan_hi_devotional`, `ratan_hi_documentary`, `ratan_hi_latenight`, `ratan_hi_latenight_warm`, `ratan_hi_recovery`, `ratan_hi_social`, `ratan_hi_sports`, `rehan_hi_social`, `ritu_hi_ads_formal`, `ritu_hi_ads_informal`, `ritu_hi_banking`, `ritu_hi_conversation`, `ritu_hi_customer`, `ritu_hi_customer_utility`, `ritu_hi_customer_warm`, `ritu_hi_edtech`, `ritu_hi_edtech_bot`, `ritu_hi_insurance`, `ritu_hi_kids`, `ritu_hi_medical`, `ritu_hi_reels`, `ritu_hi_sales`, `ritu_hi_social`, `ritu_hi_social_lively`, `roopa_hi_companion`, `roopa_hi_conversational`, `roopa_hi_market`, `roopa_hi_narration`, `roopa_hi_recovery`, `sanchita_hi_ads_formal`, `sanchita_hi_ads_informal`, `sanchita_hi_assistant`, `sanchita_hi_banking`, `sanchita_hi_edtech`, `sanchita_hi_feedback`, `sanchita_hi_interview`, `sanchita_hi_kyc`, `sanchita_hi_market`, `sanchita_hi_romantic`, `sanchita_hi_social`, `sarika_hi_conversation`, `shalini_hi_companion`, `shalini_hi_social`, `shilpa_hi_narration`, `shreya_hi_conversational`, `shreya_hi_news`, `shruti_hi_edtech`, `shubh_hi_ads`, `shubh_hi_customer`, `shubh_hi_devotional`, `shubh_hi_ecomm`, `shubh_hi_recovery`, `shubh_hi_stories_dramatic`, `shubh_hi_stories_mixed`, `simran_hi_assistant`, `simran_hi_automobile`, `simran_hi_conversation`, `simran_hi_latenight`, `simran_hi_narration`, `simran_hi_news`, `simran_hi_news_breaking`, `simran_hi_recovery`, `simran_hi_sales`, `simran_hi_social_energetic`, `simran_hi_social_excited`, `suchitra_hi_ecomm`, `suhani_hi_social`, `suman_hi_companion`, `sumit_hi_conversational`, `sunny_hi_ads`, `sunny_hi_reels`, `tanya_hi_narration`, `tarun_hi_conversational`, `tarun_hi_sales`, `vaibhav_hi_social`, `vandana_hi_ecomm`, `vipul_hi_social` |
+| `kn` — Kannada (4) | `chaitra_kn_conversation`, `chaitra_kn_narration`, `chetan_kn_conversation`, `suchitra_kn_narration` |
+| `mr` — Marathi (9) | `ishita_mr_conversational`, `mrunal_mr_narration`, `mukul_mr_stories`, `neha_mr_narration`, `nilesh_mr_conversation`, `ritu_mr_insurance`, `ritu_mr_narration`, `rupali_mr_stories`, `soham_mr_narration` |
+| `pa` — Punjabi (4) | `anand_pa_conversation`, `anand_pa_customer`, `harpreet_pa_narration`, `jaspal_pa_banking` |
+| `ta` — Tamil (4) | `gokul_ta_narration`, `vetri_ta_ads`, `vetri_ta_suspense`, `vijay_ta_narration` |
+| `te` — Telugu (4) | `kavitha_te_conversation`, `kavitha_te_narration`, `pooja_te_conversation`, `tarun_te_narration` |
 
 Unlike a bad language code, a bad speaker is **not** substituted: the call ends before it starts,
 with one log line naming the valid speakers. Substituting would answer the call in a voice nobody
@@ -418,6 +521,18 @@ job with a traceback instead.)
   "assistant_tts_model": "sarvam",
   "assistant_tts_config": {
     "speaker": "shubh",
+    "target_language_code": "hi-IN",
+    "pace": 1.0
+  }
+}
+```
+
+```json title="Valid — bulbul:v4-flash"
+{
+  "assistant_tts_model": "sarvam",
+  "assistant_tts_config": {
+    "model": "bulbul:v4-flash",
+    "speaker": "shubh_hi_customer",
     "target_language_code": "hi-IN",
     "pace": 1.0
   }

@@ -74,6 +74,14 @@ class Database:
             logger.info("MongoDB connection closed")
 
 
+async def ping_db():
+    """Round-trip MongoDB. Raises if the client was never built or the server does not answer.
+    Used by the /health probe, so the route never touches the driver handle itself."""
+    if Database.client is None:
+        raise RuntimeError("database client not initialised")
+    await Database.client.admin.command("ping")
+
+
 # Convenience functions for FastAPI lifespan events
 async def init_db():
     """Initialize database connection"""

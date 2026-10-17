@@ -20,7 +20,7 @@ Update an existing assistant. Only send fields you want to change.
 | `assistant_name` | string | New assistant name. |
 | `assistant_description` | string | New assistant description. |
 | `assistant_prompt` | string | New system prompt. |
-| `assistant_mode` | string | Target mode: `pipeline`, `realtime` or `cascade`. |
+| `assistant_mode` | string | Target mode: `pipeline`, `realtime`, `cascade` or `duplex`. |
 | `assistant_start_instruction` | string | New opening response text used when `assistant_interaction_config.speaks_first=true`. |
 | `assistant_interaction_config` | object | Partial interaction-config update. |
 | `assistant_greeting_audio` | object | Partial greeting-audio update: `{ "enabled": bool, "audio_id": string }`. Toggle the recorded greeting on/off with `enabled`; attach a different [audio asset](../../api/audio/index.md) with `audio_id` (or `null` to detach). Merged with existing values. A non-null `audio_id` must reference one of your active assets. |
@@ -166,6 +166,34 @@ Update an existing assistant. Only send fields you want to change.
     Sending `{"assistant_stt_model": "openai"}` alone is also valid — it resets the config to
     OpenAI's defaults (`gpt-4o-mini-transcribe`, streaming, auto-detected language).
 
+=== "Switch to Duplex"
+
+    Moves the assistant to OpenAI GPT-Live. See the Duplex tab in [create.md](create.md) for the
+    fields.
+
+    | Field | Type | Required | Description |
+    | :--- | :--- | :--- | :--- |
+    | `assistant_mode` | string | Yes | Set to `duplex`. |
+    | `assistant_llm_config` | object | No | `voice`, `backend_model`, `backend_instructions` and the backend knobs. The stored config is **cleared** on the switch (no model id is valid in both modes) unless you send one here. |
+    | `assistant_greeting_audio` | object | Conditional | Must be disabled. A stored enabled greeting blocks the switch with `400`; send `{"enabled": false}` in the same request. |
+    | `assistant_interaction_config` | object | Conditional | `filler_words` must be off. A stored `true` blocks the switch with `400`; send `{"filler_words": false}` in the same request. |
+
+    The stored TTS and STT configs are kept and ignored, so switching back to `pipeline` or
+    `cascade` later needs no TTS fields.
+
+    **Example request**
+
+    ```bash
+    curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/assistant/update/550e8400-e29b-41d4-a716-446655440000" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <your_api_key>" \
+      -d '{
+        "assistant_mode": "duplex",
+        "assistant_greeting_audio": {"enabled": false},
+        "assistant_llm_config": {"voice": "cedar", "backend_model": "gpt-6-luna"}
+      }'
+    ```
+
 ---
 
 ## Validation Rules
@@ -198,8 +226,9 @@ Update an existing assistant. Only send fields you want to change.
 - `assistant_llm_config` is **merged** with the stored one, key by key — the same partial-update
   contract as `assistant_interaction_config`. A PATCH naming only `model` keeps the stored
   `provider`, `api_key` and knobs; it does not replace the object. `null` on a key removes it.
-  Leaving `realtime` mode is the one exception: the stored Gemini config is replaced outright, not
-  merged, so a Gemini `voice` or key cannot survive under `provider: "openai"`.
+  Two exceptions replace the stored config outright instead of merging: leaving `realtime` mode, so a
+  Gemini `voice` or key cannot survive under `provider: "openai"`, and any switch into or out of
+  `duplex`, because no model id is valid in both.
 - To clear a knob left on many assistants at once (e.g. a `temperature` stored before the
   model gate existed), run `uv run python scripts/migrate_llm_knobs.py` — dry run by default,
   `--apply` to write.
@@ -208,7 +237,7 @@ Update an existing assistant. Only send fields you want to change.
 
 ## Runtime Behavior Notes
 
-- `assistant_interaction_config.speaks_first` is supported in all three modes.
+- `assistant_interaction_config.speaks_first` is supported in all four modes. In `duplex`, GPT-Live phrases the greeting itself and may decline.
 - When `speaks_first=true`, `assistant_start_instruction` is used as the opening response — unless `assistant_greeting_audio.enabled=true`, in which case the referenced audio asset is played instead (no LLM/TTS for the greeting). On any failure (missing/inactive asset, download error) it falls back to the model greeting.
 - `assistant_interaction_config.background_sound_enabled` controls background ambience for all sessions using the assistant.
 - `assistant_interaction_config.thinking_sound_enabled` controls the typing-style thinking sound for all sessions using the assistant.

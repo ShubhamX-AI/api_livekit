@@ -38,6 +38,12 @@ SARVAM_AUTO = "unknown"
 # the accepted set for free.
 CARTESIA_STT_LANGUAGES: frozenset[str] = frozenset(get_args(_CartesiaSTTLanguages))
 SARVAM_TTS_LANGUAGES: frozenset[str] = frozenset(get_args(_SarvamTTSLanguages))
+# Since livekit-agents 1.8.6 that Literal also carries the 12 IN22 codes, which only
+# bulbul:v4-flash speaks (and only on a subscription with them enabled). The original 11 are
+# what every Bulbul model takes; the rest are v4-flash-only.
+SARVAM_IN22_TTS_LANGUAGES: frozenset[str] = SARVAM_TTS_LANGUAGES - frozenset(
+    {"bn-IN", "en-IN", "gu-IN", "hi-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN", "pa-IN", "ta-IN", "te-IN"}
+)
 
 # ElevenLabs Scribe speaks ISO 639-3, and the plugin forwards the string untouched, so this
 # is the only place the set exists. Copied verbatim from the API's own rejection message.

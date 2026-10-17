@@ -24,11 +24,11 @@ then fix whichever doc is wrong.
 
 `assistant_llm_config.provider`.
 
-| Provider | `pipeline` | `realtime` | `cascade` |
-|---|---|---|---|
-| `openai` | :white_check_mark: `gpt-realtime-1.5` in text-only modality, external TTS speaks | :white_check_mark: `gpt-realtime-1.5` speaks its own audio | :white_check_mark: `openai.responses.LLM` (a plain chat model) |
-| `gemini` | :no_entry: rejected | :white_check_mark: `gemini-3.8-live` (default), handles STT+LLM+TTS | :no_entry: rejected |
-| omitted | :white_check_mark: defaults to `openai` | :white_check_mark: defaults to `gemini` | :white_check_mark: defaults to `openai` |
+| Provider | `pipeline` | `realtime` | `cascade` | `duplex` |
+|---|---|---|---|---|
+| `openai` | :white_check_mark: `gpt-realtime-1.5` in text-only modality, external TTS speaks | :white_check_mark: `gpt-realtime-1.5` speaks its own audio | :white_check_mark: `openai.responses.LLM` (a plain chat model) | :white_check_mark: GPT-Live `gpt-live-1` plus a backend reasoning model |
+| `gemini` | :no_entry: rejected | :white_check_mark: `gemini-3.8-live` (default), handles STT+LLM+TTS | :no_entry: rejected | :no_entry: rejected |
+| omitted | :white_check_mark: defaults to `openai` | :white_check_mark: defaults to `gemini` | :white_check_mark: defaults to `openai` | :white_check_mark: defaults to `openai` |
 
 !!! warning "Gemini is realtime-only"
     Gemini used to be selectable in `pipeline` mode and is now rejected at the API. Pipeline mode is
@@ -48,10 +48,12 @@ talks to a different API.
 
 | Mode | Accepted models | On anything else |
 |---|---|---|
-| `pipeline` | `REALTIME_MODELS` — `gpt-realtime`, `gpt-realtime-1.5`, `gpt-realtime-2`, `gpt-realtime-2025-08-28`, `gpt-realtime-mini` | `422`. A chat model such as `gpt-4.1` belongs to cascade mode. |
+| `pipeline` | `REALTIME_MODELS` — `gpt-realtime`, `gpt-realtime-1.5`, `gpt-realtime-2`, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`, `gpt-realtime-2025-08-28`, `gpt-realtime-mini` | `422`. A chat model such as `gpt-4.1` belongs to cascade mode. |
 | `realtime` + `openai` | same `REALTIME_MODELS` list | `422` |
 | `realtime` + `gemini` | `gemini-3.8-live` (default), `gemini-3.8-live-extended-thinking`, `gemini-3.1-flash-live-preview`, `gemini-2.5-flash-native-audio-preview-12-2025`. `gemini-live-2.5-flash-native-audio` is Vertex-only and also a `422` | `422` |
 | `cascade` | `OPENAI_CASCADE_MODELS` — the chat and reasoning models listed in [Models & Providers](models.md#cascade-llm-cascade-mode-only) | `422` |
+| `duplex` — `model` | `gpt-live-1` | `422`. The reasoning model goes in `backend_model`. |
+| `duplex` — `backend_model` | the reasoning models only (`gpt-5*`, `gpt-6-luna`, `gpt-6-sol`) | `422` |
 
 Gemini Live model IDs **are** validated, against the installed plugin's own list. The Live API
 is a much smaller and slower-moving set than the Gemini chat models, and a chat id such as
@@ -79,6 +81,7 @@ common, so the mistake it catches is switching provider and leaving the voice be
 |---|---|---|
 | `gemini` | the 30 Gemini Live voices (`Puck` (default), `Kore`, `Zephyr`, `Charon`, …) | `422` — closed set in the installed plugin |
 | `openai` | any name that is **not** a Gemini voice (`marin` (default), `cedar`, `alloy`, …) | `422` only for a Gemini name |
+| `duplex` (GPT-Live) | `beacon`, `cedar`, `cinder`, `marin` (default), `stone`, `vesper` | `422` — closed set in the installed plugin |
 
 Asymmetric on purpose: Gemini's roster is a closed `Literal` in the SDK, so a name outside it
 cannot work. OpenAI ships realtime voices without a corresponding SDK list, so an unrecognised
@@ -92,7 +95,7 @@ cannot read with a `400`, and the Responses plugin raises it as a non-retryable 
 the LLM turn — **on every turn**. The call connects, the caller hears silence, and the only
 log line is `There was an issue with your request. Please check your inputs and try again`.
 
-| Knob | Chat models (`gpt-4.1*`, `gpt-4o*`) | Reasoning models (`gpt-5`, `gpt-5-mini/nano`, `gpt-5.1`, `gpt-5.2`, `gpt-5.4*`, `gpt-5.5`, `gpt-5.6-*`) |
+| Knob | Chat models (`gpt-4.1*`, `gpt-4o*`) | Reasoning models (`gpt-5`, `gpt-5-mini/nano`, `gpt-5.2`, `gpt-5.4*`, `gpt-5.5`, `gpt-5.6-*`, `gpt-6-luna`, `gpt-6-sol`) |
 |---|---|---|
 | `temperature` | :white_check_mark: | :no_entry: `422` — use `reasoning_effort` |
 | `reasoning_effort` | :no_entry: `422` | :white_check_mark: — except `gpt-5.2` / `gpt-5.4*` with tools, see below |
@@ -248,6 +251,8 @@ INFO  Cascade LLM built | assistant=asst_9f2 | model=gpt-5.2 | has_tools=True | 
 
 `assistant_stt_model`. Unset means `sarvam`.
 
+Duplex ignores `assistant_stt_model` the same way realtime does: GPT-Live hears the caller itself.
+
 | Provider | `pipeline` | `realtime` | `cascade` |
 |---|---|---|---|
 | `sarvam` (default) | :white_check_mark: parallel Saras v3 audio tap alongside the realtime model | :warning: ignored — the realtime model transcribes | :white_check_mark: the session's own STT stage |
@@ -320,6 +325,9 @@ field unset on `nova-3` costs more than setting it.
 | `mistral` | :white_check_mark: | :warning: stored, never used | :white_check_mark: |
 | omitted | :no_entry: `422` — both `assistant_tts_model` and `assistant_tts_config` are required | :white_check_mark: the model speaks its own audio | :no_entry: `422` — same requirement |
 
+`duplex` behaves like `realtime` here: any TTS config is stored and never used, because GPT-Live
+speaks in its own voice.
+
 In `realtime` mode the model produces audio itself, so no TTS is built at all. Sending a TTS block
 there is accepted (it is kept for the day you switch modes) but changes nothing about the call.
 
@@ -332,10 +340,11 @@ errors — they are the fields to stop debugging when a setting appears to have 
 
 | Field | Ignored in | Read in | Why |
 |---|---|---|---|
-| `assistant_llm_config.voice` | `pipeline`, `cascade` | `realtime` | Only the realtime model speaks its own audio; elsewhere the voice comes from the TTS provider. |
-| `assistant_llm_config.temperature`, `max_output_tokens`, `reasoning_effort`, `service_tier`, `verbosity`, `tool_choice`, `parallel_tool_calls` | `pipeline`, `realtime` | `cascade` | These are `openai.responses.LLM` parameters, built only by `create_llm` in cascade mode. |
-| `assistant_tts_model`, `assistant_tts_config` | `realtime` | `pipeline`, `cascade` | No TTS stage exists in realtime mode. |
-| `assistant_stt_model`, `assistant_stt_config` | `realtime` | `pipeline`, `cascade` | The realtime model transcribes; there is no separate STT stage. |
+| `assistant_llm_config.voice` | `pipeline`, `cascade` | `realtime`, `duplex` | Only the realtime and GPT-Live models speak their own audio; elsewhere the voice comes from the TTS provider. |
+| `assistant_llm_config.temperature`, `max_output_tokens`, `reasoning_effort`, `service_tier`, `verbosity`, `tool_choice`, `parallel_tool_calls` | `pipeline`, `realtime` | `cascade`, `duplex` | Responses parameters: the cascade LLM's, or the duplex backend model's. |
+| `assistant_llm_config.backend_model`, `backend_instructions` | — (rejected outside duplex) | `duplex` | They describe GPT-Live's backend, which exists only in duplex. |
+| `assistant_tts_model`, `assistant_tts_config` | `realtime`, `duplex` | `pipeline`, `cascade` | No TTS stage exists in those modes. |
+| `assistant_stt_model`, `assistant_stt_config` | `realtime`, `duplex` | `pipeline`, `cascade` | The model hears the caller itself; there is no separate STT stage. |
 | `assistant_stt_config.language` (Cartesia/Deepgram) | `pipeline` | `cascade` | The provider itself is cascade-only, so its whole config block is inert in pipeline mode. |
 | `assistant_interaction_config.preferred_languages` | `cascade` | `pipeline`, `realtime` | It hints the *native* transcription prompt, and cascade has no native path. It is never sent to a speech provider as a language parameter in any mode — pin a language on `assistant_stt_config` instead. |
 
@@ -343,6 +352,27 @@ errors — they are the fields to stop debugging when a setting appears to have 
 cascade, and defaults to `codemix` in both.
 
 ---
+
+## Duplex mode
+
+GPT-Live (`assistant_mode: "duplex"`) listens while it speaks and cannot say a fixed string:
+`session.say()` needs a TTS and duplex has none. Everything that depends on that is refused when the
+assistant is saved, not at the first call.
+
+| Feature | In duplex | Why |
+|---|---|---|
+| `assistant_greeting_audio` enabled with an `audio_id` | :no_entry: `422` / `400` | A recording cannot be played. With `speaks_first`, GPT-Live greets in its own words. |
+| `assistant_interaction_config.filler_words` | :no_entry: `422` / `400` | GPT-Live handles backchannels itself and cannot speak a scripted filler. |
+| `text_only` web call | :no_entry: `400` | GPT-Live has no text modality. |
+| `temperature` | :no_entry: `422` | Every backend model is a reasoning model. |
+| `speaks_first` | :white_check_mark: | The start instruction is passed as commentary; the model phrases the greeting. It may decline, and then the caller speaks first. |
+| silence re-prompts | :white_check_mark: | Sent through `generate_reply`, never `say`. |
+| function tools, `end_call` | :white_check_mark: | Run by the backend model, with strict schemas like cascade. |
+| `allow_interruptions` | :warning: | GPT-Live decides on its own when to stop talking. A barge-in stops the audio the caller hears, but the model may finish its sentence. |
+
+Switching an assistant into or out of `duplex` starts from a clean `assistant_llm_config` unless the
+same request sends one, because no model id is valid in both: `gpt-live-1` is not a realtime or
+cascade model, and a stored `gpt-realtime-1.5` is not a GPT-Live model.
 
 ## Failure modes
 

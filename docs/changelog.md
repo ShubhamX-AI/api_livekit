@@ -10,9 +10,122 @@ Given how this platform is used, that includes anything that changes **what a ca
 !!! warning "Read the breaking changes before upgrading"
     Releases below contain breaking changes. Each one lists what to do about it.
 
+## Releases
+
+| Version      | Date              | What changed                                                                                                                                                                                           |
+| ------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [1.6.0](#160) | 2026-10-17        | `livekit-agents` 1.8.8. New `duplex` mode (GPT-Live), GPT-6, `gpt-realtime-2.1`, ElevenLabs v4, Sarvam `bulbul:v4-flash`. `gpt-5.1` and `gpt-5.4-nano` removed. ElevenLabs prices updated. |
+| [1.5.0](#150) | 2026-09-22        | Gemini 3.8 Live and a new Gemini default. Every provider priced; some Deepgram models dropped.                                                                                                         |
+| [1.4.0](#140) | 2026-09-20        | Meeting-call docs; a failed meeting setup is now reported.                                                                                                                                             |
+| [1.3.0](#130) | 2026-09-06        | Usage observability, pricing visibility, new worker launch path.                                                                                                                                       |
+| [1.2.0](#120) | 2026-09-04        | Fixes the silence after an outbound Exotel call is answered.                                                                                                                                           |
+| [1.1.0](#110) | 2026-08-29        | Concurrency limits and call setup under load.                                                                                                                                                          |
+| [1.0.0](#100) | before 2026-08-29 | The platform before versioning: three assistant modes, telephony, web calls, tools.                                                                                                                    |
+
+Dates are the day the version was set in `src/core/version.py`.
+
 ---
 
-## 1.5.0
+## 1.6.0 — 2026-10-17
+
+`livekit-agents` moves from `~=1.8.2` to `~=1.8.8`. A fourth assistant mode, GPT-6, and new
+speech models. Two older OpenAI models are removed — see
+[Removed models](#removed-gpt-51-and-gpt-54-nano) before upgrading. Every other assistant keeps its
+model, its voice and its defaults.
+
+### Changed: `GET /health` checks MongoDB and LiveKit
+
+`GET /health` used to answer `success: true` without looking at anything. It now pings MongoDB
+and LiveKit and reports each one under `data.checks`, with `data.status` `ok` or `degraded`. It
+still always answers HTTP `200`, so container healthchecks behave as before — alert on
+`data.status`. New setting `HEALTH_PROBE_TIMEOUT_S` (default `3`). Details:
+[Health Check](api/health.md).
+
+### New: `duplex` mode — OpenAI GPT-Live
+
+`assistant_mode: "duplex"` runs OpenAI's full-duplex voice model, `gpt-live-1`, on this
+deployment's own OpenAI key. It listens while it speaks and decides its own turns, and hands
+reasoning and tool calls to a backend reasoning model (`assistant_llm_config.backend_model`,
+default `gpt-5.6-luna`). How it works: [Duplex Mode](architecture/duplex-mode.md). Fields:
+[Models &amp; Providers → GPT-Live](reference/models.md#gpt-live-duplex-mode-only).
+
+It cannot speak a fixed string, so three things are refused when the assistant is saved: an
+enabled greeting audio, filler words, and `text_only` web calls. Billed at $0.05 per minute of
+session, plus the backend's tokens.
+
+### New models
+
+- **`gpt-6-luna`, `gpt-6-sol`** in `cascade` mode, and as the duplex backend. Reasoning models:
+  `reasoning_effort` (not `minimal`), `verbosity` and `flex` are accepted, `temperature` is not.
+- **`gpt-realtime-2.1`, `gpt-realtime-2.1-mini`** in `pipeline` and `realtime` mode. The default
+  stays `gpt-realtime-1.5`.
+- **ElevenLabs `eleven_v4`, `eleven_v4_turbo`.** Like v3, they ignore `speed`, so it is dropped.
+- **Sarvam `bulbul:v4-flash`**, selected by a new `assistant_tts_config.model` field (default
+  `bulbul:v3`). It has its own 224-speaker roster (names such as `shubh_hi_customer`), tighter
+  limits on pace, temperature and sample rate, and 12 extra Indic languages on subscriptions that
+  enable them.
+
+### Behaviour changes to know about
+
+- **An outbound Exotel call no longer hears its own ring tone when the assistant does not speak
+  first.** Until the call is answered (at most 60 seconds), the caller's input is blanked in every
+  mode. Before, the ring tone reached the model, which could start a turn or reply to it. The
+  greeting path already did this.
+- **Settings a TTS model ignores are now a `422`.** Before, they were stored and did nothing:
+  - ElevenLabs `voice_settings` per model. The default `eleven_v3` reads only `stability`, and only
+    `eleven_multilingual_v2` reads all five; the table comes from ElevenLabs' own `/v1/models` flags
+    and model notes. See [Models & Providers → TTS](reference/models.md#tts).
+  - Sarvam `temperature` on `bulbul:v4-flash`, which Sarvam fixes at `0.6`. Its default is now
+    unset rather than `0.3`, so a v4-flash config can be resent unchanged; `bulbul:v3` still uses
+    `0.3` when it is omitted.
+- **`eleven_monolingual_v1` and `eleven_multilingual_v1` are rejected.** ElevenLabs retired them;
+  every synthesis answered `400 unsupported_model`.
+- **Run `uv run python scripts/migrate_tts_settings.py --apply` after deploying.** It moves stored
+  v1 assistants to `eleven_multilingual_v2` and removes ignored settings from stored rows, so they
+  can be edited again. Until then the worker drops those settings itself; nothing a caller hears
+  changes, except that a v1 assistant starts speaking.
+- **The MCP docs search ranks better.** `search_docs` now uses BM25 over whole words, so the page
+  that answers the question beats a long page that only mentions its words: on 26 sample
+  questions the right page is in the top three for 25, against 18 before. `changelog.md` is
+  readable through `get_doc` again, as the server's instructions already said.
+- **Mode switches into or out of `duplex` clear the stored `assistant_llm_config`** unless the
+  request sends a new one, as leaving `realtime` already did.
+- **An IN22 language code on `bulbul:v3` is now a `422`,** and a row that already stores one falls
+  back to `en-IN` at call time. Since 1.8.6 the plugin's
+  language list includes codes that only `bulbul:v4-flash` speaks, so a v3 assistant could have
+  stored one and failed every synthesis.
+- **Pricing** reads a dated OpenAI snapshot (`gpt-6-luna-2026-09-30`) as its alias, so the GPT-Live
+  backend's tokens are priced rather than reported as unpriced.
+
+### Removed: `gpt-5.1` and `gpt-5.4-nano`
+
+OpenAI retires both on **2027-04-01**, so they are off the allowlist now. Creating an assistant with
+either is a `422`, updating one to either a `400`. An assistant already storing one still runs, but any PATCH to it
+is refused until it moves. After deploying, run:
+
+```bash
+uv run python scripts/migrate_retired_models.py            # list affected assistants
+uv run python scripts/migrate_retired_models.py --apply    # move them
+```
+
+It moves `gpt-5.1` to `gpt-6-sol` and `gpt-5.4-nano` to `gpt-6-luna`, in both
+`assistant_llm_config.model` and the duplex `backend_model`.
+
+### ElevenLabs prices
+
+The ElevenLabs TTS rates now match the current list: `eleven_v3` and `eleven_multilingual_v2`
+$0.08 per 1K characters, `eleven_v3_conversational` and the turbo and flash models $0.04. Usage
+estimates for those models drop by about 20%.
+
+### New docs pages
+
+- [Duplex Mode](architecture/duplex-mode.md): how a GPT-Live call runs.
+- [Pricing](reference/pricing.md): every rate behind `estimated_cost_usd`, with its source and date.
+- This page now opens with a table of every release and its date.
+
+---
+
+## 1.5.0 — 2026-09-22
 
 Gemini 3.8 Live, a new Gemini default, and a pricing sweep that changed which Deepgram models
 this platform accepts.
@@ -73,11 +186,11 @@ Mistral TTS. Two carry a caveat, stated in `src/core/pricing/rates.py` beside th
   shows, so the estimate survives the promotion ending.
 
 Gemini Live prices are listed per model in
-[Models & Providers](reference/models.md#gemini-live-pricing).
+[Models &amp; Providers](reference/models.md#gemini-live-pricing).
 
 ---
 
-## 1.4.0
+## 1.4.0 — 2026-09-20
 
 Meeting-call documentation release, plus one behaviour change to how a failed meeting setup is
 reported.
@@ -113,7 +226,7 @@ session setup rather than at connector readiness.
 
 ---
 
-## 1.3.0
+## 1.3.0 — 2026-09-06
 
 Usage observability and deployment-maintenance release. This release keeps the call behavior and
 provider integrations documented in 1.2.0, but changes usage payloads, usage attribution, pricing
@@ -182,7 +295,7 @@ deprecated Python CLI. Production deployments must use the Docker command above.
 `livekit-agents` is upgraded to `1.7.1`, and provider/model rosters are synchronized with the
 runtime factories and validation tables. Before adding or restoring a model, run
 `uv run python scripts/check_model_allowlist.py`; do not copy a model name from an old release or
-from memory. See [Models & Providers](reference/models.md) and [Compatibility Matrix](reference/compatibility.md).
+from memory. See [Models &amp; Providers](reference/models.md) and [Compatibility Matrix](reference/compatibility.md).
 
 ### Breaking changes and upgrade steps
 
@@ -209,7 +322,7 @@ is versioned or only an estimate.
 
 ---
 
-## 1.2.0
+## 1.2.0 — 2026-09-04
 
 Outbound Exotel answer-to-speech release. Callers reported 5-6s of silence after picking up an
 outbound call, sometimes much longer — this release fixes the actual cause, not just the symptom.
@@ -252,7 +365,7 @@ are not addressed by this release.
 
 ---
 
-## 1.1.0
+## 1.1.0 — 2026-08-29
 
 Concurrency and call-setup release. 1.0 worked well at low volume and came apart at 12–14
 simultaneous calls; this release is about holding that load and about what the caller experiences
@@ -297,12 +410,12 @@ One counter used to govern every call type, so a burst of web sessions could giv
 busy tone — even though a web call costs a fraction of a phone call (no bridge process, no RTP
 port, and a text-only web call has no TTS, STT or VAD at all).
 
-| Setting | Default | Governs |
-|---|---|---|
-| `MAX_CONCURRENT_JOBS` | `12` | telephony: inbound, outbound, passthrough |
-| `MAX_CONCURRENT_WEB_CALLS` | `40` | web calls |
-| `MAX_CONCURRENT_SESSIONS` | `48` | hard ceiling across everything |
-| `MAX_CONCURRENT_INVITE_SETUPS` | `24` | inbound INVITEs in setup at once (not a cap on live calls) |
+| Setting                          | Default | Governs                                                    |
+| -------------------------------- | ------- | ---------------------------------------------------------- |
+| `MAX_CONCURRENT_JOBS`          | `12`  | telephony: inbound, outbound, passthrough                  |
+| `MAX_CONCURRENT_WEB_CALLS`     | `40`  | web calls                                                  |
+| `MAX_CONCURRENT_SESSIONS`      | `48`  | hard ceiling across everything                             |
+| `MAX_CONCURRENT_INVITE_SETUPS` | `24`  | inbound INVITEs in setup at once (not a cap on live calls) |
 
 `MAX_CONCURRENT_JOBS` keeps its name and its meaning as the telephony cap, so a deployment that
 already sets it keeps the behaviour it was tuned for.
@@ -379,20 +492,19 @@ your stack measured call setup from the 200 OK, it now measures from a later poi
    filter. Rows already in `dispatching` from before the upgrade have a null `dispatched_at`, and
    MongoDB's `$lt` does not compare across BSON types, so they would never be recovered:
 
-    ```javascript
-    db.outbound_call_queue.countDocuments({status: "dispatching", dispatched_at: null})
-    db.outbound_call_queue.updateMany(
-      {status: "dispatching", dispatched_at: null},
-      {$set: {status: "pending"}})
-    ```
-
+   ```javascript
+   db.outbound_call_queue.countDocuments({status: "dispatching", dispatched_at: null})
+   db.outbound_call_queue.updateMany(
+     {status: "dispatching", dispatched_at: null},
+     {$set: {status: "pending"}})
+   ```
 3. Confirm your client handles `503` from `POST /get_token`.
 4. Run a load test and set `MAX_CONCURRENT_WEB_CALLS` / `MAX_CONCURRENT_SESSIONS` from the
    measured agent memory footprint.
 
 ---
 
-## 1.0.0
+## 1.0.0 — before 2026-08-29
 
 The platform as it stood before the 1.1 concurrency work: assistants in three modes, outbound and
 inbound telephony over Exotel and Twilio, web calls, passthrough, tools, an audio library and

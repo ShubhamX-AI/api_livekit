@@ -31,8 +31,10 @@ real endpoint paths, fields and payloads.
 | `get_doc` | `path` (string) | One page as raw markdown. `.md` suffix optional, e.g. `api/calls/trigger`. |
 | `search_docs` | `query` (string), `limit` (int, default `8`) | Ranked matches: path, title, score and a short snippet per hit. |
 
-`search_docs` is keyword-based — it counts how often your words appear in each page and
-weights title matches higher. Start there, then call `get_doc` on the most promising path.
+`search_docs` is keyword-based, ranked with BM25: a word counts for more when few pages use it,
+repeating it helps less and less, long pages are discounted so they cannot win every query, and a
+word in the page's title or path counts extra. Whole words only, with plurals folded (`tools`
+matches `tool`). Start there, then call `get_doc` on the most promising path.
 
 ## Reliable answer workflow
 

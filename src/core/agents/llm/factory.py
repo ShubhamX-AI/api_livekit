@@ -1,9 +1,10 @@
-"""Factory for the conversational LLM used in cascade mode.
+"""Factories for the conversational model in cascade and duplex mode.
 
-Only cascade mode needs this. The `pipeline` and `realtime` modes build a
-`RealtimeModel` inline in session.py, because their LLM also owns STT (and, in
-realtime, TTS) — there is nothing to factor out. Cascade is the only mode where
-the LLM is a standalone stage.
+Cascade's LLM is a standalone stage (`create_llm`). Duplex runs GPT-Live
+(`create_gpt_live`), whose backend is the same kind of Responses model, so it shares the
+knob rules. The `pipeline` and `realtime` modes build a `RealtimeModel` inline in
+session.py, because their LLM also owns STT (and, in realtime, TTS) — there is nothing to
+factor out.
 """
 
 from livekit.agents.types import NOT_GIVEN
@@ -13,6 +14,10 @@ from openai.types import Reasoning
 from src.core.model_support.capabilities import (
     CASCADE_MODELS,
     DEFAULT_CASCADE_MODEL,
+    DEFAULT_DUPLEX_BACKEND_INSTRUCTIONS,
+    DEFAULT_DUPLEX_BACKEND_MODEL,
+    DEFAULT_GPT_LIVE_MODEL,
+    DEFAULT_GPT_LIVE_VOICE,
     PLUGIN_INJECTS_REASONING,
     REASONING_TOOL_INCOMPATIBLE,
     unsupported_knob_reason,
@@ -178,3 +183,80 @@ def create_llm(assistant, *, has_tools: bool = False):
         assistant_id,
     )
     return llm
+
+
+def create_gpt_live(assistant, *, has_tools: bool = False):
+    """Build the duplex-mode GPT-Live model, or None on error.
+
+    The voice persona is the agent's own instructions (the assistant prompt), set on the
+    `Agent`, not here. This builds the other half: the backend Responses model that GPT-Live
+    hands its reasoning and tool calls to. The generation knobs go to that backend, so they
+    are filtered against the backend model with the same rule `create_llm` applies — a knob
+    the model rejects fails every delegated turn.
+    """
+    llm_config = assistant.assistant_llm_config or {}
+    assistant_id = assistant.assistant_id
+    api_key = llm_config.get("api_key") or settings.OPENAI_API_KEY
+    if not api_key:
+        logger.error(f"No OpenAI API key for duplex assistant {assistant_id}")
+        return None
+
+    backend_model = llm_config.get("backend_model") or DEFAULT_DUPLEX_BACKEND_MODEL
+    responses_options: dict = {
+        "model": backend_model,
+        "instructions": llm_config.get("backend_instructions")
+        or DEFAULT_DUPLEX_BACKEND_INSTRUCTIONS,
+    }
+
+    def keep(knob: str) -> bool:
+        """True when the backend reads this knob; logs the drop when it does not."""
+        value = llm_config.get(knob)
+        if value is None:
+            return False
+        reason = unsupported_knob_reason(backend_model, knob, has_tools=has_tools, value=value)
+        if reason:
+            logger.warning(f"Dropping {knob}={value!r} for duplex assistant {assistant_id}: {reason}.")
+            return False
+        return True
+
+    if keep("reasoning_effort"):
+        responses_options["reasoning"] = {"effort": llm_config["reasoning_effort"]}
+    if keep("verbosity"):
+        responses_options["text"] = {"verbosity": llm_config["verbosity"]}
+    if keep("service_tier"):
+        responses_options["service_tier"] = llm_config["service_tier"]
+    if keep("tool_choice"):
+        responses_options["tool_choice"] = llm_config["tool_choice"]
+    if llm_config.get("parallel_tool_calls") is not None:
+        responses_options["parallel_tool_calls"] = llm_config["parallel_tool_calls"]
+    if llm_config.get("max_output_tokens") is not None:
+        responses_options["max_output_tokens"] = llm_config["max_output_tokens"]
+
+    model = llm_config.get("model") or DEFAULT_GPT_LIVE_MODEL
+    voice = llm_config.get("voice") or DEFAULT_GPT_LIVE_VOICE
+    try:
+        live = openai.realtime.GPTLiveModel(
+            model=model,
+            voice=voice,
+            delegation="responses",
+            responses_options=responses_options,
+            api_key=api_key,
+        )
+    except Exception as e:
+        # Same reasoning as create_llm: a raise here escapes entrypoint() as a traceback.
+        logger.error(
+            f"Could not build GPT-Live for duplex assistant {assistant_id}: "
+            f"{type(e).__name__}: {e}"
+        )
+        return None
+
+    logger.info(
+        "Duplex model built | assistant=%s | model=%s | voice=%s | backend=%s | knobs=%s",
+        assistant_id,
+        model,
+        voice,
+        backend_model,
+        {k: v for k, v in responses_options.items() if k not in ("model", "instructions")}
+        or "defaults",
+    )
+    return live

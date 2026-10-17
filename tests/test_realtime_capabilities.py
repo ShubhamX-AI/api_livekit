@@ -50,7 +50,13 @@ class TestGeminiUserTranscription(unittest.TestCase):
 
 class TestRealtimeTruncationSupport(unittest.TestCase):
     def test_the_ga_line_takes_truncation(self):
-        for model in ("gpt-realtime", "gpt-realtime-1.5", "gpt-realtime-mini"):
+        for model in (
+            "gpt-realtime",
+            "gpt-realtime-1.5",
+            "gpt-realtime-mini",
+            "gpt-realtime-2.1",
+            "gpt-realtime-2.1-mini",
+        ):
             with self.subTest(model=model):
                 self.assertTrue(realtime_supports_truncation(model))
 
@@ -150,9 +156,16 @@ class TestGeminiLiveModelRules(unittest.TestCase):
         self.assertIn("Vertex AI", str(ctx.exception))
 
     def test_the_vertex_only_set_matches_the_plugin(self):
-        from livekit.plugins.google.realtime.realtime_api import KNOWN_VERTEXAI_MODELS
+        # Since 1.8.5 KNOWN_VERTEXAI_MODELS lists every model Vertex serves, including
+        # gemini-3.8-live, which both APIs serve. Vertex-only is what the Gemini API lacks.
+        from livekit.plugins.google.realtime.realtime_api import (
+            KNOWN_GEMINI_API_MODELS,
+            KNOWN_VERTEXAI_MODELS,
+        )
 
-        self.assertEqual(GEMINI_VERTEX_ONLY_MODELS, set(KNOWN_VERTEXAI_MODELS))
+        self.assertEqual(
+            GEMINI_VERTEX_ONLY_MODELS, set(KNOWN_VERTEXAI_MODELS - KNOWN_GEMINI_API_MODELS)
+        )
 
     def test_a_chat_model_is_rejected_in_realtime_mode(self):
         with self.assertRaises(ValueError) as ctx:

@@ -5,8 +5,11 @@ invoice truth. Keep the source URL and effective date beside each provider's tab
 changing a rate.
 """
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
+
+from src.core.model_support.capabilities import REASONING_MODELS
 
 PRICING_SCHEMA_VERSION = 1
 
@@ -23,6 +26,9 @@ class ModelRate:
     output_text: Decimal = Decimal(0)
     output_audio: Decimal = Decimal(0)
     audio_second: Decimal = Decimal(0)
+    # Billed per second of open session, not per token — GPT-Live's voice model. Read from
+    # the usage entry's `session_duration`, which the plugin reports as a delta per update.
+    session_second: Decimal = Decimal(0)
     character: Decimal = Decimal(0)
 
 
@@ -60,15 +66,19 @@ OPENAI_RATES = {
     "gpt-5": _tokens("1.25", ".125", "10.00"),
     "gpt-5-mini": _tokens(".25", ".025", "2.00"),
     "gpt-5-nano": _tokens(".05", ".005", ".40"),
+    # Off the allowlist since 2026-10-17; kept so calls made before then still price.
     "gpt-5.1": _tokens("1.25", ".125", "10.00"),
     "gpt-5.2": _tokens("1.75", ".175", "14.00"),
     "gpt-5.4": _tokens("2.50", ".25", "15.00"),
     "gpt-5.4-mini": _tokens(".75", ".075", "4.50"),
-    "gpt-5.4-nano": _tokens(".20", ".02", "1.25"),
+    "gpt-5.4-nano": _tokens(".20", ".02", "1.25"),  # off the allowlist, as gpt-5.1
     "gpt-5.5": _tokens("5.00", ".50", "30.00"),
     "gpt-5.6-sol": _tokens("4.00", ".40", "20.00"),
     "gpt-5.6-terra": _tokens("2.00", ".20", "12.00"),
     "gpt-5.6-luna": _tokens(".20", ".02", "1.20"),
+    # Checked 2026-10-17 on the same page (standard tier, short context).
+    "gpt-6-luna": _tokens(".10", ".01", ".50"),
+    "gpt-6-sol": _tokens("2.00", ".20", "10.00"),
 }
 
 OPENAI_REALTIME_RATES = {
@@ -77,6 +87,13 @@ OPENAI_REALTIME_RATES = {
     "gpt-realtime-2": _realtime("32", "4", ".40", ".40", "64", "24", "5"),
     "gpt-realtime-2025-08-28": _realtime("32", "4", ".40", ".40", "64", "16", "5"),
     "gpt-realtime-mini": _realtime("10", ".60", ".30", ".06", "20", "2.40", ".80"),
+    # Checked 2026-10-17 on the same page.
+    "gpt-realtime-2.1": _realtime("32", "4", ".40", ".40", "64", "24", "5"),
+    "gpt-realtime-2.1-mini": _realtime("10", ".60", ".30", ".06", "20", "2.40", ".80"),
+    # GPT-Live (duplex mode), checked 2026-10-17 on the same page: $0.05 per minute, billed
+    # per second with no rounding. No token price — the backend model's tokens are reported
+    # as their own entry and priced from OPENAI_RATES.
+    "gpt-live-1": ModelRate(session_second=Decimal("0.05") / 60),
 }
 
 OPENAI_STT_RATES = {
@@ -100,16 +117,19 @@ OPENAI_STT_RATES = {
     "whisper-1": ModelRate(audio_second=Decimal("0.006") / 60),
 }
 
-# https://elevenlabs.io/pricing/api, checked 2026-09-06.
+# https://elevenlabs.io/pricing/api, checked 2026-10-17. The two v1 models are no longer on
+# that page and keep their last listed price.
 ELEVENLABS_TTS_RATES = {
-    "eleven_v3": ModelRate(character=Decimal("0.10") / 1000),
-    "eleven_v3_conversational": ModelRate(character=Decimal("0.05") / 1000),
+    "eleven_v4": ModelRate(character=Decimal("0.08") / 1000),
+    "eleven_v4_turbo": ModelRate(character=Decimal("0.04") / 1000),
+    "eleven_v3": ModelRate(character=Decimal("0.08") / 1000),
+    "eleven_v3_conversational": ModelRate(character=Decimal("0.04") / 1000),
+    "eleven_multilingual_v2": ModelRate(character=Decimal("0.08") / 1000),
+    "eleven_turbo_v2": ModelRate(character=Decimal("0.04") / 1000),
+    "eleven_turbo_v2_5": ModelRate(character=Decimal("0.04") / 1000),
+    "eleven_flash_v2": ModelRate(character=Decimal("0.04") / 1000),
+    "eleven_flash_v2_5": ModelRate(character=Decimal("0.04") / 1000),
     "eleven_multilingual_v1": ModelRate(character=Decimal("0.10") / 1000),
-    "eleven_multilingual_v2": ModelRate(character=Decimal("0.10") / 1000),
-    "eleven_turbo_v2": ModelRate(character=Decimal("0.05") / 1000),
-    "eleven_turbo_v2_5": ModelRate(character=Decimal("0.05") / 1000),
-    "eleven_flash_v2": ModelRate(character=Decimal("0.05") / 1000),
-    "eleven_flash_v2_5": ModelRate(character=Decimal("0.05") / 1000),
     "eleven_monolingual_v1": ModelRate(character=Decimal("0.10") / 1000),
 }
 
@@ -126,6 +146,10 @@ SARVAM_RATES = {
     "saaras:v3": ModelRate(audio_second=Decimal(30) / 3600 * SARVAM_INR_TO_USD),
     "saaras:v4": ModelRate(audio_second=Decimal(30) / 3600 * SARVAM_INR_TO_USD),
     "bulbul:v3": ModelRate(character=Decimal(30) / 10000 * SARVAM_INR_TO_USD),
+    # https://www.sarvam.ai/blogs/bulbul-v4-flash, checked 2026-10-17: INR 20 per 10K
+    # characters list price. Not on the pricing page yet. A launch promotion halves it until
+    # 2026-11-12; the list price is used, same reasoning as DEEPGRAM_RATES.
+    "bulbul:v4-flash": ModelRate(character=Decimal(20) / 10000 * SARVAM_INR_TO_USD),
 }
 
 # https://cartesia.ai/pricing, checked 2026-09-22. **Derived, not quoted.** Cartesia
@@ -179,6 +203,16 @@ DEEPGRAM_RATES = {
 }
 
 
+# OpenAI reports a Responses call under the snapshot that served it (`gpt-5.6-luna-2026-04-23`)
+# rather than the alias that was requested. GPT-Live's backend entry carries that name, so the
+# alias's rate is looked up when the snapshot itself has none — but only for the backend
+# candidates, the reasoning models, plus the two retired from that list in 1.6.0 so their old
+# usage still prices. Older snapshots can carry a price of their own
+# (`gpt-4o-2024-05-13` is not priced like `gpt-4o`), and guessing one would hide that.
+_DATED_SNAPSHOT = re.compile(r"^(?P<alias>.+)-\d{4}-\d{2}-\d{2}$")
+_SNAPSHOT_PRICED_AS_ALIAS = REASONING_MODELS | {"gpt-5.1", "gpt-5.4-nano"}
+
+
 def get_rate(component: str, provider: str, model: str) -> ModelRate | None:
     tables = {
         ("llm_usage", "openai"): {**OPENAI_RATES, **OPENAI_REALTIME_RATES},
@@ -196,4 +230,9 @@ def get_rate(component: str, provider: str, model: str) -> ModelRate | None:
         ("stt_usage", "cartesia"): CARTESIA_STT_RATES,
         ("tts_usage", "mistral"): MISTRAL_TTS_RATES,
     }
-    return tables.get((component, provider), {}).get(model)
+    table = tables.get((component, provider), {})
+    rate = table.get(model)
+    snapshot = _DATED_SNAPSHOT.match(model or "") if rate is None else None
+    if snapshot and snapshot.group("alias") in _SNAPSHOT_PRICED_AS_ALIAS:
+        rate = table.get(snapshot.group("alias"))
+    return rate

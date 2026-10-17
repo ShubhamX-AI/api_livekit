@@ -4,7 +4,7 @@
 
 Assistants define voice agent behavior, prompt/instructions, interaction settings, optional tools, and optional end-call behavior.
 
-Assistant execution supports three runtime modes, selected by `assistant_mode` (not to be confused
+Assistant execution supports four runtime modes, selected by `assistant_mode` (not to be confused
 with `assistant_llm_config.provider`, the LLM vendor):
 
 - `pipeline` (default, half-cascade): a realtime model emits text, a separate TTS provider speaks it.
@@ -13,6 +13,9 @@ with `assistant_llm_config.provider`, the LLM vendor):
   `openai`.
 - `cascade`: a true three-stage pipeline — plugin STT, a plain (non-realtime) LLM, plugin TTS, each a
   separate metered stage. LLM vendor is `openai` only. See [Cascade Pipeline](../../architecture/cascade-pipeline.md).
+- `duplex`: OpenAI GPT-Live (`gpt-live-1`), which listens while it speaks and hands reasoning and tools
+  to a backend reasoning model. No TTS, no STT. LLM vendor is `openai` only. See
+  [Models & Providers → GPT-Live](../../reference/models.md#gpt-live-duplex-mode-only).
 
 TTS providers (`pipeline` and `cascade` modes): `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Full model
 IDs and defaults live in [Models & Providers](../../reference/models.md); which combinations of mode,
@@ -30,8 +33,10 @@ LLM, STT and TTS are actually valid lives in the
 - In `realtime` mode, `assistant_tts_model` and `assistant_tts_config` are ignored by runtime.
 - `assistant_mode="cascade"` requires `assistant_tts_model` + `assistant_tts_config`; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` rejected); `assistant_llm_config.provider` must be `openai` or unset.
 - In `cascade` mode, `temperature`, `reasoning_effort` and `verbosity` are only accepted on models that read them (reasoning models take `reasoning_effort`, chat models take `temperature`, `verbosity` is gpt-5 generation only) — a mismatch is a `422`, because OpenAI rejects such a request on every LLM turn and the call goes silent. [Cascade LLM knobs](../../reference/compatibility.md#cascade-llm-knobs).
+- In `duplex` mode, `assistant_llm_config` is optional: `model` is `gpt-live-1`, `voice` one of `beacon`, `cedar`, `cinder`, `marin` (default), `stone`, `vesper`, and `backend_model` (default `gpt-5.6-luna`) must be a reasoning model. `reasoning_effort`, `verbosity`, `service_tier` and `tool_choice` are checked against `backend_model`. `backend_model` and `backend_instructions` are rejected in every other mode.
+- `assistant_mode="duplex"` rejects an enabled `assistant_greeting_audio`, `filler_words: true`, and `text_only` web calls — GPT-Live cannot speak a fixed string. TTS and STT fields are ignored. See [Compatibility Matrix → Duplex mode](../../reference/compatibility.md#duplex-mode).
 - `assistant_start_instruction` is used as the opening response when `assistant_interaction_config.speaks_first=true`.
-- `assistant_interaction_config.speaks_first` works in all three modes.
+- `assistant_interaction_config.speaks_first` works in all four modes (in `duplex` the model phrases the greeting itself and may decline).
 - Unknown keys inside `assistant_llm_config`, `assistant_tts_config` or `assistant_stt_config` are rejected with `422` rather than ignored.
 - `assistant_interaction_config.background_sound_enabled` and `assistant_interaction_config.thinking_sound_enabled` default to `true`.
 - Background/thinking sound is configured at the assistant level only; call-trigger APIs do not override it per session.

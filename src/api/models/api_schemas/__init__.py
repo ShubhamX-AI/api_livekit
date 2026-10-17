@@ -5,6 +5,8 @@
 from .assistant import (
     CreateAssistant,
     UpdateAssistant,
+    filler_words_on,
+    greeting_audio_active,
     inject_provider_type,
     inject_stt_config,
 )
@@ -116,6 +118,8 @@ __all__ = [
     "UpdateTool",
     "UpdateWebhookInboundContextStrategyConfigSchema",
     "WebhookInboundContextStrategyConfigSchema",
+    "filler_words_on",
+    "greeting_audio_active",
     "inject_provider_type",
     "inject_stt_config",
     "reject_retired_mode_key",

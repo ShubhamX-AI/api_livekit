@@ -25,12 +25,18 @@ Gates 3 and 4 fail *open* on anything that is not a clear refusal (network error
 
 from fastapi import HTTPException
 
-from src.api.models.api_schemas import validate_mode_config
+from src.api.models.api_schemas import (
+    filler_words_on,
+    greeting_audio_active,
+    validate_mode_config,
+)
 from src.core.config import settings
 from src.core.db.db_schemas import Tool
 from src.core.logger import logger
 from src.core.model_support.capabilities import (
     DEFAULT_CASCADE_MODEL,
+    DEFAULT_DUPLEX_BACKEND_MODEL,
+    DEFAULT_GPT_LIVE_MODEL,
     DEFAULT_REALTIME_MODEL,
 )
 from src.core.model_support.openai_live import (
@@ -91,6 +97,10 @@ def effective_llm_config(assistant, update_data: dict) -> dict:
         # be judged against the voice already on the row, or a Gemini voice survives under
         # provider 'openai' and the session dies at connect time.
         "voice": effective("voice"),
+        # Duplex only: GPT-Live's reasoning model, which the generation knobs are judged
+        # against in that mode.
+        "backend_model": effective("backend_model"),
+        "backend_instructions": effective("backend_instructions"),
         # The generation knobs are model-gated (see model_support.capabilities), so a PATCH
         # that changes only the model has to be judged against the knobs already on the row.
         "temperature": effective("temperature"),
@@ -120,6 +130,15 @@ def will_attach_tools(assistant, update_data: dict | None = None) -> bool:
     )
 
 
+def uses_responses_tools(mode: str | None) -> bool:
+    """Whether this mode's function tools go to the Responses API, which wants strict schemas.
+
+    Cascade calls it directly; duplex hands its tools to GPT-Live's backend, which is a
+    Responses model too. Pipeline and realtime send them to the Realtime API instead.
+    """
+    return mode in ("cascade", "duplex")
+
+
 async def resolve_probe_tools(
     assistant, update_data: dict | None = None, *, strict_schemas: bool
 ) -> list[dict]:
@@ -130,8 +149,8 @@ async def resolve_probe_tools(
     as the runtime skips it, or the probe would reject a configuration that in fact runs (minus
     that tool).
 
-    `strict_schemas` is True for cascade only: `strict` means nothing to the Realtime API and
-    an unknown key there is an error.
+    `strict_schemas` is True for cascade and duplex — see `uses_responses_tools`. `strict`
+    means nothing to the Realtime API and an unknown key there is an error.
     """
     update_data = update_data or {}
     tool_ids = effective_value(assistant, update_data, "tool_ids") or []
@@ -182,10 +201,23 @@ async def enforce_openai_config(
     the offending value may have come from the stored row rather than this PATCH. Same
     convention as `enforce_stored_mode_constraints`.
     """
-    if mode not in ("pipeline", "cascade", "realtime"):
+    if mode not in ("pipeline", "cascade", "realtime", "duplex"):
         return
 
     llm_config = llm_config or {}
+    api_key = llm_config.get("api_key")
+
+    if mode == "duplex":
+        # Two models to check. The voice model is billed by the second and has no Responses
+        # shape to probe; the backend takes the knobs and the tools, so it gets gate 4.
+        backend = llm_config.get("backend_model") or DEFAULT_DUPLEX_BACKEND_MODEL
+        model = llm_config.get("model") or DEFAULT_GPT_LIVE_MODEL
+        await _require_served("model", model, api_key, status_code)
+        await _require_served("backend_model", backend, api_key, status_code)
+        await _probe_responses_config(
+            backend, api_key, llm_config, tools=tools, has_tools=has_tools, status_code=status_code
+        )
+        return
     default_provider = "gemini" if mode == "realtime" else "openai"
     provider = (llm_config.get("provider") or default_provider).lower()
     if provider != "openai":
@@ -193,16 +225,7 @@ async def enforce_openai_config(
 
     default_model = DEFAULT_CASCADE_MODEL if mode == "cascade" else DEFAULT_REALTIME_MODEL
     model = llm_config.get("model") or default_model
-    api_key = llm_config.get("api_key")
-
-    reason = await unavailable_model_reason(model, api_key)
-    if reason:
-        raise HTTPException(
-            status_code=status_code,
-            detail=redact_text(
-                f"assistant_llm_config.model '{model}' cannot be used — {reason}"
-            ),
-        )
+    await _require_served("model", model, api_key, status_code)
 
     # The probe only makes sense for cascade: that is the mode whose turns go to the Responses
     # API. Pipeline and realtime drive the Realtime API, whose session shape a Responses call
@@ -210,6 +233,31 @@ async def enforce_openai_config(
     if mode != "cascade":
         return
 
+    await _probe_responses_config(
+        model, api_key, llm_config, tools=tools, has_tools=has_tools, status_code=status_code
+    )
+
+
+async def _require_served(field: str, model: str, api_key: str | None, status_code: int) -> None:
+    """Gate 3: refuse a model the account no longer serves, naming the field that holds it."""
+    reason = await unavailable_model_reason(model, api_key)
+    if reason:
+        raise HTTPException(
+            status_code=status_code,
+            detail=redact_text(f"assistant_llm_config.{field} '{model}' cannot be used — {reason}"),
+        )
+
+
+async def _probe_responses_config(
+    model: str,
+    api_key: str | None,
+    llm_config: dict,
+    *,
+    tools: list[dict] | None,
+    has_tools: bool,
+    status_code: int,
+) -> None:
+    """Gate 4: one short Responses call with the real model, knobs and tool schemas."""
     rejection = await rejected_config_reason(
         model, api_key, llm_config, tools=tools, has_tools=has_tools
     )
@@ -303,7 +351,7 @@ async def enforce_tool_change(assistant, tool_ids: list[str]) -> None:
         effective_llm_config(assistant, update_data),
         status_code=400,
         tools=await resolve_probe_tools(
-            assistant, update_data, strict_schemas=mode == "cascade"
+            assistant, update_data, strict_schemas=uses_responses_tools(mode)
         ),
         has_tools=will_attach_tools(assistant, update_data),
     )
@@ -322,7 +370,7 @@ def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str 
     and this path can never drift apart.
     """
     effective_mode = new_mode or getattr(assistant, "assistant_mode", None)
-    if effective_mode not in ("pipeline", "cascade", "realtime"):
+    if effective_mode not in ("pipeline", "cascade", "realtime", "duplex"):
         return
 
     from types import SimpleNamespace
@@ -338,6 +386,12 @@ def enforce_stored_mode_constraints(assistant, update_data: dict, new_mode: str 
             SimpleNamespace(**config),
             effective_stt,
             has_tools=will_attach_tools(assistant, update_data),
+            greeting_audio=greeting_audio_active(
+                effective_value(assistant, update_data, "assistant_greeting_audio")
+            ),
+            filler_words=filler_words_on(
+                effective_value(assistant, update_data, "assistant_interaction_config")
+            ),
         )
     except ValueError as e:
         # 400 (not 422): the request itself is well-formed — it is the combination with what

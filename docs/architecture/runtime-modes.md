@@ -61,7 +61,8 @@ Speech generation has **two orthogonal axes**:
    - `pipeline` (**half**-cascade, the default): a *realtime* model emits **text**, an external TTS plugin speaks it. User transcription is a side channel — a parallel Sarvam tap, or the realtime model transcribing itself.
    - `realtime`: one model does STT + LLM + TTS and speaks its own **audio** (no external TTS).
    - `cascade`: a **true three-stage pipeline** — a plugin STT, a plain (non-realtime) LLM, and a plugin TTS, each a separate stage that is separately metered and independently swappable. See [Cascade Pipeline](cascade-pipeline.md).
-2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Defaults to `gemini` in `realtime` mode and `openai` in the other two. **`gemini` is accepted in `realtime` mode only**; `pipeline` and `cascade` are OpenAI-only and reject it with a `422`.
+   - `duplex`: OpenAI **GPT-Live**, a full-duplex voice model that listens while it speaks and decides its own turns. It hands reasoning and tool calls to a second, backend Responses model (`backend_model`). No TTS, no STT stage. See [Duplex Mode](duplex-mode.md).
+2. **Provider** (`assistant_llm_config.provider`) = LLM vendor: `openai` | `gemini`. Defaults to `gemini` in `realtime` mode and `openai` in the other three. **`gemini` is accepted in `realtime` mode only**; `pipeline`, `cascade` and `duplex` are OpenAI-only and reject it with a `422`.
 
 The matrix:
 
@@ -70,6 +71,7 @@ The matrix:
 | `pipeline` (text + external TTS) | OpenAI `gpt-realtime-1.5` (text out) -> external TTS | **not supported** — rejected at create/update |
 | `realtime` (model speaks audio) | OpenAI realtime (audio out) | Gemini realtime (STT+LLM+TTS) |
 | `cascade` (true pipeline) | plugin STT -> `openai.responses.LLM` -> plugin TTS | **not supported** — rejected at create/update |
+| `duplex` (full-duplex voice) | GPT-Live `gpt-live-1` + backend reasoning model | **not supported** — rejected at create/update |
 
 **Why Gemini is not available in `pipeline` mode.** Half-cascade needs the realtime model in a
 text-only response modality so an external TTS can speak the result. Google's Live API supports that
@@ -86,6 +88,14 @@ Which to pick:
 | Lowest latency, one vendor, don't need cost breakdown | `realtime` |
 | Realtime understanding but a specific TTS voice | `pipeline` |
 | Per-component cost visibility, cheap text models, swappable STT | `cascade` |
+| The most natural turn-taking — overlapping speech, backchannels, no turn-detection tuning | `duplex` |
+
+`duplex` trades control for naturalness. GPT-Live decides when to speak and when to stop, so it
+cannot play a prerecorded greeting, speak filler words, run text-only, or take a new prompt in the
+middle of a call. Its voice persona (`assistant_prompt`) and its backend's instructions
+(`backend_instructions`) are fixed for the whole session. Barge-in stops the audio the caller hears,
+but the model can still finish its sentence. See
+[Compatibility Matrix → Duplex mode](../reference/compatibility.md#duplex-mode).
 
 In `pipeline` mode, user transcription runs **in parallel** via Sarvam Saras v3 by default — see [Sarvam Parallel STT](#sarvam-parallel-user-transcription) below; if Sarvam is disabled the LLM's own transcription tap is used instead. `cascade` does not use the tap at all: its STT *is* the session's first stage.
 

@@ -33,24 +33,32 @@ DEFAULT_REALTIME_MODEL = "gpt-realtime-1.5"
 # Reasoning models: they take `reasoning.effort` and reject `temperature` and the other
 # sampling knobs. https://docs.livekit.io/reference/agents/inference-llm-parameters/
 #
-# `gpt-5.4-nano`, `gpt-5.5` and the three `gpt-5.6-*` ids are listed by LiveKit's OpenAI
+# `gpt-5.5` and the three `gpt-5.6-*` ids are listed by LiveKit's OpenAI
 # model table but are not in the installed plugin's `ChatModels` Literal. That is fine — the
 # plugin types `model` as `str | ResponsesModel` and never checks membership — but it means
 # the Literal cannot be used as a source of truth here either. check_model_allowlist.py is.
+#
+# `gpt-6-luna` and `gpt-6-sol` were probed on 2026-10-17 with direct /v1/responses calls and
+# behave exactly like `gpt-5.6-luna`: effort none/low/medium/high/xhigh (with or without
+# tools), verbosity and flex accepted; `temperature` and effort `minimal` refused. The plugin
+# does not inject a default effort for them (its `_supports_reasoning_effort` stops at 5.6).
+#
+# `gpt-5.1` and `gpt-5.4-nano` were removed on 2026-10-17, ahead of OpenAI retiring them on
+# 2027-04-01. scripts/migrate_retired_models.py moves stored assistants off them.
 REASONING_MODELS = frozenset(
     {
         "gpt-5",
         "gpt-5-mini",
         "gpt-5-nano",
-        "gpt-5.1",
         "gpt-5.2",
         "gpt-5.4",
         "gpt-5.4-mini",
-        "gpt-5.4-nano",
         "gpt-5.5",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
+        "gpt-6-luna",
+        "gpt-6-sol",
     }
 )
 
@@ -93,13 +101,13 @@ GPT5_GENERATION = REASONING_MODELS
 # "reasoning"). So the check has to happen on our side. See
 # agents/llm/factory.py::create_llm, which also has to undo the plugin's *own* injected
 # default for these models.
-REASONING_TOOL_INCOMPATIBLE = frozenset({"gpt-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"})
+REASONING_TOOL_INCOMPATIBLE = frozenset({"gpt-5.2", "gpt-5.4", "gpt-5.4-mini"})
 
 # Models where openai.responses.LLM inserts a Reasoning object on its own when the caller
 # passes none (plugins/openai/responses/llm.py, `_supports_reasoning_effort`). Filtering our
 # own kwargs is not enough for these — the knob arrives even from an empty config.
 PLUGIN_INJECTS_REASONING = frozenset(
-    {"gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-5.2", "gpt-5.4", "gpt-5.4-mini"}
+    {"gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.2", "gpt-5.4", "gpt-5.4-mini"}
 )
 
 
@@ -115,11 +123,18 @@ PLUGIN_INJECTS_REASONING = frozenset(
 # types `model` as a plain string and never checks, and both ids are real. Anything that turns
 # out not to be real is caught by the live check at create/update time — which is why this
 # list may be generous where the cascade list may not.
+#
+# `gpt-realtime-2.1` and `gpt-realtime-2.1-mini` are not in the plugin's Literal either (as of
+# 1.8.8). On 2026-10-17 a session.update carrying this platform's exact shape —
+# `session.truncation`, semantic VAD, transcription, noise reduction — was accepted by both, in
+# audio (realtime mode) and text (pipeline mode) output.
 REALTIME_GA_MODELS = frozenset(
     {
         "gpt-realtime",
         "gpt-realtime-1.5",
         "gpt-realtime-2",
+        "gpt-realtime-2.1",
+        "gpt-realtime-2.1-mini",
         "gpt-realtime-2025-08-28",
         "gpt-realtime-mini",
     }
@@ -145,6 +160,36 @@ REALTIME_TRUNCATION_MODELS = REALTIME_GA_MODELS
 def realtime_supports_truncation(model: str) -> bool:
     """True when this realtime model takes the GA `session.truncation` field."""
     return model in REALTIME_TRUNCATION_MODELS
+
+
+# ── GPT-Live (duplex mode) ──────────────────────────────────────────────────────────
+# OpenAI's full-duplex voice model, run through `openai.realtime.GPTLiveModel` with this
+# deployment's own OPENAI_API_KEY (the LiveKit Inference route needs Cloud credentials). It
+# listens while it speaks and decides its own turns. A second, ordinary Responses model — the
+# "backend" — does the reasoning and the tool calls, so the generation knobs (effort,
+# verbosity, service tier, tool choice) are judged against the backend model, not this one.
+#
+# `gpt-live-1` is served to this account (check_model_allowlist.py, 2026-10-17).
+GPT_LIVE_MODELS = frozenset({"gpt-live-1"})
+DEFAULT_GPT_LIVE_MODEL = "gpt-live-1"
+
+# livekit.plugins.openai.realtime.GPTLiveVoices in livekit-agents 1.8.8, which a test asserts.
+# Fixed for the whole session: the plugin cannot change it after connecting. `aster` was
+# dropped in 1.8.8 in favour of `cedar`.
+GPT_LIVE_VOICES = frozenset({"beacon", "cedar", "cinder", "marin", "stone", "vesper"})
+DEFAULT_GPT_LIVE_VOICE = "marin"
+
+# The plugin's own default backend. Any of REASONING_MODELS works: GPT-Live hands it the
+# delegated work through the Responses API, so the same knob rules apply as in cascade.
+DEFAULT_DUPLEX_BACKEND_MODEL = "gpt-5.6-luna"
+
+# Used when `backend_instructions` is unset. The voice model's persona is the assistant
+# prompt; this tells the backend what kind of answer the voice model can use.
+DEFAULT_DUPLEX_BACKEND_INSTRUCTIONS = (
+    "You handle the work the voice model delegates to you. Use the tools when current or "
+    "account-specific information is needed. Answer with a short, plain result the voice "
+    "model can read out in one or two sentences."
+)
 
 
 # ── Gemini realtime (realtime mode only) ─────────────────────────────────────────────

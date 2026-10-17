@@ -40,14 +40,28 @@ def inject_stt_config(data: dict) -> None:
     inject_provider_type(data, "assistant_stt_model", "assistant_stt_config")
 
 
+def _read(obj, name: str):
+    """One field from a schema object or a stored dict."""
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def greeting_audio_active(greeting) -> bool:
+    """Whether the worker will play a recording as the greeting (the same test session.py applies)."""
+    return bool(greeting and _read(greeting, "enabled") and _read(greeting, "audio_id"))
+
+
+def filler_words_on(interaction_config) -> bool:
+    return bool(interaction_config and _read(interaction_config, "filler_words"))
+
+
 # For Assistant creation
 class CreateAssistant(BaseModel):
     assistant_name: str = Field(..., min_length=1, max_length=100, description="Assistant's name (cannot be empty)")
     assistant_description: str = Field(..., description="Assistant's description (optional)")
     assistant_prompt: str = Field(..., description="Assistant's prompt (cannot be empty)")
-    assistant_mode: AssistantMode = Field("pipeline", description="Runtime mode. 'pipeline' (default, half-cascade): a realtime model emits text, an external TTS speaks it. 'realtime': one model handles STT+LLM+TTS. 'cascade': a true three-stage pipeline — plugin STT, a plain LLM, plugin TTS, each billed and swappable on its own.")
-    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode. In cascade mode the provider must be 'openai' (or omitted).")
-    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline and cascade modes)")
+    assistant_mode: AssistantMode = Field("pipeline", description="Runtime mode. 'pipeline' (default, half-cascade): a realtime model emits text, an external TTS speaks it. 'realtime': one model handles STT+LLM+TTS. 'cascade': a true three-stage pipeline — plugin STT, a plain LLM, plugin TTS, each billed and swappable on its own. 'duplex': OpenAI GPT-Live, which listens while it speaks and hands reasoning and tools to a backend model; no TTS, no greeting audio, no filler words.")
+    assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. Optional in pipeline mode (supports api_key override). Required in realtime mode. In cascade mode the provider must be 'openai' (or omitted). Optional in duplex mode (model gpt-live-1, voice, backend_model, backend_instructions and the backend's knobs).")
+    assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider (required for pipeline and cascade modes, ignored in realtime and duplex)")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (required for pipeline and cascade modes)")
     assistant_stt_model: Optional[Literal["native", "sarvam", "cartesia", "deepgram", "elevenlabs", "openai"]] = Field(None, description="User-transcription source. In pipeline mode: 'sarvam' (the default when unset) runs Sarvam Saras v3 as a parallel audio tap, 'native' lets the conversational LLM transcribe itself. In cascade mode this is the session's own STT stage — 'sarvam' (multilingual, auto-detect + code-mixing), 'cartesia' (single fixed language), 'deepgram' (nova-3 multilingual), 'elevenlabs' (scribe v2 real-time, auto-detect) or 'openai' (gpt-4o-mini-transcribe over the realtime transcription socket); 'native' is rejected because there is no realtime model to self-transcribe. Ignored in realtime (audio-out) mode.")
     assistant_stt_config: Optional[STTConfig] = Field(None, description="STT configuration object. Optional — omit for provider defaults and the system API key.")
@@ -152,6 +166,8 @@ class CreateAssistant(BaseModel):
             self.assistant_llm_config,
             self.assistant_stt_model,
             has_tools=bool(self.assistant_end_call_enabled),
+            greeting_audio=greeting_audio_active(self.assistant_greeting_audio),
+            filler_words=filler_words_on(self.assistant_interaction_config),
         )
         if self.assistant_stt_config and not self.assistant_stt_model:
             raise ValueError("`assistant_stt_config` requires `assistant_stt_model`.")
@@ -172,7 +188,7 @@ class UpdateAssistant(BaseModel):
     assistant_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Assistant's name (optional)")
     assistant_description: Optional[str] = Field(None, description="Assistant's description (optional)")
     assistant_prompt: Optional[str] = Field(None, description="Assistant's prompt (optional)")
-    assistant_mode: Optional[AssistantMode] = Field(None, description="Runtime mode: pipeline, realtime or cascade. When switching to 'pipeline', any stored realtime llm_config is cleared automatically unless you provide a new one.")
+    assistant_mode: Optional[AssistantMode] = Field(None, description="Runtime mode: pipeline, realtime, cascade or duplex. When leaving realtime for pipeline or cascade, and on any switch into or out of duplex, the stored llm_config is cleared automatically unless you provide a new one.")
     assistant_llm_config: Optional[AssistantLLMConfig] = Field(None, description="Shared LLM config. In pipeline mode only api_key is used (overrides system OPENAI_API_KEY); in realtime mode provider/model/voice/api_key are supported; in cascade mode provider must be 'openai' and model selects the chat model (e.g. gpt-4.1-mini).")
     assistant_tts_model: Optional[Literal["cartesia", "sarvam", "elevenlabs", "mistral"]] = Field(None, description="TTS Provider. Required when switching to pipeline or cascade mode only if no TTS config is already stored on the assistant.")
     assistant_tts_config: Optional[TTSConfig] = Field(None, description="TTS Configuration object (optional)")
@@ -243,6 +259,10 @@ class UpdateAssistant(BaseModel):
         # stored-row check has the real answer and runs on every PATCH.
         if self.assistant_mode:
             validate_mode_config(
-                self.assistant_mode, self.assistant_llm_config, self.assistant_stt_model
+                self.assistant_mode,
+                self.assistant_llm_config,
+                self.assistant_stt_model,
+                greeting_audio=greeting_audio_active(self.assistant_greeting_audio),
+                filler_words=filler_words_on(self.assistant_interaction_config),
             )
         return self

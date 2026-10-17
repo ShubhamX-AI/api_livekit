@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiveKit 1.8.8 Upgrade Report</title>
+<style>
+  :root { --bg:#fbfaf7; --fg:#1d1c1a; --muted:#6b675f; --line:#e3dfd6; --card:#fff; --ok:#2e7d4f; --ok-bg:#e6f3eb; --warn:#9a6400; --warn-bg:#fdf1dc; --code:#f2efe8; --accent:#2f5d8a; --info:#e8eff7; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#161614; --fg:#ece9e2; --muted:#a29d93; --line:#34322d; --card:#1f1e1b; --ok:#7cc79a; --ok-bg:#1d3226; --warn:#e8b55a; --warn-bg:#352a15; --code:#2a2925; --accent:#8db6e0; --info:#1d2a38; } }
+  :root[data-theme="dark"] { --bg:#161614; --fg:#ece9e2; --muted:#a29d93; --line:#34322d; --card:#1f1e1b; --ok:#7cc79a; --ok-bg:#1d3226; --warn:#e8b55a; --warn-bg:#352a15; --code:#2a2925; --accent:#8db6e0; --info:#1d2a38; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1040px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:20px; margin:40px 0 12px; padding-top:12px; border-top:1px solid var(--line); } h3 { font-size:16px; margin:20px 0 8px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  code { background:var(--code); padding:1px 5px; border-radius:4px; font-size:.92em; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; } .card b { display:block; font-size:22px; } .card span { color:var(--muted); font-size:13px; }
+  .note { border-left:4px solid var(--accent); background:var(--info); padding:10px 14px; border-radius:6px; margin:12px 0; }
+  .note.warn { border-color:var(--warn); background:var(--warn-bg); }
+  .tbl { overflow-x:auto; } table { border-collapse:collapse; width:100%; background:var(--card); border:1px solid var(--line); font-size:14px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  pre.mermaid { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  .ok { color:var(--ok); font-weight:600; } .todo { color:var(--warn); font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+<h1>livekit-agents 1.8.8: GPT-6, GPT-Live duplex mode, new TTS models</h1>
+<p class="sub">Feature report · 2026-10-17 · plan <code>agent-tracking/plan/07-livekit-1.8.8-models.md</code> · research <code>agent-tracking/research/03-livekit-1.8.8-models-and-features.html</code> · nothing committed</p>
+
+<div class="grid">
+  <div class="card"><b>562 → 626</b><span>tests, all passing</span></div>
+  <div class="card"><b>40 files</b><span>+1629 / −363, including docs and <code>uv.lock</code></span></div>
+  <div class="card"><b>4 live probes</b><span>Responses, Realtime, ElevenLabs and GPT-Live, against the real APIs</span></div>
+  <div class="card"><b>1 open step</b><span>real phone and web calls on a duplex assistant (needs you)</span></div>
+</div>
+
+<h2>1. Summary</h2>
+<p>You asked to add the newest self-hostable models: OpenAI (e.g. GPT-6), and new STT and TTS models. This change does that and adds OpenAI GPT-Live as a fourth assistant mode, <code>duplex</code>. Every model id was confirmed against the live OpenAI account before it was added. Each new parameter combination was probed against the real API, and every acceptance rule is covered by a test. Existing assistants behave exactly as before: no default changed.</p>
+
+<h2>2. Scope</h2>
+<div class="tbl"><table>
+<tr><th>In</th><th>Out</th></tr>
+<tr><td>
+<ul>
+<li>SDK upgrade to 1.8.8</li>
+<li><code>gpt-6-luna</code> / <code>gpt-6-sol</code></li>
+<li><code>gpt-realtime-2.1</code> / <code>-2.1-mini</code></li>
+<li>ElevenLabs <code>eleven_v4</code> / <code>eleven_v4_turbo</code></li>
+<li>Sarvam <code>bulbul:v4-flash</code> with the full roster</li>
+<li>GPT-Live <code>duplex</code> mode, with greeting audio rejected</li>
+</ul>
+</td><td>
+<ul>
+<li>Answering machine detection</li>
+<li>Gemini 4 Argon</li>
+<li><code>gpt-live-transcribe</code> (needs the silero plugin, like <code>gpt-realtime-whisper</code>)</li>
+<li>Gemini STT</li>
+<li>LLM FallbackAdapter</li>
+<li><code>gpt-6-astra</code> / <code>gpt-6.1-sol</code> (served by the account but not documented by LiveKit)</li>
+</ul>
+</td></tr>
+</table></div>
+
+<h2>3. Current → target</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph modes["assistant_mode"]
+    P["pipeline"]
+    R["realtime"]
+    C["cascade"]
+    D["duplex · GPT-Live"]:::new
+  end
+  C --> CL["gpt-4.1 … gpt-5.6"]
+  C --> G6["gpt-6-luna / gpt-6-sol"]:::new
+  P --> RT["gpt-realtime-1.5 (default) …"]
+  P --> RT21["gpt-realtime-2.1 / -2.1-mini"]:::new
+  R --> RT21
+  D --> GL["gpt-live-1 voice"]:::new
+  GL --> BK["backend: reasoning model, default gpt-5.6-luna"]:::new
+  BK --> G6
+  TTS["TTS"] --> EL["ElevenLabs + eleven_v4, eleven_v4_turbo"]:::new
+  TTS --> SV["Sarvam model field: bulbul:v3 · bulbul:v4-flash"]:::new
+  classDef new fill:#e6f3eb,stroke:#2e7d4f,color:#1d1c1a;
+</pre>
+
+<h3>Duplex call path, end to end</h3>
+<pre class="mermaid">
+sequenceDiagram
+  participant API as API (create/update)
+  participant OAI as OpenAI
+  participant W as Worker (entrypoint)
+  participant GL as GPT-Live session
+  participant BK as Backend model
+  API->>API: Gate 1–2: schema + validate_mode_config (duplex rules)
+  API->>OAI: Gate 3: GET /v1/models — gpt-live-1 and backend served?
+  API->>OAI: Gate 4: POST /v1/responses probe on the backend (knobs + strict tools)
+  API-->>API: store row
+  W->>W: create_gpt_live (filters backend knobs)
+  W->>GL: AgentSession(llm=GPTLive, vad=Silero) · persona = assistant_prompt
+  Note over W: Exotel: caller muted until answered
+  W->>GL: generate_reply(start instruction) as commentary
+  GL-->>W: speaks the greeting (or declines after 10 s, logged)
+  GL->>BK: delegated reasoning / tool calls
+  BK-->>W: function call → our tool runs → result
+  GL-->>W: session_duration (per second) + backend tokens
+  W->>W: UsageRecord · priced: gpt-live-1 $0.05/min + backend tokens
+</pre>
+
+<h2>4. What was built</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>Item</th><th>Interface</th><th>Evidence</th></tr>
+<tr><td>1</td><td>SDK 1.8.2 → 1.8.8</td><td><code>pyproject.toml</code>, <code>docker/requirements-agent.txt</code>, <code>uv.lock</code>; <code>mistralai</code> pinned <code>&lt;3</code> to match the agent image</td><td>The two plugin-drift tests flagged real changes (fixed); suite green</td></tr>
+<tr><td>2</td><td>GPT-6 in cascade</td><td><code>REASONING_MODELS</code> + rates</td><td>/v1/responses probes: identical to <code>gpt-5.6-luna</code>; <code>temperature</code> and <code>minimal</code> refused</td></tr>
+<tr><td>3</td><td>Realtime 2.1 line</td><td><code>REALTIME_GA_MODELS</code> + rates</td><td>A WebSocket <code>session.update</code> with our exact shape was accepted in audio and text output</td></tr>
+<tr><td>4</td><td>ElevenLabs v4</td><td><code>ELEVENLABS_TTS_MODELS</code>, <code>_ELEVENLABS_NO_SPEED_MODELS</code></td><td>Our HTTP client path returns 200; <code>speed</code> is accepted and ignored</td></tr>
+<tr><td>5</td><td>Sarvam v4-flash</td><td><code>assistant_tts_config.model</code>; 224-speaker roster; v4 bounds; IN22 codes on v4 only</td><td>The roster equals the plugin's (asserted by a test)</td></tr>
+<tr><td>6</td><td>Duplex, API side</td><td><code>assistant_mode="duplex"</code>; <code>backend_model</code>, <code>backend_instructions</code>; the rule table plus gates 3 and 4 on both models</td><td>27 new tests; a mutation check proved they fail when the rules are broken</td></tr>
+<tr><td>7</td><td>Duplex, worker side</td><td><code>create_gpt_live</code>; <code>is_duplex</code> / <code>speaks_own_audio</code> in <code>session.py</code></td><td>Real GPT-Live sessions opened with our options and a strict tool</td></tr>
+<tr><td>8</td><td>Pricing</td><td><code>ModelRate.session_second</code>; snapshot→alias fallback for reasoning models only</td><td>Tests: per-second cost, snapshot pricing, an old snapshot is not guessed</td></tr>
+</table></div>
+
+<h3>Duplex rejections (422 on create, 400 on update)</h3>
+<p>Gemini provider · any model other than <code>gpt-live-1</code> · a voice outside <code>beacon/cedar/cinder/marin/stone/vesper</code> · a non-reasoning backend · <code>temperature</code> · an enabled greeting audio · <code>filler_words</code> · <code>text_only</code> web calls · <code>backend_*</code> fields outside duplex. A switch into or out of duplex clears the stored <code>assistant_llm_config</code>.</p>
+
+<h2>5. Files</h2>
+<p><b>Code:</b> <code>src/core/model_support/{capabilities,speech}.py</code>, <code>src/api/models/api_schemas/{assistant,__init__}.py</code>, <code>…/config/{llm_config,tts_config}.py</code>, <code>src/api/validation/{assistant_guard,__init__}.py</code>, <code>src/api/routes/{assistant,web_call}.py</code>, <code>src/core/agents/{session,llm/factory,llm/__init__,tts/factory,stt/lang}.py</code>, <code>src/core/pricing/{rates,calculator}.py</code>, <code>src/core/db/db_schemas.py</code> (comment), <code>src/core/version.py</code> (1.6.0).<br>
+<b>Tests:</b> new <code>tests/test_duplex_mode.py</code>; extended <code>test_cascade_config</code>, <code>test_speech_models</code>, <code>test_provider_pricing</code>, <code>test_realtime_capabilities</code>; <code>test_mcp_docs</code> window widened from 10 to 12.<br>
+<b>Docs:</b> <code>docs/reference/{models,compatibility,troubleshooting}.md</code>, <code>docs/architecture/{runtime-modes,cascade-pipeline}.md</code>, <code>docs/api/assistant/{create,update,index,list}.md</code>, <code>docs/features.md</code>, <code>docs/changelog.md</code> (1.6.0), <code>README.md</code>, <code>CLAUDE.md</code> (Assistant modes).</p>
+
+<h2>6. Verification</h2>
+<div class="tbl"><table>
+<tr><th>Command</th><th>Before</th><th>After</th></tr>
+<tr><td><code>uv run python -m unittest discover -s tests</code></td><td>562 OK</td><td class="ok">626 OK</td></tr>
+<tr><td><code>uv run python scripts/check_model_allowlist.py</code></td><td>401 (bad key)</td><td class="ok">exit 0; every allowlisted model served</td></tr>
+<tr><td><code>uv run mkdocs build --strict</code></td><td>—</td><td class="ok">clean</td></tr>
+<tr><td><code>uv run python scripts/check_mermaid.py</code></td><td>—</td><td class="ok">20 diagrams, 0 broken</td></tr>
+<tr><td><code>uvx ruff check</code> (touched files)</td><td>226 pre-existing</td><td>229: three new, all deliberate (2× <code>UP045</code> matching the model's style, 1× <code>BLE001</code> mirroring <code>create_llm</code>)</td></tr>
+<tr><td>Reviews</td><td colspan="2">Simplicity review: 4 cuts applied. Correctness review: 3 risks and 1 question, all fixed (input guard off in duplex, Exotel mute regardless of <code>allow_interruptions</code>, greeting interruption flag, narrower snapshot pricing).</td></tr>
+</table></div>
+
+<h2>7. Open: step 8, manual calls <span class="todo">(needs you)</span></h2>
+<div class="note warn">Deploy the <b>agent image first</b>, then the API. A 1.8.2 worker would treat a <code>duplex</code> row as <code>pipeline</code>.</div>
+<ol>
+<li>Create a duplex assistant with one tool and <code>speaks_first: true</code> (example in <code>docs/api/assistant/create.md</code>, Duplex tab).</li>
+<li><b>Web call:</b> check that you hear a greeting, that a barge-in stops the playback, that the tool round-trips, that the webhook arrives, and that <code>UsageRecord.llm_session_duration &gt; 0</code> with <code>pricing_complete: true</code>.</li>
+<li><b>Exotel outbound:</b> check that the agent stays silent during ringing and greets after answer.</li>
+<li>Run one cascade call on <code>gpt-6-luna</code> and one pipeline call on <code>gpt-realtime-2.1</code>.</li>
+</ol>
+
+<h2>8. Out-of-scope observations</h2>
+<ul>
+<li>ElevenLabs rates updated to the current list (follow-up): $0.08 per 1K characters for v4, v3 and multilingual v2; $0.04 for v4 turbo, v3 conversational, turbo and flash.</li>
+<li>Text-to-dialogue (v3/v4) drops <code>similarity_boost</code>, <code>style</code> and <code>use_speaker_boost</code>, but the schema says voice settings "apply to all models". Since our own HTTP client is used rather than the plugin, worth re-checking with a live call.</li>
+<li><code>mcp_docs.search_docs</code> ranks by raw term count, so new docs keep pushing short, relevant pages down. A length-normalised score would fix it.</li>
+<li><code>gpt-5.1</code> and <code>gpt-5.4-nano</code> removed from the allowlist (follow-up). Run <code>uv run python scripts/migrate_retired_models.py --apply</code> after deploy to move stored assistants to <code>gpt-6-sol</code> / <code>gpt-6-luna</code>.</li>
+<li><code>gpt-6-astra</code> and <code>gpt-6.1-sol</code> are served but not allowlisted. Not added.</li>
+</ul>
+
+<h2>9. Trace</h2>
+<p>Plan, with a step-by-step progress log: <code>agent-tracking/plan/07-livekit-1.8.8-models.md</code> · research: <code>agent-tracking/research/03-livekit-1.8.8-models-and-features.html</code> · probe scripts (scratch, not in the repo): <code>probe.py</code>, <code>rt_probe.py</code>, <code>el_probe.py</code>, <code>live_probe.py</code>.</p>
+</main>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad:false, securityLevel:"strict", theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral" });
+  for (const [i, el] of document.querySelectorAll("pre.mermaid").entries()) {
+    const { svg } = await mermaid.render(`mmd-${i}`, el.textContent);
+    el.innerHTML = svg;
+  }
+</script>
+</body>
+</html>

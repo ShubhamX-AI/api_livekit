@@ -27,7 +27,7 @@ List assistants created by the current user.
 | `data.assistants` | array | Assistant list. |
 | `data.assistants[].assistant_id` | string | Assistant UUID. |
 | `data.assistants[].assistant_name` | string | Assistant name. |
-| `data.assistants[].assistant_mode` | string | Assistant mode: `pipeline`, `realtime` or `cascade`. |
+| `data.assistants[].assistant_mode` | string | Assistant mode: `pipeline`, `realtime`, `cascade` or `duplex`. |
 | `data.assistants[].assistant_tts_model` | string/null | TTS provider for pipeline assistants. |
 | `data.assistants[].assistant_tts_config` | object/null | Masked TTS config. |
 | `data.assistants[].assistant_stt_model` | string/null | STT provider (`sarvam` \| `native` \| `cartesia` \| `deepgram` \| `elevenlabs` \| `openai`). `null` means the default, `sarvam`. |

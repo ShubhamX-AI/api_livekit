@@ -104,7 +104,7 @@ class Assistant(Document):
     assistant_id: Indexed(str, unique=True)
     assistant_name: str
     assistant_description: Optional[str] = None
-    assistant_mode: str = "pipeline"  # "pipeline" | "realtime" | "cascade"
+    assistant_mode: str = "pipeline"  # "pipeline" | "realtime" | "cascade" | "duplex"
     assistant_llm_config: Optional[Dict] = None  # shared assistant LLM config; pipeline currently uses only api_key
     assistant_tts_model: Optional[str] = None  # required for pipeline, ignored for realtime
     assistant_tts_config: Optional[Dict] = None  # required for pipeline, ignored for realtime
