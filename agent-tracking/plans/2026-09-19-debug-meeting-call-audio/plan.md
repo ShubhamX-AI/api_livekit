@@ -11,7 +11,7 @@ webhook fires as if a call had happened.
 The cause is confirmed rather than suspected. It is a race in the connector's own worker loop that
 destroys the `ready` lifecycle event, compounded by an API-side readiness deadline that is shorter
 than the connector's own budget and that deletes the LiveKit room when it expires. Evidence for
-every claim below is in `agent-tracking/research/01-meeting-call-audio-silence.md`; this document
+every claim below is in `agent-tracking/research/2026-09-19-debug-meeting-call-audio.md`; this document
 is the work list derived from it.
 
 Intended outcome: a meeting call reaches `answered`, the assistant converses with the humans in the
@@ -178,7 +178,7 @@ behaviour corroborates it: the connector received `lk.agent.session` byte stream
 over the same peer connection, and the race fully explains the failure without it.
 
 Replace the "one new item to watch" paragraph in
-`agent-tracking/research/01-meeting-call-audio-silence.md` with this finding so nobody re-opens it.
+`agent-tracking/research/2026-09-19-debug-meeting-call-audio.md` with this finding so nobody re-opens it.
 If the log noise is irritating, filter that one logger to `WARNING` in the connector's logging
 configuration.
 

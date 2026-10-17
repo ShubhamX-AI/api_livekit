@@ -49,7 +49,7 @@ placeholder on 3.8 models. No factory change needed.
 `MODELS_DEFAULT_NON_BLOCKING = ("3.8",)`. No such symbol exists in
 `livekit-plugins-google` 1.8.2; tool behaviour is left unset and Gemini applies its own
 per-model default. What that means for the extended-thinking model is tracked in
-`agent-tracking/plan-tracking/06-gemini-3.8-open-questions.md`.
+`agent-tracking/plans/2026-09-21-feature-gemini-3.8-live/open-questions.md`.
 
 ### Pricing (official Google pricing page, Standard paid tier, per 1M tokens)
 

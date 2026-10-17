@@ -21,7 +21,8 @@ from src.core.version import __version__
 DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
 
 MAX_SNIPPET_CHARS = 300
-# Ranking constants, tuned on 26 real questions (agent-tracking/plan/08-…): the right page is
+# Ranking constants, tuned on 26 real questions
+# (agent-tracking/plans/2026-10-17-feature-mcp-search-elevenlabs-settings/plan.md): the right page is
 # first for 22 and in the top three for 25, against 18 in the top three for the raw word count
 # this replaced. TITLE_BOOST: a query word in the page's title or path adds this many times the
 # word's rarity — the title names what the page is about, the body only mentions things.

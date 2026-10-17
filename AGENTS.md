@@ -35,12 +35,20 @@ Everything an agent produces that is **not** shipped code or product documentati
 `agent-tracking/`, never in the repo root and never in `docs/`. `docs/` is the published MkDocs
 site and is for users of the API; `agent-tracking/` is for us.
 
-| Directory | Holds |
+One folder per task, named by a slug `YYYY-MM-DD-<type>-<topic>` (type is `feature`, `debug`,
+`refactor`, `audit`, `security`, `test`, `structure` or `health`). The same slug is used in every
+directory below, so a task's plan, research and report find each other by name.
+
+| Path | Holds |
 |---|---|
-| `agent-tracking/plan/` | Implementation plans, numbered by execution order (`01-…`, `02-…`) |
-| `agent-tracking/research/` | Research write-ups and findings, including their unverified claims |
+| `agent-tracking/INDEX.md` | One row per task with its status and report link — start here |
+| `agent-tracking/plans/<slug>/` | `scope.md` (the request, verbatim), `plan.md`, `progress.md`; older tasks keep the plan and its progress log together in `plan.md` |
+| `agent-tracking/research/<slug>.md` | Research write-ups and findings, including their unverified claims |
+| `agent-tracking/reports/<slug>.html` | The finished report for the task |
 | `agent-tracking/demo-code/` | Spikes and prototypes that are not wired into the app |
-| `agent-tracking/plan-tracking/` | Notes on work already underway |
+
+Tasks from before this layout were numbered plans (`plan 01` … `plan 08`); `INDEX.md` maps each
+old number to its slug, so prose that still says "plan 03" resolves.
 
 Three rules:
 
@@ -396,7 +404,7 @@ session once `normalize_provider` lowercases it. Two numbers are weaker than the
 rest and say so beside themselves: Cartesia is **derived** from its plan tiers (it quotes no
 per-unit price), and Deepgram is priced at its **regular** rate while the page shows a
 promotional one. Open questions from this work:
-`agent-tracking/plan-tracking/06-gemini-3.8-open-questions.md`.
+`agent-tracking/plans/2026-09-21-feature-gemini-3.8-live/open-questions.md`.
 
 ## Recent changes — the assistants' TTS + cascade LLM knobs (2026-08)
 
