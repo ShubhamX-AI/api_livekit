@@ -1,6 +1,6 @@
 # Plan 02 — Changes inside `api_livekit`
 
-> **Superseded in part by [`03-worker-dispatch-redesign.md`](./03-worker-dispatch-redesign.md).**
+> **Superseded in part by [`2026-09-18-feature-meet-worker-dispatch/plan.md`](../2026-09-18-feature-meet-worker-dispatch/plan.md).**
 > Everything about *what* a meeting call is still holds. How the connector is *started* and how it
 > *reports back* does not: plan 03 dispatches it as a LiveKit worker instead of running a container
 > from the API. The code described here is in the tree and works; read plan 03 before changing it.
@@ -8,7 +8,7 @@
 > **Status: superseded by plan 03.** The meeting vocabulary, capacity bucket, route shape, and
 > assistant-side audio changes remain in the tree. The Docker launcher and HTTP status callback
 > described below have been removed in favor of named LiveKit worker dispatch. The connector worker
-> itself ([`01-meet-connector-service.md`](./01-meet-connector-service.md)) still needs to be
+> itself ([`2026-09-18-feature-meet-connector-service/plan.md`](../2026-09-18-feature-meet-connector-service/plan.md)) still needs to be
 > implemented before end-to-end verification.
 >
 > **Naming.** The plan originally said "meet" everywhere. What was built says **meeting** for the
@@ -17,7 +17,7 @@
 > (`exotel`/`twilio`). Adding Zoom is then a new `call_service`, not a new `call_type`, and the
 > route, the bucket and the connector package all keep their names.
 
-The connector that actually joins the meeting is [`01-meet-connector-service.md`](./01-meet-connector-service.md).
+The connector that actually joins the meeting is [`2026-09-18-feature-meet-connector-service/plan.md`](../2026-09-18-feature-meet-connector-service/plan.md).
 This document covers only what changes in this repository, and assumes the connector honours the
 launch contract defined there.
 

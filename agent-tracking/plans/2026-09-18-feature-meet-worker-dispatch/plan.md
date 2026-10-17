@@ -1,8 +1,8 @@
 # Plan 03 — Dispatching the connector as a LiveKit worker
 
 This plan replaces the launch mechanism described in
-[`01-meet-connector-service.md`](./01-meet-connector-service.md) and
-[`02-api-livekit-integration.md`](./02-api-livekit-integration.md). Those two are implemented and
+[`2026-09-18-feature-meet-connector-service/plan.md`](../2026-09-18-feature-meet-connector-service/plan.md) and
+[`2026-09-18-feature-meet-api-integration/plan.md`](../2026-09-18-feature-meet-api-integration/plan.md). Those two are implemented and
 working code. The core-repository portion of this plan is now implemented; the connector repository
 still needs the worker conversion described near the end of this document. Read this one before
 touching either of the earlier plans again.

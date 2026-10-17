@@ -1,7 +1,7 @@
 # 07 — livekit-agents 1.8.8, GPT-6, GPT-Live duplex, ElevenLabs v4, Sarvam bulbul:v4-flash
 
 Status: **code complete; step 8 (manual calls) open** (approved 2026-10-17) · written 2026-10-17 · research:
-`agent-tracking/research/03-livekit-1.8.8-models-and-features.html` (§7b has the measurements
+`agent-tracking/research/2026-10-17-feature-livekit-1.8.8-models.html` (§7b has the measurements
 this plan relies on).
 
 ## Goal

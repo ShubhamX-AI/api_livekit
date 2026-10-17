@@ -1,6 +1,6 @@
 # Open questions left by the Gemini 3.8 Live work (2026-09-22)
 
-Plan `agent-tracking/plan/05-gemini-3.8-live-models.md` is implemented. Three things were
+Plan `agent-tracking/plans/2026-09-21-feature-gemini-3.8-live/plan.md` is implemented. Three things were
 found while auditing that implementation and deliberately **not** changed. Each one needs a
 live call to settle, which is why none of them is a code change yet.
 

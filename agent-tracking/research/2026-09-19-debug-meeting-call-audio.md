@@ -123,7 +123,7 @@ at `connector:.../audio_sync.py:56-69`, so it is invisible to the agent and cann
 
 The room therefore holds exactly one *visible* remote participant, and including
 `PARTICIPANT_KIND_AGENT` is **required**, not a bug. Plan 03's open question
-(`agent-tracking/plan/03-worker-dispatch-redesign.md`, "Changes in the connector repository",
+(`agent-tracking/plans/2026-09-18-feature-meet-worker-dispatch/plan.md`, "Changes in the connector repository",
 change 3) is answered: the job participant carries the audio, and the two repositories agree.
 
 ## Finding 1 — the two sides disagree about how long admission may take
