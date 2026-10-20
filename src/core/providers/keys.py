@@ -27,6 +27,23 @@ _LONG_TOKEN = re.compile(r"[A-Za-z0-9_\-]{32,}")
 # _SECRET_ASSIGNMENT rules there is no label behind a colon to key on.
 _BEARER_TOKEN = re.compile(r"\b(Bearer)\s+[A-Za-z0-9\-._~+/=]+", re.IGNORECASE)
 
+# "scheme://user:password@" — a connection string, e.g. MONGODB_URL inside a driver error.
+_URL_USERINFO = re.compile(r"(\b[a-z][a-z0-9+.\-]*://)[^\s/@:]*:[^\s/@]+@", re.IGNORECASE)
+
+# The ids calls are traced by: canonical UUIDs (assistant/tool ids, SIP Call-ID) and
+# 32-char hex (queue_id). `redact_log_text` lets these through `_LONG_TOKEN`. Anchored on
+# hex boundaries so a longer hex secret (a 40-hex Deepgram key, a 64-hex signature) is not
+# read as an id plus a short remainder.
+_TRACE_ID = re.compile(
+    r"(?<![0-9a-f])"
+    r"(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})"
+    r"(?![0-9a-f])",
+    re.IGNORECASE,
+)
+
+# What is left of a token once its trace ids are taken out may still be a credential.
+_OPAQUE_RUN = re.compile(r"[A-Za-z0-9]{16,}")
+
 # Exact key-shapes per major vendor, matched by prefix so the scheme name survives
 # in the message ("sk-****" rather than "****"). Everything after the prefix is
 # swallowed up to the next whitespace / quote / comma / closing paren.
@@ -176,9 +193,35 @@ def redact_text(text: str) -> str:
     """
     if not text:
         return text
+    return _LONG_TOKEN.sub("****", _redact_labelled(text))
+
+
+def redact_log_text(text: str) -> str:
+    """`redact_text` for log lines: the same rules, but trace ids survive.
+
+    `_LONG_TOKEN` alone would mask every queue_id (32 hex), every UUID id and the SIP
+    Call-ID, which are exactly what a call is followed by in the logs. So a long token
+    is kept only if it contains such an id and nothing credential-sized is left beside it. Credentials inside URLs (`mongodb://user:pass@host`) are masked too.
+    A key that is itself UUID-shaped and logged with no label still passes.
+    """
+    if not text:
+        return text
+    redacted = _redact_labelled(_URL_USERINFO.sub(r"\1****@", text))
+    return _LONG_TOKEN.sub(_mask_unless_trace_id, redacted)
+
+
+def _redact_labelled(text: str) -> str:
     redacted = _BEARER_TOKEN.sub(r"\1 ****", text)
     redacted = _SECRET_ASSIGNMENT.sub(lambda m: f"{m.group(1)}: '****'", redacted)
-    return _LONG_TOKEN.sub("****", _KEY_PATTERN.sub(lambda m: _mask_token(m.group(0)), redacted))
+    return _KEY_PATTERN.sub(lambda m: _mask_token(m.group(0)), redacted)
+
+
+def _mask_unless_trace_id(match: re.Match) -> str:
+    # Not a fullmatch: `sip-bridge-<uuid>` or `z9hG4bK-<hex>` are one token with an id inside.
+    # Kept only if it holds an id and nothing credential-sized is left beside it.
+    token = match.group(0)
+    rest, ids = _TRACE_ID.subn("-", token)
+    return token if ids and not _OPAQUE_RUN.search(rest) else "****"
 
 
 def mask_secret_values(config: Optional[dict]) -> Optional[dict]:

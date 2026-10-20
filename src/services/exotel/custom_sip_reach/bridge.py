@@ -35,7 +35,7 @@ from .inbound_listener import (
 from .port_pool import get_port_pool
 from .rtp_bridge import RTPMediaBridge
 from .sip_client import ExotelSipClient
-from src.core.logger import logger
+from src.core.logger import logger, set_room_context, setup_logging
 
 
 
@@ -386,6 +386,11 @@ def _bridge_subprocess_entry(
     is_passthrough: bool = False,
 ):
     """Top-level subprocess entry point — must be module-level to be picklable for spawn."""
+    # A forkserver child is configured only if the parent's __main__ happened to call
+    # setup_logging() at import time; under Gunicorn it does not, and every INFO line was
+    # dropped. One call per process, so the room can go in the process-wide fallback.
+    setup_logging()
+    set_room_context(room_name)
     asyncio.run(run_bridge(
         phone_number=phone_number,
         room_name=room_name,

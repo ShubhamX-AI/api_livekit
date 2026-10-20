@@ -546,6 +546,24 @@ asyncio.run(main())
 
 ---
 
+## Outbound calls stay queued, or inbound calls are never answered
+
+Both are owned by the SIP dispatcher process (`sip_dispatcher_run.py`, or the API process when
+`ENABLE_DISPATCHER` / `ENABLE_SIP_LISTENER` are on). Grep its log for these lines:
+
+| Line | Meaning | What to do |
+|---|---|---|
+| `Dispatcher tick failed, retrying on the next one` or `Dispatcher startup pass failed` | One dispatcher pass raised, usually a MongoDB error; the traceback follows. The loop keeps running and tries again within 30 s. | Fix the cause the traceback names. Repeated every tick means it is not transient. |
+| `Outbound dispatcher stopped; no queued call will be dispatched` (CRITICAL) | The dispatcher task itself ended. No outbound call goes out until the process restarts. | Restart the process; report the traceback. |
+| `[SIP-IN] Failed to bind 5070` | The inbound SIP port could not be opened. The dedicated `sip_dispatcher` exits on this and Docker restarts it; inside the API process the listener stays off and HTTP keeps serving. | Find what holds the port (`ss -ltnp 'sport = :5070'`), usually a second process with `ENABLE_SIP_LISTENER=true`. |
+
+To follow one Exotel call through its bridge process, filter by `call_room` (the room name) or
+by `pid`: every bridge runs in its own process, and both the JSON and the text format carry the
+process id. Secrets are masked in every log line (`****`); UUID ids, `queue_id` and SIP
+Call-IDs are left readable so they can still be grepped.
+
+---
+
 ## Changing a model list
 
 Never from memory. OpenAI retires models on its own schedule and a stale entry is

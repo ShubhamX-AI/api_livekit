@@ -791,6 +791,16 @@ async def _orphan_reaper_loop() -> None:
             logger.error(f"Orphan reaper error: {e}", exc_info=True)
 
 
+def log_dispatcher_exit(task: asyncio.Task) -> None:
+    """Done-callback for the dispatcher task: it is awaited only at shutdown, so without this
+    a crash would stay invisible while the process keeps running and nothing gets dialled."""
+    if not task.cancelled() and task.exception() is not None:
+        logger.critical(
+            "Outbound dispatcher stopped; no queued call will be dispatched",
+            exc_info=task.exception(),
+        )
+
+
 async def outbound_dispatcher_loop() -> None:
     """Event-driven dispatcher: wakes instantly when a call is enqueued or completes.
 
@@ -798,8 +808,14 @@ async def outbound_dispatcher_loop() -> None:
     """
     logger.info(f"Outbound call dispatcher started (max_concurrent={settings.MAX_CONCURRENT_JOBS})")
 
-    await _fail_stale_calls_on_startup()
-    await _process_pending()
+    # This task is only awaited at shutdown, so an exception escaping it would end outbound
+    # dispatch with nothing logged. A failed pass is logged instead. Startup cleanup is not
+    # re-run; pending calls are, on the next tick, and stuck ones by _recover_stuck_dispatching.
+    try:
+        await _fail_stale_calls_on_startup()
+        await _process_pending()
+    except Exception as e:  # noqa: BLE001 — task boundary: anything escaping ends dispatch silently
+        logger.error(f"Dispatcher startup pass failed, continuing with the loop: {e}", exc_info=True)
 
     asyncio.create_task(_watch_for_new_calls())
     asyncio.create_task(_watch_for_call_completions())
@@ -813,6 +829,8 @@ async def outbound_dispatcher_loop() -> None:
         finally:
             _new_call_event.clear()
 
-        # Check for stuck dispatching
-        await _recover_stuck_dispatching()
-        await _process_pending()
+        try:
+            await _recover_stuck_dispatching()
+            await _process_pending()
+        except Exception as e:  # noqa: BLE001 — task boundary: anything escaping ends dispatch silently
+            logger.error(f"Dispatcher tick failed, retrying on the next one: {e}", exc_info=True)

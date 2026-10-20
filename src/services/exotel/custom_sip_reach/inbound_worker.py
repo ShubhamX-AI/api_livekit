@@ -30,7 +30,7 @@ from .config import (
     NO_RTP_AFTER_ANSWER_SECONDS,
 )
 from .rtp_bridge import RTPMediaBridge
-from src.core.logger import logger, set_room_context, clear_room_context
+from src.core.logger import logger, set_room_context, clear_room_context, setup_logging
 
 
 async def _run_inbound_bridge(
@@ -178,6 +178,8 @@ def inbound_bridge_subprocess_entry(
     inbound_bye,
 ):
     """Top-level process entry point — must be module-level to be picklable."""
+    # Same reason as the outbound bridge entry: nothing else configures logging here.
+    setup_logging()
     asyncio.run(
         _run_inbound_bridge(
             room_name=room_name,
