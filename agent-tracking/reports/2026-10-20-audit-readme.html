@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>README Audit</title>
+<style>
+  :root {
+    --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; --soft: #f9fafb; --accent: #4f46e5;
+    --high: #dc2626; --med: #d97706; --low: #2563eb; --info: #6b7280;
+    --keep: #16a34a; --trim: #d97706; --move: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--soft); padding: 1px 4px; border-radius: 4px; }
+  pre { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow-x: auto; font: 13px/1.5 ui-monospace, monospace; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0; }
+  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .tile b { display: block; font-size: 26px; }
+  .tile span { color: var(--muted); font-size: 13px; }
+  .t-high b { color: var(--high); } .t-med b { color: var(--med); } .t-low b { color: var(--low); } .t-info b { color: var(--info); }
+  .sevbar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; margin: 4px 0 20px; }
+  .sevbar div { height: 100%; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; color: #fff; }
+  .p-high { background: var(--high); } .p-med { background: var(--med); } .p-low { background: var(--low); } .p-info { background: var(--info); }
+  .p-keep { background: var(--keep); } .p-trim { background: var(--trim); } .p-move { background: var(--move); }
+  .card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+  .card.high { border-left-color: var(--high); } .card.med { border-left-color: var(--med); } .card.low { border-left-color: var(--low); } .card.info { border-left-color: var(--info); }
+  .card p { margin: 6px 0; }
+  .loc { color: var(--muted); font-size: 13px; }
+  .bars td:nth-child(2) { width: 55%; }
+  .bar { height: 12px; border-radius: 3px; }
+  .verdict { font-size: 18px; border-left: 4px solid var(--accent); padding: 10px 14px; background: var(--soft); border-radius: 0 8px 8px 0; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .twocol { grid-template-columns: 1fr; } .bars td:nth-child(2) { width: 40%; } }
+  .box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .box h3 { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<main>
+<h1>README audit</h1>
+<p class="sub">Slug <code>2026-10-20-audit-readme</code> · 2026-10-20 · target <code>README.md</code> (762 lines) · report only, nothing changed</p>
+
+<h2>Summary</h2>
+<p class="verdict"><b>Accurate, but overdone.</b> Almost every fact in the README is correct: all 64 environment variables and all 50 endpoints match the code. But about 60% of its lines repeat content that already has its own page under <code>docs/</code>. A README this size is a second, unmaintained copy of the docs. One real gap: a new developer cannot run the project locally, because nothing explains how to start MongoDB and LiveKit.</p>
+
+<div class="tiles">
+  <div class="tile t-high"><b>2</b><span>High</span></div>
+  <div class="tile t-med"><b>6</b><span>Medium</span></div>
+  <div class="tile t-low"><b>5</b><span>Low</span></div>
+  <div class="tile t-info"><b>1</b><span>Info</span></div>
+</div>
+<div class="sevbar" aria-label="2 high, 6 medium, 5 low, 1 info">
+  <div style="width:14.3%;background:var(--high)"></div><div style="width:42.9%;background:var(--med)"></div>
+  <div style="width:35.7%;background:var(--low)"></div><div style="width:7.1%;background:var(--info)"></div>
+</div>
+
+<p><b>Fix first:</b></p>
+<ol>
+  <li><b>R-01:</b> move the feature deep-dives (about 330 lines) into <code>docs/</code> and leave one link per topic. This removes most of the length and every future drift risk.</li>
+  <li><b>R-02:</b> add a real quickstart that shows how to start MongoDB (as a replica set) and a LiveKit dev server, copy <code>.env.example</code>, and make a first call.</li>
+  <li><b>R-04:</b> cut the Project Structure tree from 132 lines to a top-level tree of about 20 lines. <code>AGENTS.md</code> already holds the detailed one.</li>
+</ol>
+
+<h2>Where the 762 lines go</h2>
+<p>The bar colour shows the recommendation for each section: <span class="pill p-keep">keep</span> <span class="pill p-trim">trim</span> <span class="pill p-move">move to docs</span></p>
+<table class="bars">
+<tr><th>Section</th><th>Lines</th><th>Verdict</th></tr>
+<tr><td>Project Structure</td><td><div class="bar" style="width:100%;background:var(--trim)"></div>132</td><td>trim to top level</td></tr>
+<tr><td>Run Locally</td><td><div class="bar" style="width:69%;background:var(--trim)"></div>91</td><td>trim; deploy/backfills out</td></tr>
+<tr><td>Environment Variables</td><td><div class="bar" style="width:56%;background:var(--keep)"></div>74</td><td>keep (correct)</td></tr>
+<tr><td>Meeting Calls (Google Meet)</td><td><div class="bar" style="width:55%;background:var(--move)"></div>72</td><td>move</td></tr>
+<tr><td>Endpoints</td><td><div class="bar" style="width:43%;background:var(--trim)"></div>57</td><td>group by resource</td></tr>
+<tr><td>Configuration Validation</td><td><div class="bar" style="width:39%;background:var(--move)"></div>51</td><td>move</td></tr>
+<tr><td>Passthrough Mode</td><td><div class="bar" style="width:28%;background:var(--move)"></div>37</td><td>move</td></tr>
+<tr><td>Assistant Modes</td><td><div class="bar" style="width:23%;background:var(--trim)"></div>30</td><td>4-row table</td></tr>
+<tr><td>Documentation</td><td><div class="bar" style="width:22%;background:var(--keep)"></div>29</td><td>keep, shorten</td></tr>
+<tr><td>What This Project Does</td><td><div class="bar" style="width:20%;background:var(--trim)"></div>26</td><td>one paragraph</td></tr>
+<tr><td>Audio Library &amp; Greeting</td><td><div class="bar" style="width:16%;background:var(--move)"></div>21</td><td>move</td></tr>
+<tr><td>Data Stores</td><td><div class="bar" style="width:14%;background:var(--keep)"></div>18</td><td>keep</td></tr>
+<tr><td>Outbound Queueing</td><td><div class="bar" style="width:12%;background:var(--move)"></div>16</td><td>move (and stale)</td></tr>
+<tr><td>Stack</td><td><div class="bar" style="width:11%;background:var(--keep)"></div>15</td><td>keep</td></tr>
+<tr><td>Response Envelope</td><td><div class="bar" style="width:9%;background:var(--keep)"></div>12</td><td>keep</td></tr>
+<tr><td>Hold Detection</td><td><div class="bar" style="width:8%;background:var(--move)"></div>11</td><td>move</td></tr>
+<tr><td>Requirements</td><td><div class="bar" style="width:8%;background:var(--keep)"></div>10</td><td>keep</td></tr>
+<tr><td>Provider API Keys</td><td><div class="bar" style="width:8%;background:var(--move)"></div>10</td><td>move</td></tr>
+<tr><td>Exotel Outbound Lifecycle</td><td><div class="bar" style="width:8%;background:var(--move)"></div>10</td><td>move</td></tr>
+<tr><td>Webhook Contracts</td><td><div class="bar" style="width:7%;background:var(--keep)"></div>9</td><td>merge into Documentation</td></tr>
+<tr><td>Architecture</td><td><div class="bar" style="width:7%;background:var(--keep)"></div>9</td><td>keep</td></tr>
+<tr><td>Max Call Duration</td><td><div class="bar" style="width:6%;background:var(--move)"></div>8</td><td>move</td></tr>
+<tr><td>Provider Support</td><td><div class="bar" style="width:5%;background:var(--trim)"></div>6</td><td>fold into intro</td></tr>
+<tr><td>Licence</td><td><div class="bar" style="width:3%;background:var(--keep)"></div>4</td><td>keep</td></tr>
+</table>
+
+<h2>Findings</h2>
+
+<h3 style="margin-top:20px">Overdone: duplication with docs/</h3>
+
+<div class="card high">
+<h3>R-01 <span class="pill p-high">High</span> Duplicated documentation: feature deep-dives</h3>
+<p class="loc">README.md:37-243, 535-592</p>
+<p>About 330 lines describe single features in depth: provider keys, the four validation gates, the Exotel lifecycle, queue states, the Meeting Calls topology, passthrough, hold detection, assistant modes, the audio library, and max call duration. Each topic already has a page under <code>docs/</code>; the mapping is in <a href="../research/2026-10-20-audit-readme.md">research</a>.</p>
+<p><b>Why it matters:</b> two copies drift apart. That has already happened: <code>docs/getting-started/index.md:29</code> still says "three execution modes" while the README says four, and the README's own queue description is stale (R-03). Every feature change now has to edit the README as well as the docs. <code>AGENTS.md</code>'s Definition of done even lists the README as one of the places to update.</p>
+<p><b>Fix:</b> use Move Function at the documentation level. Delete each section from the README and keep a single "Documentation" list that links to the docs page for each topic. Before deleting a section, check whether it holds a fact the docs page lacks, and move that fact into the page first.</p>
+</div>
+
+<div class="card high">
+<h3>R-02 <span class="pill p-high">High</span> Missing: no working local quickstart</h3>
+<p class="loc">README.md:265-273, 349-373; docker-compose.yml</p>
+<p>The Requirements section lists MongoDB ("a replica set in production") and a LiveKit server. Run Locally then starts at <code>uv sync</code>. Nothing explains how to get MongoDB or LiveKit running locally, and <code>docker-compose.yml</code> defines only <code>api</code>, <code>sip_dispatcher</code> and <code>agent</code>. The <code>cp .env.example .env</code> step appears in the env section, not in the run steps. There is also no "make your first call" step.</p>
+<p><b>Why it matters:</b> for a "how do I run this" README, this is its main job, and today a new developer gets stuck at step 1. The dispatcher also uses Change Streams (<code>dispatcher.py:755</code>), which fail on a standalone <code>mongod</code>. So even in development, MongoDB must run as a single-node replica set, and the README does not say so.</p>
+<p><b>Fix:</b> write a numbered quickstart: (1) start MongoDB as a single-node replica set and run <code>livekit-server --dev</code> (or add both to a dev compose profile); (2) <code>cp .env.example .env</code>; (3) <code>uv sync</code>; (4) start the server and the worker; (5) one <code>curl</code> to create a key, then a link to <code>docs/getting-started/</code> for the first assistant and call.</p>
+</div>
+
+<div class="card med">
+<h3>R-04 <span class="pill p-med">Medium</span> Project Structure is a file-level tree (132 lines)</h3>
+<p class="loc">README.md:594-724</p>
+<p>The tree lists individual files down to <code>silero_vad.onnx</code> and <code>digest_auth.py</code>. A tree this detailed goes stale every time a file is added. It is correct today, but it is also a near copy of <code>AGENTS.md</code> → <code>## Project structure</code>.</p>
+<p><b>Fix:</b> show the top-level layout (<code>src/api</code>, <code>src/core</code>, <code>src/core/agents</code>, <code>src/core/model_support</code>, <code>src/services</code>, <code>tests</code>, <code>scripts</code>, <code>docs</code>, <code>docker</code>) with one comment each, in about 20 lines. Then link to <code>AGENTS.md</code> for the layering rules.</p>
+</div>
+
+<div class="card med">
+<h3>R-05 <span class="pill p-med">Medium</span> The same mode description appears three times</h3>
+<p class="loc">README.md:12-16, 537-563; speaks_first at 17 and 563</p>
+<p>The four modes are explained in the feature list and again in Assistant Modes. The <code>speaks_first</code> note appears twice word for word, and both are repeated a third time in <code>docs/architecture/runtime-modes.md</code>.</p>
+<p><b>Fix:</b> use one four-row table (mode, what runs, vendor, needs TTS?) and link to <code>runtime-modes.md</code> and <code>compatibility.md</code> for the rules.</p>
+</div>
+
+<div class="card med">
+<h3>R-06 <span class="pill p-med">Medium</span> Run Locally mixes four jobs</h3>
+<p class="loc">README.md:375-438</p>
+<p>Local dev, Docker image selection, two-host production deployment, capacity tuning advice, and two data backfill scripts all sit under "Run Locally".</p>
+<p><b>Fix:</b> keep local dev and tests in the README. Put the deploy steps (<code>deploy.sh</code>, image roles) under a short "Deploy" heading or in <code>docs/architecture/dependencies.md</code>. The backfill and normalize scripts are one-off migrations, so they belong in <code>docs/changelog.md</code> or the troubleshooting page, which already mention them.</p>
+</div>
+
+<div class="card med">
+<h3>R-07 <span class="pill p-med">Medium</span> Endpoint table is 50 rows</h3>
+<p class="loc">README.md:478-534</p>
+<p>The table is accurate (all 50 routes match <code>src/api/routes/</code>), but it duplicates <code>docs/api/</code> row by row. The README standard asks for a quick-reference table, not a full one.</p>
+<p><b>Fix:</b> use one row per router (14 rows): prefix, auth, purpose, and a link to its <code>docs/api/&lt;resource&gt;/</code> page. Keep <code>/health</code> as its own row because it always returns HTTP 200.</p>
+</div>
+
+<div class="card med">
+<h3>R-08 <span class="pill p-med">Medium</span> Design rationale and agent rules in the README</h3>
+<p class="loc">README.md:49-53, 76-80, 94-96</p>
+<p>The README carries the story of the silent-call failure, the line "Every set is measured, never copied from a doc page", and the rule "Never edit a model list from memory". The first two are design rationale; the third is a contributor rule that <code>AGENTS.md</code> already states.</p>
+<p><b>Fix:</b> delete them from the README. The Diagnostics table can stay as a short "Useful scripts" list, or move to <code>docs/reference/troubleshooting.md</code>, which already has it.</p>
+</div>
+
+<h3 style="margin-top:28px">Stale or wrong</h3>
+
+<div class="card med">
+<h3>R-03 <span class="pill p-med">Medium</span> Dispatcher polling is described wrongly</h3>
+<p class="loc">README.md:117-120 vs src/services/outbound_dispatcher/dispatcher.py:804-828</p>
+<p>The README says the dispatcher "polls the queue every <code>2</code> seconds (fallback poll every <code>30s</code> when idle)". In fact the loop is event-driven. Change Streams wake it, and a 30 s timeout acts only as a safety net. The <code>asyncio.sleep(2.0)</code> at <code>:484</code> waits for a bridge process to exit; it does not poll the queue.</p>
+<p><b>Why it matters:</b> an operator tuning queue latency would look for a 2 s knob that does not exist.</p>
+<p><b>Fix:</b> R-01 removes this section anyway. If it stays, write: "wakes on a MongoDB Change Stream; 30 s safety-net poll".</p>
+</div>
+
+<div class="card low">
+<h3>R-09 <span class="pill p-low">Low</span> Status note about unfinished work</h3>
+<p class="loc">README.md:191-194</p>
+<p>"The remaining work is in the connector repository: convert the prototype into a LiveKit <code>AgentServer</code>…" This is a roadmap item, and it goes stale the day the work is done. <code>docs/guides/meeting-connector.md</code> already describes the contract.</p>
+<p><b>Fix:</b> delete it, or move it to the open-questions file of the meeting-calls plan.</p>
+</div>
+
+<div class="card low">
+<h3>R-10 <span class="pill p-low">Low</span> "All three" scripts, but four are listed</h3>
+<p class="loc">README.md:91</p>
+<p>The Diagnostics table lists four scripts, but the line below it says "All three are read-only unless <code>--apply</code> is passed".</p>
+<p><b>Fix:</b> say "All four", or drop the sentence along with R-08.</p>
+</div>
+
+<div class="card low">
+<h3>R-11 <span class="pill p-low">Low</span> <code>mkdocs</code> commands lack <code>uv run</code></h3>
+<p class="loc">README.md:455, 461</p>
+<p>mkdocs is a project dependency (<code>pyproject.toml:15-16</code>), not a global tool, so a bare <code>mkdocs build --strict</code> fails unless the virtualenv is active. <code>AGENTS.md:80</code> already uses <code>uv run mkdocs build --strict</code>.</p>
+<p><b>Fix:</b> use <code>uv run mkdocs build --strict</code> and <code>uv run mkdocs serve</code>.</p>
+</div>
+
+<div class="card low">
+<h3>R-12 <span class="pill p-low">Low</span> Capacity advice contradicts the defaults</h3>
+<p class="loc">README.md:415-419</p>
+<p>The README suggests "Set <code>MAX_CONCURRENT_JOBS=20</code> in production", but the code default is 12 and <code>AGENTS.md</code> says the caps must be set from a load test. An unmeasured number in the README tends to get copied.</p>
+<p><b>Fix:</b> delete the number. Keep "one <code>sip_dispatcher</code> across all servers" and "pin the Exotel IPs to the control-plane host", since both are real constraints.</p>
+</div>
+
+<div class="card low">
+<h3>R-13 <span class="pill p-low">Low</span> "Dispatcher starts with the API process" is only half true</h3>
+<p class="loc">README.md:101</p>
+<p>That is true only while <code>ENABLE_DISPATCHER=true</code>. In production the dedicated <code>sip_dispatcher</code> owns it, as the README's own Architecture section says.</p>
+<p><b>Fix:</b> removed by R-01; otherwise add "(or in <code>sip_dispatcher</code> in production)".</p>
+</div>
+
+<div class="card info">
+<h3>R-14 <span class="pill p-info">Info</span> Open-source bar: licence and contributing</h3>
+<p class="loc">repository root</p>
+<p>There is no <code>LICENSE</code> and no <code>CONTRIBUTING.md</code>. The README says so honestly. For the internal audience that was agreed, this is fine. If the code is ever published, add both, and move the "how to work in this repo" content (tests, lint, docs build) from <code>AGENTS.md</code> into <code>CONTRIBUTING.md</code>.</p>
+</div>
+
+<h2>What is already good</h2>
+<ul>
+  <li><b>Environment table:</b> all 64 variables exist in code and match <code>.env.example</code> exactly, and the defaults spot-checked against <code>src/core/config.py</code> are right.</li>
+  <li><b>Endpoints:</b> all 50 routes are listed with the correct prefix and auth.</li>
+  <li><b>Links and paths:</b> every backticked path and relative link resolves.</li>
+  <li><b>Required sections:</b> Requirements, Response Envelope, Data Stores and Stack are short and correct. Keep them.</li>
+</ul>
+
+<h2>Proposed outline (target about 200 lines)</h2>
+<div class="twocol">
+<div class="box">
+<h3>Current: 24 sections, 762 lines</h3>
+<p>What it does · Provider support · Provider keys · Config validation · Exotel lifecycle · Outbound queueing · Meeting calls · Passthrough · Hold detection · Architecture · Envelope · Requirements · Env · Run locally · Documentation · Webhooks · Endpoints · Modes · Audio library · Max duration · Structure · Data stores · Stack · Licence</p>
+</div>
+<div class="box">
+<h3>Target: 12 sections</h3>
+<pre>1. Title + one paragraph      (~8)
+   modes as a 4-row table
+2. Architecture: 3 processes  (~12)
+3. Requirements               (~8)
+4. Quickstart (numbered)      (~35)
+   mongo rs + livekit --dev,
+   .env, sync, run, first curl
+5. Environment (as is)        (~70)
+6. Tests, lint, docs build    (~10)
+7. Deploy (deploy.sh roles)   (~12)
+8. Endpoints: 14 rows         (~20)
+9. Response envelope          (~8)
+10. Structure: top level      (~20)
+11. Data stores + Stack       (~30)
+12. Documentation links       (~12)
+    + Licence</pre>
+</div>
+</div>
+<p>The environment table stays complete because nothing else documents it in one place. If length still matters after these cuts, it is the next candidate to move into <code>docs/getting-started/</code>.</p>
+
+<h2>Method</h2>
+<table>
+<tr><th>Check</th><th>Command / source</th><th>Result</th></tr>
+<tr><td>Env table vs code</td><td>grep each row in <code>src/</code>, diff with <code>.env.example</code></td><td>64/64, identical</td></tr>
+<tr><td>Endpoints vs routes</td><td><code>@router.*</code> in <code>src/api/routes/</code> + <code>server.py:161-178</code></td><td>50/50</td></tr>
+<tr><td>Paths and links</td><td><code>test -e</code> on every path</td><td>all exist</td></tr>
+<tr><td>Claims</td><td>read <code>dispatcher.py</code>, <code>session.py:104</code>, <code>rates.py:96</code>, <code>capabilities.py:184</code></td><td>1 stale (R-03); max duration 30 min, GPT-Live $0.05/min and the duplex default are correct</td></tr>
+<tr><td>Overlap with docs/</td><td>grep distinctive strings across <code>docs/</code></td><td>12 sections already covered</td></tr>
+<tr><td>Standard</td><td><code>core-be-structure-service/references/readme-standard.md</code></td><td>all required sections present; the length comes from extras</td></tr>
+</table>
+<p>Lint, type and test runs were not part of this audit, because only the README was in scope.</p>
+
+<h2>Recommended follow-up</h2>
+<ul>
+  <li><b>A docs task:</b> slim <code>README.md</code> to the outline above. Before each deletion, move any fact the docs page lacks into that page, then run <code>uv run mkdocs build --strict</code>.</li>
+  <li><b>A docs fix:</b> <code>docs/getting-started/index.md:29-50</code> says "three execution modes" and omits <code>duplex</code> (out of scope here).</li>
+  <li><b>Optional:</b> add a <code>dev</code> compose profile with MongoDB (single-node replica set) and <code>livekit-server --dev</code>, so the quickstart is a single command.</li>
+</ul>
+
+<h2>Not reviewed</h2>
+<p>The content of <code>docs/</code> itself (beyond overlap and the one drift found), <code>AGENTS.md</code>, and source code quality.</p>
+
+<h2>Trace</h2>
+<p><a href="../plans/2026-10-20-audit-readme/scope.md">scope</a> · <a href="../plans/2026-10-20-audit-readme/plan.md">plan</a> · <a href="../plans/2026-10-20-audit-readme/progress.md">progress</a> · <a href="../research/2026-10-20-audit-readme.md">research</a></p>
+</main>
+</body>
+</html>

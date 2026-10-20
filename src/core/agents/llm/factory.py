@@ -27,7 +27,7 @@ from src.core.logger import logger
 
 # Kept as a plain string default, not a Literal. OpenAI ships models monthly and a
 # Literal would mean a deploy per model; the supported set is documented instead
-# (docs/architecture/cascade-pipeline.md). It lives in model_support.capabilities so the API
+# (docs/concepts/cascade.md). It lives in model_support.capabilities so the API
 # validator can check the knobs against the model the call will actually use.
 DEFAULT_MODEL = DEFAULT_CASCADE_MODEL
 

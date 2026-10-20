@@ -50,7 +50,7 @@ graph TD
     Worker -->|Webhook| External[External Services]
 ```
 
-See [Architecture](architecture/index.md) for full call-flow diagrams and integration modes.
+See [How it works](concepts/index.md) for the parts of the platform and the life of a call.
 
 See [Trigger Outbound Call](api/calls/trigger.md) and [Queue Status](api/calls/queue-status.md) for the queued outbound contract.
 

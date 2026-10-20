@@ -183,7 +183,7 @@ Content-Type: application/json
 
 !!! note "Where the STT numbers come from, and what unit they are in"
     Three different components can transcribe a call, and they are not billed the same way.
-    [`cascade`](../../architecture/cascade-pipeline.md) owns an STT stage inside the agent
+    [`cascade`](../../concepts/cascade.md) owns an STT stage inside the agent
     session. `pipeline` mode with the default Sarvam provider runs a parallel tap outside the
     session that measures its own audio, so expect a small difference from Sarvam's invoice.
     `realtime`, and `pipeline` without Sarvam, use the OpenAI Realtime API's own ASR, which is
@@ -360,3 +360,10 @@ Diagnosing a webhook that did not arrive:
 Internal delivery-tracking fields (for example webhook claim/inflight timestamps) are runtime internals and are not part of the public webhook payload contract.
 
 `agent_ready_at` does appear in the payload (it's a plain field on the stored call record, not filtered out), but it exists for the dispatcher's own silent-agent detection, not as a feature for webhook consumers. Treat it as informational only.
+
+## Testing a receiver
+
+`POST /call/end_call` echoes back any JSON body you send it, wrapped in the standard response
+envelope, with secret-looking fields (`authorization`, `api_key`, `token`, …) masked. It needs no
+API key. Point an assistant's end-call webhook at it to see the exact payload your own receiver
+will get.

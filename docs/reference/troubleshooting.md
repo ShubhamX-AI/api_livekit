@@ -88,7 +88,7 @@ it serves the model before storing it, and answers `422` if not.
 
 ### 2. Check the worker log for the line that names the config
 
-`create_llm` logs this immediately before the first LLM turn:
+The worker logs this immediately before the first LLM turn:
 
 ```
 Cascade LLM built | assistant=asst_9f2 | model=gpt-5-mini | has_tools=True |
@@ -182,7 +182,7 @@ Three tool-shaped ways to silence a call, all now refused at config time:
   off by itself when a tool has optional or `object`/`array` parameters and logs
   `strict schema off`.
 - **`reasoning_effort` on `gpt-5.2` / `gpt-5.4*` while tools are attached.** Those models
-  reject `reasoning.effort` as soon as function tools are present. `create_llm` drops the knob
+  reject `reasoning.effort` as soon as function tools are present. The worker drops the knob
   and logs it; attaching a tool re-runs the check, so `POST /tool/attach/...` answers `400`
   rather than quietly breaking the next call.
 
@@ -199,7 +199,7 @@ ends. Most are now refused at create/update time instead:
 | Cause | Now caught by |
 |---|---|
 | A provider with no API key (per-assistant or system) | `422` at create, `400` at update |
-| An STT/TTS model id that does not exist (`nova-9`, `saaras:v9`) | `422` — the accepted sets are in `src/core/model_support/speech.py` |
+| An STT/TTS model id that does not exist (`nova-9`, `saaras:v9`) | `422` — the error lists the accepted ids; see [Models & Providers](models.md) |
 | A Sarvam STT model the vendor has sunset (`saaras:v2.5`, `saarika:v2.5`) | `422` — migrate to `saaras:v3` or `saaras:v4`; `scripts/audit_assistant_models.py` finds stored assistants still holding one |
 | `gpt-5.1` or `gpt-5.4-nano` (removed in 1.6.0, retired by OpenAI on 2027-04-01) | `422` at create, `400` at update — `scripts/migrate_retired_models.py --apply` moves stored assistants to `gpt-6-sol` / `gpt-6-luna` |
 | A Sarvam speaker from another Bulbul generation (`anushka` on `bulbul:v3`, `shubh` on `bulbul:v4-flash`) | `422` — no two generations share a speaker name |
@@ -212,9 +212,9 @@ ends. Most are now refused at create/update time instead:
 | A retired Deepgram tier (`nova-2`, `enhanced-general`, `base`, `whisper-large`) | `422` — Deepgram publishes no price for them, so the platform cannot bill the call |
 | A Gemini voice (`Puck`) under `provider: "openai"`, or the reverse | `422` — the two rosters share no names |
 
-If a job still dies at start, the log line names the stage. `create_llm`, `create_stt` and
-`create_tts` all end the job through the same `return None` path rather than raising, so what
-you should see is one `ERROR` line, not a traceback.
+If a job still dies at start, the log line names the stage. The LLM, STT and TTS stages all end
+the job the same way rather than raising, so what you should see is one `ERROR` line, not a
+traceback.
 
 ---
 
@@ -518,7 +518,7 @@ webhook's `data.usage` block is missing entirely).
 | STT fields `0` on a Gemini `realtime` call | Expected, and nothing is missing. Gemini's Live API reports no per-transcription usage; the caller's audio is already inside the LLM prompt tokens. |
 | STT fields `0` on an OpenAI `realtime` call | Not expected. The Realtime API's own ASR reports usage on every transcription, so a zero means no transcription ran at all — check that `input_audio_transcription` was configured. The teardown log line shows `stt=none`. |
 | STT fields `0` on a `pipeline` call | Not expected either way. With Sarvam, the tap did not run (`text_only`, or `assistant_stt_model` fell back to native); without it, the Realtime API's ASR reported nothing. The teardown log line shows `stt=none`. |
-| `stt_audio_duration` is `0` on a cascade Sarvam call | Not expected. The duration is counted by the session (`DynamicAssistant.stt_node`), not taken from Sarvam, so it does not depend on what the server reported — a zero means no audio ever reached the STT stage. Check for a text-only call, or an inbound track that never published. |
+| `stt_audio_duration` is `0` on a cascade Sarvam call | Not expected. The duration is counted by the worker, not taken from Sarvam, so it does not depend on what the server reported — a zero means no audio ever reached the STT stage. Check for a text-only call, or an inbound track that never published. |
 | `stt_audio_duration` runs a few seconds short on `deepgram` flux or `elevenlabs` | Expected, and bounded. Both plugins flush their usage collector every 5 s and never flush it again at stream close, so up to 5 s per stream is uncounted. Deepgram `nova-*` does flush, and tops up with connection wall-clock. |
 | `stt_input_tokens` is `0` on a cascade OpenAI call | The assistant is on the batch REST path (`use_realtime: false`), which reports no usage. The API now rejects that pairing for the token-billed models; a row stored before that gate is overridden at call time with a `use_realtime=false` warning in the worker log. Only `whisper-1` is billed by duration and may use batch. |
 | `stt_audio_duration` is `0` but `stt_input_tokens` is not | Correct for token-billed STT. The OpenAI ASR charges per token, not per second; `stt_input_audio_tokens` carries the audio share. |
@@ -573,8 +573,7 @@ indistinguishable from a working one until a call goes silent.
 uv run python scripts/check_model_allowlist.py
 ```
 
-Then edit `src/core/model_support/capabilities.py` (LLM) or
-`src/core/model_support/speech.py` (STT/TTS) to match its output, and run the suite — the
-speech sets are checked against the installed plugins' own definitions by
-`tests/test_speech_models.py`, so a `livekit-agents` bump that renames a model fails the tests
-instead of failing a call.
+It diffs every allowlisted model against what your OpenAI key actually serves, names what to
+remove and what could be added, and exits non-zero on any mismatch, so it also works as a
+pre-deploy check. Run it after every platform upgrade. The lists themselves change only with a
+platform release.

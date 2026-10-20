@@ -9,6 +9,7 @@ livekit==1.1.13
 livekit-api==1.2.0
 mkdocs>=1.6.1,<2.0.0
 mkdocs-material>=9.7.1,<10.0.0
+mkdocs-redirects==1.2.2
 scipy>=1.13.0
 numpy>=1.26.0
 boto3>=1.34.0

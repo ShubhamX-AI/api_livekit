@@ -42,7 +42,7 @@ def reject_retired_mode_key(data: dict) -> None:
 #
 # The list itself lives in core/model_support/capabilities.py, split by family, because the
 # same split decides which generation knobs each model accepts. Adding a model there is
-# what adds it here. Keep both in sync with docs/architecture/cascade-pipeline.md and
+# what adds it here. Keep both in sync with docs/concepts/cascade.md and
 # docs/reference/compatibility.md when OpenAI ships new models.
 OPENAI_CASCADE_MODELS = CASCADE_MODELS
 

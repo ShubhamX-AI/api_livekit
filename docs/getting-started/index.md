@@ -28,26 +28,28 @@ Save the `api_key` from the response. All subsequent requests require `Authoriza
 
 ## Step 2 — Create an Assistant
 
-Assistants support three execution modes. `assistant_mode` selects the *shape* of the session;
+Assistants support four execution modes. `assistant_mode` selects the *shape* of the session;
 `assistant_llm_config.provider` selects the LLM vendor within that shape.
 
 - `pipeline` (default, half-cascade): a realtime LLM emits text, a separate TTS provider speaks it. Vendor `openai` only.
 - `realtime`: the LLM speaks its own audio (no external TTS). Vendor `gemini` (default) or `openai`.
 - `cascade`: a true three-stage pipeline — plugin STT, a plain chat LLM, plugin TTS. Vendor `openai` only.
+- `duplex`: OpenAI GPT-Live (`gpt-live-1`) listens while it speaks and decides its own turns; a reasoning backend model (default `gpt-5.6-luna`) runs the tools. No TTS or STT fields. Vendor `openai` only.
 
 LLM config rules:
 
 - `pipeline`: `assistant_llm_config` is optional (defaults to `provider="openai"`, `model="gpt-realtime-1.5"`). `api_key` overrides the system `OPENAI_API_KEY`; `voice` is ignored because the external TTS produces the audio.
 - `realtime`: `assistant_llm_config` is required, but `provider`, `model` and `voice` may be omitted to use defaults.
 - `cascade`: `provider` must be `openai` and `model` must be one of the allowlisted chat models.
-- Defaults — Gemini realtime: `model="gemini-3.8-live"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`. Both `model` and `voice` are validated: only the five Gemini Live models are accepted, and the Gemini and OpenAI voice rosters are not interchangeable.
+- `duplex`: `assistant_llm_config` is optional; `voice` picks a GPT-Live voice (default `marin`) and `backend_model` picks the reasoning model. See [Duplex mode](../concepts/duplex.md).
+- Defaults — Gemini realtime: `model="gemini-3.8-live"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`. Both `model` and `voice` are validated: only the four Gemini Live models are accepted, and the Gemini and OpenAI voice rosters are not interchangeable.
 
 !!! warning "Gemini works in `realtime` mode only"
-    `provider: "gemini"` is rejected with a `422` in `pipeline` and `cascade` mode. Google's Live API
+    `provider: "gemini"` is rejected with a `422` in `pipeline`, `cascade` and `duplex` mode. Google's Live API
     cannot run the text-only modality that half-cascade requires on its native-audio models. See the
     [Compatibility Matrix](../reference/compatibility.md#mode-llm-provider).
 
-All three modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted).
+All four modes support `assistant_interaction_config.speaks_first=true`. When enabled, the assistant sends an opening response using `assistant_start_instruction` (or its default greeting if omitted). In `duplex`, GPT-Live phrases the greeting itself and may decline.
 
 ### Example A — Create Assistant in `pipeline` mode
 

@@ -100,7 +100,7 @@ When the call ends, your `assistant_end_call_url` receives a POST with the full 
 
 ## Next Steps
 
-- [Architecture](../architecture/index.md) — full call-flow diagrams for all integration modes
+- [How it works](../concepts/index.md) — the parts of the platform and the life of a call
 - [Assistant APIs](../api/assistant/index.md) — pipeline/realtime configuration, interaction settings, end-call tool
 - [TTS Humanization Guide](../api/assistant/tts-humanization.md) — write better spoken prompts
 - [Tools APIs](../api/tools/index.md) — give the assistant the ability to call external APIs

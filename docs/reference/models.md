@@ -1,12 +1,10 @@
 # Models & Providers
 
-Single reference for every model, provider, and config default the runtime actually uses — sourced
-from the factories in `src/core/agents/{llm,stt,tts}/factory.py` and `src/core/agents/session.py`, not
-from any other doc. If this page and another doc disagree, this page is correct; file an issue against
+Single reference for every model, provider, and config default the runtime actually uses. If this page and another doc disagree, this page is correct; file an issue against
 the other one.
 
 `assistant_mode` selects the *shape* of the session (`pipeline`, `realtime`, `cascade`, `duplex`) — see
-[Runtime Modes](../architecture/runtime-modes.md). This page covers what each stage of each mode can
+[Assistant modes](../concepts/assistant-modes.md). This page covers what each stage of each mode can
 actually be configured to run.
 
 ## Realtime LLM (`pipeline` and `realtime` modes)
@@ -17,7 +15,7 @@ Both modes route through a realtime model — `pipeline` uses it in text-only mo
 | Field | Values | Default |
 |---|---|---|
 | `provider` | `openai` in `pipeline` mode (`gemini` is rejected — see [Compatibility Matrix](compatibility.md#mode-llm-provider)); `gemini` or `openai` in `realtime` mode | `gemini` in `realtime` mode, `openai` in `pipeline` mode |
-| `model` | **Both validated.** OpenAI: one of `REALTIME_MODELS`. Gemini: `gemini-3.8-live`, `gemini-3.8-live-extended-thinking`, `gemini-3.1-flash-live-preview` or `gemini-2.5-flash-native-audio-preview-12-2025` (the plugin also lists `gemini-live-2.5-flash-native-audio`, which is Vertex-only and rejected). The Live API is a much smaller set than the Gemini chat models, and a chat id such as `gemini-2.5-flash` opens a socket the API then closes | `gemini-3.8-live` (gemini), `gpt-realtime-1.5` (openai) |
+| `model` | **Both validated.** OpenAI: one of the [realtime models](#openai-realtime-models). Gemini: `gemini-3.8-live`, `gemini-3.8-live-extended-thinking`, `gemini-3.1-flash-live-preview` or `gemini-2.5-flash-native-audio-preview-12-2025` (the plugin also lists `gemini-live-2.5-flash-native-audio`, which is Vertex-only and rejected). The Live API is a much smaller set than the Gemini chat models, and a chat id such as `gemini-2.5-flash` opens a socket the API then closes | `gemini-3.8-live` (gemini), `gpt-realtime-1.5` (openai) |
 | `voice` | Validated per vendor: the 30-name Gemini Live roster for `gemini`; for `openai`, anything that is not a Gemini name | `Puck` (gemini), `marin` (openai). **Honored only in `realtime` mode** — `pipeline` mode emits text, so voice is meaningless there and the field is silently ignored. |
 | `api_key` | string | falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY` |
 
@@ -42,7 +40,7 @@ OpenAI's list before using it.
 
 ### OpenAI realtime models
 
-The OpenAI realtime models accepted (`REALTIME_MODELS`) are `gpt-realtime`, `gpt-realtime-1.5`
+The OpenAI realtime models accepted are `gpt-realtime`, `gpt-realtime-1.5`
 (default), `gpt-realtime-2`, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`, `gpt-realtime-2025-08-28`
 and `gpt-realtime-mini`. The two `2.1` models were added on 2026-10-17 after a live session probe
 with this platform's exact session shape, in both audio (realtime) and text (pipeline) output.
@@ -55,7 +53,7 @@ Realtime API field that `gpt-4o-realtime-preview` and `gpt-4o-mini-realtime-prev
 and the API errors on an unknown session field instead of ignoring it. Those two are also no
 longer accepted at all — probed on 2026-08-13, the account does not serve either — but a stored
 row can still hold one, so the rule remains. See
-[Runtime Modes → LLM Context Truncation](../architecture/runtime-modes.md#llm-context-truncation).
+[Assistant modes → LLM context truncation](../concepts/assistant-modes.md#llm-context-truncation).
 
 !!! note "Which Gemini Live model to pick"
     The default is **`gemini-3.8-live`** — the stable low-latency line Google names for voice
@@ -106,11 +104,10 @@ needs `assistant_stt_model` — that field is ignored in this mode.
 
 ## GPT-Live (`duplex` mode only)
 
-OpenAI's full-duplex voice model, built by `create_gpt_live` (`src/core/agents/llm/factory.py`) as
-`openai.realtime.GPTLiveModel` with this deployment's own `OPENAI_API_KEY`. It listens while it
+OpenAI's full-duplex voice model, run as LiveKit's `openai.realtime.GPTLiveModel` with this deployment's own `OPENAI_API_KEY`. It listens while it
 speaks and decides its own turns. A second model — the **backend**, an ordinary Responses model —
 does the reasoning and runs the tools. Configured via `assistant_llm_config`. How a call runs:
-[Duplex Mode](../architecture/duplex-mode.md).
+[Duplex Mode](../concepts/duplex.md).
 
 | Field | Values | Default |
 |---|---|---|
@@ -140,7 +137,7 @@ model's seconds in `llm_session_duration`, and the backend's tokens as their own
 
 ## Cascade LLM (`cascade` mode only)
 
-Built by `create_llm` (`src/core/agents/llm/factory.py`) as `openai.responses.LLM` — cheaper than
+Runs as LiveKit's `openai.responses.LLM` (the OpenAI Responses API) — cheaper than
 chat-completions, same `@function_tool` contract. Configured via `assistant_llm_config`.
 
 | Field | Values | Default |
@@ -181,9 +178,8 @@ that rejects it is a `422` at create/update. Full matrix:
 the replacements LiveKit names: `gpt-5.1` to `gpt-6-sol`, `gpt-5.4-nano` to `gpt-6-luna`.
 
 **Reasoning-model rule:** reasoning models reject `temperature` and take `reasoning_effort`;
-chat models are the reverse. The families are listed per model in
-`src/core/model_support/capabilities.py`, which both the API validator and the runtime factory
-read. Membership is spelled out, never matched by prefix: `gpt-5.2-chat-latest` started with
+chat models are the reverse. Each model's family is listed explicitly, and the same list decides
+what the API accepts and what the call sends. Membership is spelled out, never matched by prefix: `gpt-5.2-chat-latest` started with
 "gpt-5" and was a chat model, and a prefix test sent it `reasoning.effort` anyway.
 
 !!! danger "Removed from the allowlist: the `*-chat-latest` aliases and `gpt-oss-120b`"
@@ -210,55 +206,40 @@ read. Membership is spelled out, never matched by prefix: `gpt-5.2-chat-latest` 
 
 Two gates, in order.
 
-**The static allowlist.** `validate_mode_config` in
-`src/api/models/api_schemas/config/llm_config.py` rejects any `model` outside the table above
-with a `422`. When OpenAI ships a new model, add it to `REASONING_MODELS` or `CHAT_MODELS` in
-`src/core/model_support/capabilities.py` — that split is the allowlist
-(`OPENAI_CASCADE_MODELS`) *and* decides which knobs the model accepts — then to the table
-above.
+**The static allowlist.** Create and update reject any `model` outside the table above with a
+`422`. A model is added to the platform only after it has been checked against OpenAI, together
+with the family that decides which knobs it accepts.
 
 **The live check.** No static list can know that OpenAI retired something last week, which is
 exactly how the aliases above became a live outage. So create and update also ask OpenAI
-whether the account still serves the model (`GET /v1/models`, cached per key for
-`OPENAI_MODEL_CACHE_TTL`, default 1 hour) and answer `422`/`400` if not. If OpenAI cannot be
+whether the account still serves the model (`GET /v1/models`, cached for up to an hour) and answer `422`/`400` if not. If OpenAI cannot be
 reached the write is **allowed** — an OpenAI outage must not make assistants un-editable.
 
-!!! warning "Never edit a model list from memory"
-
-    ```bash
-    uv run python scripts/check_model_allowlist.py
-    ```
-
-    Diffs every allowlisted id against what your account actually serves, names what to remove
-    and what could be added, and exits non-zero on any mismatch. Run it before editing a list
-    and after every `livekit-agents` bump.
-
-The pipeline and realtime modes have their own, separate allowlist (`REALTIME_MODELS`) of
+The pipeline and realtime modes have their own, separate allowlist of
 OpenAI **realtime** model IDs — the two sets do not overlap, and sending a chat model such as
-`gpt-4.1` in pipeline mode is a `422`. Gemini Live IDs have their own list (`GEMINI_LIVE_MODELS`)
+`gpt-4.1` in pipeline mode is a `422`. Gemini Live IDs have their own list
 and are validated too. Full table:
 [Compatibility Matrix → Model IDs](compatibility.md#model-ids).
 
 ## STT
 
-`assistant_stt_model` + `assistant_stt_config`. Two different code paths read the same fields:
-`resolve_stt` (pipeline mode's parallel Sarvam tap) and `create_stt` (cascade's session STT stage) — they
-don't always agree, see the quirks below.
+`assistant_stt_model` + `assistant_stt_config`. Pipeline mode (a parallel transcription tap beside the
+realtime model) and cascade mode (STT as the session's first stage) read the same fields but do not
+always treat them the same way — see the quirks below.
 
 !!! note "`model` is allowlisted per provider"
     The `model` field in every STT and TTS config is checked against that provider's real model
-    set (`src/core/model_support/speech.py`) and a value outside it is a `422`:
+    set, and a value outside it is a `422`:
 
     ```json
     { "detail": "'deepgram' does not have a STT model called 'nova-9' — choose one of: flux-general-en, flux-general-multi, nova-3, nova-3-general, nova-3-multilingual. See docs/reference/models.md." }
     ```
 
     These fields used to accept any string under 40 characters, so a typo was stored happily and
-    then ended the job at call start — `create_stt` returns `None`, the session never starts, and
-    the caller hears nothing. The sets are checked against the installed plugins' own definitions
-    by `tests/test_speech_models.py`, so a LiveKit SDK upgrade that renames a model fails the test
-    suite instead of a call. A provider whose model is **pinned** in the factory (Cartesia TTS,
-    Mistral) takes no `model` field at all.
+    then ended the job at call start — the STT stage could not be built, the session never started,
+    and the caller heard nothing. The sets are kept in step with the LiveKit plugins this platform
+    runs. A provider whose model is **pinned** by the platform (Cartesia TTS, Mistral) takes no
+    `model` field at all.
 
 | Provider | Valid in | Model default | Other config |
 |---|---|---|---|
@@ -293,8 +274,8 @@ Ignored entirely in `realtime` mode (the model always transcribes itself).
 
 Every field in `assistant_stt_config`, per provider. "Omitted" means the key is absent from
 the config dict. `api_key` resolution: a per-assistant `api_key` in the config always beats
-the env var; if **both** are missing, a cascade assistant aborts (`create_stt` returns `None`,
-logged — it does **not** silently fall back), while pipeline selection of a cascade-only
+the env var; if **both** are missing, a cascade assistant aborts (the STT stage
+is not built and the worker logs it — it does **not** silently fall back), while pipeline selection of a cascade-only
 provider (cartesia / deepgram / elevenlabs) degrades to native transcription with a warning.
 
 | Provider | Channel (config key) | Default | Meaning | What changes if you change it |
@@ -386,7 +367,7 @@ These are the easy-to-miss traps. All statements match the plugin behaviour in L
   sent as a list; `multi` is a nova-only sentinel and is never forwarded. A language set on
   `flux-general-en` is dropped with a warning.
 - **One `ELEVENLABS_API_KEY` covers both stages,** STT and TTS. The per-assistant fields stay separate, though: `assistant_stt_config.api_key` and `assistant_tts_config.api_key` are scoped to whichever provider that stage selected, so on a mixed assistant they hold two different vendors' keys. Sending one vendor's key on another vendor's path fails auth (Sarvam answers `403`).
-- **Missing key in cascade aborts (no fallback).** If neither a config `api_key` nor the system env var is present, `create_stt` returns `None` and the cascade job is abandoned (logged) — it does **not** silently switch models. In `pipeline` mode the same selection only degrades to `native` transcription with a warning.
+- **Missing key in cascade aborts (no fallback).** If neither a config `api_key` nor the system env var is present, the STT stage is not built and the cascade job is abandoned (logged) — it does **not** silently switch models. In `pipeline` mode the same selection only degrades to `native` transcription with a warning.
 - **OpenAI STT: `prompt` only works on `whisper-1`.** The `gpt-4o-transcribe` family accepts the
   field and ignores it — no error, no biasing. If you need prompt biasing, pick `whisper-1` (and
   accept that it is the slower, batch-only model).
@@ -567,13 +548,13 @@ realtime model, so the session builds its own:
 
 **Self-hosted constraint:** `inference.TurnDetector(version="v1")` and `interruption={"mode": "adaptive"}`
 require LiveKit Cloud and are not usable here — only `v1-mini` and `{"mode": "vad"}` are local. Full
-detail in [Cascade Pipeline](../architecture/cascade-pipeline.md#turn-detection).
+detail in [Cascade mode](../concepts/cascade.md#turn-detection).
 
 ## Internal models (not user-selectable, still billed)
 
-| Feature | Model | Where |
-|---|---|---|
-| Filler words (`assistant_interaction_config.filler_words`) | `gpt-4o-mini` | `src/core/agents/voice_features.py` |
-| Native user-transcription (pipeline mode, `assistant_stt_model="native"`) | `gpt-4o-mini-transcribe` | `src/core/agents/session.py` |
+| Feature | Model |
+|---|---|
+| Filler words (`assistant_interaction_config.filler_words`) | `gpt-4o-mini` |
+| Native user-transcription (pipeline mode, `assistant_stt_model="native"`) | `gpt-4o-mini-transcribe` |
 
 These run regardless of your chosen LLM/TTS provider and add their own token cost.

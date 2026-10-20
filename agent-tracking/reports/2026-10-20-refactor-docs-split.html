@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs Split by Audience</title>
+<style>
+  :root { --fg:#1f2937; --muted:#6b7280; --line:#e5e7eb; --soft:#f9fafb; --accent:#4f46e5;
+          --new:#16a34a; --moved:#d97706; --gone:#9ca3af; --leak:#dc2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#fff; color:var(--fg); font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:19px; margin:40px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:15px; margin:0 0 8px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  code { font:13px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--soft); padding:1px 4px; border-radius:4px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:var(--soft); }
+  .verdict { font-size:17px; border-left:4px solid var(--accent); padding:10px 14px; background:var(--soft); border-radius:0 8px 8px 0; }
+  .twocol { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px){ .twocol{ grid-template-columns:1fr; } }
+  .panel { border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .box { border:1px solid var(--line); border-left:4px solid var(--line); border-radius:6px; padding:6px 10px; margin:6px 0; font-size:14px; }
+  .box small { color:var(--muted); display:block; }
+  .new { border-left-color:var(--new); } .moved { border-left-color:var(--moved); }
+  .gone { border-left-color:var(--gone); color:var(--muted); text-decoration:line-through; }
+  .leak { border-left-color:var(--leak); }
+  .legend span { display:inline-block; margin-right:14px; font-size:13px; }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+  .arrow { text-align:center; color:var(--muted); font-size:13px; margin:2px 0; }
+  .ok { color:var(--new); font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Docs split by audience</h1>
+<p class="sub">Slug <code>2026-10-20-refactor-docs-split</code> · 2026-10-20 · documentation refactor · follows <a href="2026-10-20-audit-readme.html">the README audit</a></p>
+
+<h2>Summary</h2>
+<p class="verdict">Each audience now has one home. <b>README</b> gets a developer running, with a quickstart that was tested end to end. <b><code>docs/</code></b> (the site and the MCP) explains what the platform does, and names no source files. The new <b><code>dev-docs/</code></b> explains how the system is built and why. No public URL breaks: all 9 old architecture URLs redirect. Product behaviour is unchanged: 668 tests pass, and the only code edits are comments.</p>
+
+<h2>Current → Target</h2>
+<p class="legend"><span><i class="sw" style="background:var(--new)"></i>new</span><span><i class="sw" style="background:var(--moved)"></i>moved / rewritten</span><span><i class="sw" style="background:var(--gone)"></i>removed</span><span><i class="sw" style="background:var(--leak)"></i>audience leak</span></p>
+<div class="twocol">
+<div class="panel">
+<h3>Before</h3>
+<div class="box leak"><b>README.md</b> · 762 lines<small>Developer guide and feature docs mixed together; no way to start MongoDB or LiveKit</small></div>
+<div class="box leak"><b>docs/architecture/</b> · 9 pages, 2,169 lines<small>Public site + MCP, but full of source paths, containers and deploy steps</small></div>
+<div class="box leak"><b>docs/reference/</b><small>~50 source paths and code symbols on public pages</small></div>
+<div class="box"><b>docs/api/, getting-started/, guides/</b><small>Already public-clean</small></div>
+<div class="box leak"><b>AGENTS.md</b> · 746 lines<small>Six "Recent changes" sections (~200 lines) of history mixed with rules</small></div>
+</div>
+<div class="panel">
+<h3>After</h3>
+<div class="box moved"><b>README.md</b> · 316 lines<small>For developers: modes, architecture diagram, tested quickstart, env, deploy, API at a glance, where to read next</small></div>
+<div class="arrow">public: what it does ↓</div>
+<div class="box new"><b>docs/concepts/</b> · "How It Works", 6 pages<small>Overview (C4 levels 1–2), assistant modes, cascade, duplex, life of a call, meeting calls</small></div>
+<div class="box moved"><b>docs/reference/</b><small>Same facts, no code pointers</small></div>
+<div class="box gone">docs/architecture/ (9 pages → redirects)</div>
+<div class="arrow">developers: how it is built ↓ (links up only)</div>
+<div class="box new"><b>dev-docs/</b> · 21 pages<small>index · architecture · 7 subsystems · 3 how-to recipes · 2 operations · 6 decision records (+ index)</small></div>
+<div class="box moved"><b>AGENTS.md</b> · 573 lines<small>Rules + 9 guardrails, each citing its decision record</small></div>
+</div>
+</div>
+
+<h2>Metrics</h2>
+<table>
+<tr><th>Measure</th><th>Before</th><th>After</th></tr>
+<tr><td>README lines</td><td>762</td><td>316 (66 of them the full env table)</td></tr>
+<tr><td>AGENTS.md lines</td><td>746</td><td>573</td></tr>
+<tr><td>Source paths in public <code>docs/</code></td><td>~70</td><td>0 (4 kept on purpose: they point into the separate connector repo)</td></tr>
+<tr><td>Links from public docs into internals</td><td>18 into <code>architecture/</code></td><td>0; old URLs redirect</td></tr>
+<tr><td>Mermaid diagrams checked</td><td>21 (docs + README)</td><td>39 (now also <code>dev-docs/</code>), 0 broken</td></tr>
+<tr><td>Unit tests</td><td>668 OK</td><td>668 OK</td></tr>
+<tr><td>Ruff on touched Python files</td><td>2 / 3 / 18 / 7 / 12</td><td>same, none new</td></tr>
+<tr><td>Working-tree diff (tracked files)</td><td colspan="2">39 files, +390 / −3,179, plus 27 new pages under <code>docs/concepts/</code> and <code>dev-docs/</code></td></tr>
+<tr><td>New dependencies</td><td colspan="2"><code>mkdocs-redirects==1.2.2</code> (one package, no transitive dependencies)</td></tr>
+</table>
+
+<h2>Changes</h2>
+<table>
+<tr><th>Change</th><th>Refactoring</th><th>Files</th><th>Why</th></tr>
+<tr><td>README rewritten around running the code</td><td>Remove Duplication, Move (to docs)</td><td><code>README.md</code></td><td>About 330 lines repeated docs pages; there was no working quickstart</td></tr>
+<tr><td>Quickstart verified on this machine</td><td>n/a</td><td><code>README.md</code></td><td>MongoDB replica set and <code>livekit-server --dev</code> started; <code>/health</code> ok; key created; worker registered</td></tr>
+<tr><td>Each architecture page split into a public half and an internal half</td><td>Split Phase (by audience), Move</td><td><code>docs/concepts/*</code>, <code>dev-docs/subsystems/*</code>, <code>dev-docs/operations/deployment.md</code></td><td>The public site and the MCP were serving internals to API users and their agents</td></tr>
+<tr><td>Code pointers removed from public reference pages</td><td>Move (pointer to <code>dev-docs</code>)</td><td><code>docs/reference/*</code>, <code>docs/guides/meeting-connector.md</code>, <code>docs/features.md</code>, <code>docs/changelog.md</code></td><td>API users have no source code</td></tr>
+<tr><td>"Recent changes" became decision records</td><td>Extract (ADR)</td><td><code>dev-docs/decisions/0001–0006</code>, <code>AGENTS.md</code></td><td>History in a rules file is sediment; the guardrails stay and point to the reasoning</td></tr>
+<tr><td>How-to recipes and a scripts catalogue</td><td>Extract</td><td><code>dev-docs/how-to/*</code>, <code>dev-docs/operations/scripts.md</code></td><td>The most common changes, as numbered steps</td></tr>
+<tr><td>Redirects and nav</td><td>n/a</td><td><code>mkdocs.yml</code>, <code>pyproject.toml</code>, <code>uv.lock</code>, <code>docker/requirements-control.txt</code></td><td>Old URLs keep working; "Architecture" tab becomes "How It Works"</td></tr>
+<tr><td>Comments and one test pointed at the new paths</td><td>Rename (reference)</td><td>5 files under <code>src/</code> (comments only), <code>tests/test_mcp_docs.py</code>, <code>scripts/check_mermaid.py</code></td><td>The MCP search now returns <code>concepts/duplex.md</code>; the test expected the old path</td></tr>
+<tr><td>Stale facts corrected</td><td>n/a</td><td><code>docs/getting-started/index.md</code>, <code>docs/api/assistant/update.md</code> and the new pages</td><td>"Three modes" became four; "five" Gemini Live models became four; plus the writer corrections below</td></tr>
+</table>
+
+<h3 style="margin-top:20px">Facts the old docs had wrong (now match the code)</h3>
+<ul>
+<li>The worker stops taking jobs at 1.0 × <code>MAX_CONCURRENT_SESSIONS</code>, not 0.9 × <code>MAX_CONCURRENT_JOBS</code>. Inbound INVITE setups default to 24, not 8.</li>
+<li>There is a third capacity bucket, <code>meeting</code> (default 4). The orphan reaper runs every 30 minutes. A dispatch is tried at most 3 times.</li>
+<li>The web token comes from <code>POST /web_call/get_token</code>, not <code>GET /api/get_token</code>. Meeting calls use <code>near_field</code> noise reduction. The input guard is also skipped in duplex.</li>
+<li>The two <code>gpt-4o-*realtime-preview</code> models are not on the allowlist. The control and agent Dockerfiles live in <code>docker/</code>. The Exotel bridge is started by the dispatcher.</li>
+<li>Inbound failure codes 486, 487, 503 and 400 were added. The unauthenticated <code>POST /call/end_call</code> echo is now documented.</li>
+</ul>
+
+<h2>Behaviour surface: unchanged</h2>
+<ul>
+<li><b>HTTP API:</b> no route, schema or response changed. The <code>src/</code> edits are comments only.</li>
+<li><b>Public site URLs:</b> every page that existed still answers. The 9 architecture URLs redirect to <code>concepts/</code> (built pages checked in <code>site/architecture/</code>). Deep anchors inside them land at the top of the new page.</li>
+<li><b>MCP:</b> it still indexes <code>docs/</code> only (<code>src/api/mcp_docs.py</code> unchanged), so <code>dev-docs/</code> is never served. Search ranks <code>concepts/duplex.md</code> first for "duplex gpt-live how it works".</li>
+<li><b>Tests that read docs:</b> <code>tests/test_provider_pricing.py</code> passes, because <code>docs/reference/pricing.md</code> kept every rate row.</li>
+</ul>
+
+<h2>Verification</h2>
+<table>
+<tr><th>Command</th><th>Result</th></tr>
+<tr><td><code>uv run mkdocs build --strict</code></td><td class="ok">pass</td></tr>
+<tr><td><code>uv run python scripts/check_mermaid.py</code></td><td class="ok">39 diagrams, 0 broken</td></tr>
+<tr><td><code>uv run python -m unittest discover -s tests</code></td><td class="ok">668 OK</td></tr>
+<tr><td><code>grep -rn 'src/' docs</code></td><td class="ok">only the 4 <code>connector:src/…</code> paths</td></tr>
+<tr><td>Link check over <code>dev-docs/</code>, <code>README.md</code>, <code>AGENTS.md</code></td><td class="ok">every relative link resolves</td></tr>
+<tr><td>ADR completeness: every backticked token of the six old sections found in <code>dev-docs/decisions/</code></td><td class="ok">176 / 176</td></tr>
+<tr><td>Fresh-context reviewer: all 9 old pages checked section by section against the new homes</td><td>13 findings; 11 fixed, 1 kept on purpose, 1 accepted (below)</td></tr>
+</table>
+
+<h3 style="margin-top:20px">Reviewer findings</h3>
+<table>
+<tr><th>#</th><th>Finding</th><th>Outcome</th></tr>
+<tr><td>1</td><td><code>POST /call/end_call</code> echo documented nowhere</td><td>Fixed: README row + "Testing a receiver" in <code>docs/api/calls/webhook.md</code></td></tr>
+<tr><td>2</td><td>Retry count worded as 3 retries (4 attempts)</td><td>Fixed: "tries each dispatch up to three times"</td></tr>
+<tr><td>3</td><td>Cascade missing-key behaviour contradicted the compatibility page</td><td>Fixed: "call never starts; worker logs one error"</td></tr>
+<tr><td>4</td><td>Meeting-connector guide relied on content now internal</td><td>Fixed: two-jobs-one-room summary inline</td></tr>
+<tr><td>5</td><td>Changelog named source files</td><td>Fixed</td></tr>
+<tr><td>6</td><td>Troubleshooting names operator details (dispatcher process, <code>ENABLE_*</code>, a Python snippet)</td><td><b>Kept on purpose:</b> troubleshooting is the operator page and its commands are actionable</td></tr>
+<tr><td>7–8</td><td>Heading hierarchy; VAD, barge-in and backchannel used before being defined</td><td>Fixed: <code>## Transcripts</code> section; terms expanded on first use</td></tr>
+<tr><td>9</td><td>Reason for cascade's extra CPU did not follow</td><td>Fixed: two voice detectors</td></tr>
+<tr><td>10–12</td><td>Old page titles in link text; missing "Build a meeting connector" link; private SDK method named</td><td>Fixed (9 files retitled)</td></tr>
+<tr><td>13</td><td>Deep anchors on redirected URLs land at the top of the new page</td><td>Accepted</td></tr>
+</table>
+
+<h2>Out-of-scope observations (not fixed; each should be its own task)</h2>
+<table>
+<tr><th>Where</th><th>What</th><th>Suggested task</th></tr>
+<tr><td><code>deploy.sh:43</code></td><td><b>Safety:</b> <code>docker system prune -a -f</code> runs on every deploy. It deletes every unused image, stopped container and network on the host, not only this project's, including the images a rollback would use.</td><td>debug/fix: scope the prune to this project or drop it</td></tr>
+<tr><td><code>src/core/agents/session.py:102</code></td><td><code>load_dotenv(override=True)</code>: in the worker, <code>.env</code> beats the real environment, while the API does the reverse. This was seen during the quickstart test.</td><td>debug: drop <code>override=True</code></td></tr>
+<tr><td>inbound Exotel listener</td><td><b>Suspected:</b> a hold re-INVITE on an inbound call may be answered 400 as a duplicate Call-ID, so inbound hold never works</td><td>debug: reproduce with a test</td></tr>
+<tr><td><code>agent_run.py:62</code></td><td>Comment says <code>MAX_CONCURRENT_JOBS</code>; the code uses <code>MAX_CONCURRENT_SESSIONS</code></td><td>trivial comment fix</td></tr>
+<tr><td><code>dispatcher.py</code> docstring</td><td>Says the orphan reaper sweeps every 15 min; the constant says 30</td><td>trivial</td></tr>
+<tr><td><code>session.py</code> (pipeline Gemini branch)</td><td>Comment still describes the Gemini 3.1 mid-session bug that the plugin pin fixed</td><td>trivial</td></tr>
+<tr><td><code>src/api/server.py</code> lifespan</td><td><code>ENABLE_SIP_LISTENER</code> / <code>ENABLE_DISPATCHER</code> are read with <code>os.getenv</code>, outside the settings module</td><td>refactor: move them into <code>Settings</code></td></tr>
+<tr><td><code>docker/requirements-control.txt</code></td><td><code>chevron</code> is unused by the control image</td><td>cleanup</td></tr>
+<tr><td><code>scripts/migrate_assistant_mode.py</code></td><td>Docstring points to a moved module</td><td>trivial</td></tr>
+</table>
+
+<h2>Not done</h2>
+<ul>
+<li>Nothing is committed; all changes are in the working tree. <code>docs/architecture/</code> is deleted there but not staged.</li>
+<li>The connector repository was not checked. The "about 5 minutes" waiting-room limit comes from the contract test.</li>
+<li>Measurements copied from the old pages (the forkserver timings, the speech-gate table, the Sarvam idle close) were moved as they were, not re-measured.</li>
+</ul>
+
+<h2>Rollback</h2>
+<p><code>git restore .</code> plus <code>git clean -fd docs/concepts dev-docs</code> returns to <code>3ef3a1e</code>. To keep the README and revert only the split, restore everything except <code>README.md</code> and <code>docs/api/assistant/create.md</code>.</p>
+
+<h2>Trace</h2>
+<p><a href="../plans/2026-10-20-refactor-docs-split/scope.md">scope</a> · <a href="../plans/2026-10-20-refactor-docs-split/plan.md">plan</a> · <a href="../plans/2026-10-20-refactor-docs-split/progress.md">progress</a> · <a href="../research/2026-10-20-refactor-docs-split.md">research</a></p>
+</main>
+</body>
+</html>

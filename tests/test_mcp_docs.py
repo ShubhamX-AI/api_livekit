@@ -53,7 +53,7 @@ class TestMcpDocs(unittest.TestCase):
             "end call webhook payload": "api/calls/webhook.md",
             "tool attach": "api/tools/attach.md",
             "upload greeting audio": "api/audio/upload.md",
-            "duplex gpt-live how it works": "architecture/duplex-mode.md",
+            "duplex gpt-live how it works": "concepts/duplex.md",
             "elevenlabs price": "reference/pricing.md",
             "api key authentication": "api/authentication.md",
             "release dates": "changelog.md",

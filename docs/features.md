@@ -8,7 +8,7 @@ Complete inventory of what this platform provides.
 
 - **Pipeline mode** (half-cascade) — an OpenAI realtime LLM emits text; a separate TTS provider synthesises speech output
 - **Realtime mode** — LLM speaks its own audio (Gemini default, or OpenAI); no external TTS required
-- **Cascade mode** — a true three-stage STT → LLM → TTS pipeline: plugin STT, a plain OpenAI chat model, plugin TTS. Each stage separately metered and swappable; the only mode with per-component cost visibility. See [Cascade Pipeline](architecture/cascade-pipeline.md)
+- **Cascade mode** — a true three-stage STT → LLM → TTS pipeline: plugin STT, a plain OpenAI chat model, plugin TTS. Each stage separately metered and swappable; the only mode with per-component cost visibility. See [Cascade mode](concepts/cascade.md)
 - **Duplex mode** — OpenAI GPT-Live: listens while it speaks and decides its own turns, with a backend reasoning model (`gpt-5.6-luna` by default, or `gpt-6-luna` / `gpt-6-sol`) for thinking and tools. No TTS; no greeting audio, filler words or text-only. See [Models & Providers → GPT-Live](reference/models.md#gpt-live-duplex-mode-only)
 - **Provider is chosen per mode** — `assistant_llm_config.provider` accepts `gemini` or `openai` in realtime mode; pipeline, cascade and duplex are OpenAI-only. Invalid combinations are rejected at create/update rather than at call time — see the [Compatibility Matrix](reference/compatibility.md)
 - **Configurable system prompt** — full control over assistant persona, instructions, and behavior
@@ -149,7 +149,7 @@ Full STT/LLM/TTS model inventory, config keys, and per-mode validity: [Models & 
 Stops background noise from interrupting the agent mid-sentence. Runs in the agent process on both web and Exotel calls, so it needs no LiveKit Cloud (BVC/Krisp is Cloud-only, and this deployment is self-hosted).
 
 - **WebRTC noise suppression + high-pass** (`rtc.AudioProcessingModule`) — around −11 dB on stationary noise. AGC and AEC stay off: AGC re-amplified the agent's own echo into false barge-ins
-- **Silero VAD v5** (ONNX, CPU, vendored at `src/core/agents/models/silero_vad.onnx`) — zeroes non-speech audio, so the realtime model's VAD cannot register noise as speech-start
+- **Silero VAD v5** (ONNX, CPU, bundled with the worker) — zeroes non-speech audio, so the realtime model's VAD cannot register noise as speech-start
 - Only the VAD's own copy is resampled to 16 kHz — the model still receives full-rate audio, so web calls keep content above 8 kHz
 - Measured: 94.6% of speech energy kept, 0% of typing and white noise passed, 18% of office ambience (that recording contains real voices)
 - Under 2 ms per 50 ms frame, roughly 1 core-% per concurrent call, no added latency
