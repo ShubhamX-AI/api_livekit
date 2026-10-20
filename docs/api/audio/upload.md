@@ -30,7 +30,7 @@ Upload an audio clip into the library. Any common audio format is accepted; the 
 | Code | Description |
 | :--- | :--- |
 | 200 | Success — audio stored. |
-| 400 | Bad Request — file is not decodable audio, has no audio stream, is too large, or is longer than 30 seconds. |
+| 400 | Bad Request — file is larger than 25 MB, is not decodable audio, has no audio stream, or is longer than 30 seconds. The size check happens while the upload is read, so an oversized file is refused without being loaded in full. |
 | 401 | Unauthorized — invalid or missing Bearer token. |
 | 500 | Server Error. |
 

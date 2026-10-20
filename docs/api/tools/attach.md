@@ -34,7 +34,7 @@ Enable a set of tools for a specific assistant.
 | Code | Description                                         |
 | :--- | :-------------------------------------------------- |
 | 200  | Success - Tools attached successfully.              |
-| 400  | Bad Request - Invalid input (empty tool_ids array). |
+| 422  | Validation error - `tool_ids` is empty or malformed. |
 | 401  | Unauthorized - Invalid or missing Bearer token.     |
 | 404  | Not Found - Assistant or one/more tools not found.  |
 | 500  | Server Error - Internal server error.               |

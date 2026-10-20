@@ -1,6 +1,6 @@
 # Usage accounting
 
-Every call has one `UsageRecord`, keyed by `room_name`, holding raw provider usage and an
+Every call has one usage record, keyed by `room_name`, holding raw provider usage and an
 estimated AI-provider cost. The estimate uses hardcoded public PAYG rates and is not an
 invoice: negotiated discounts, credits, taxes, regional premiums, provider rounding and
 telephony/recording/LiveKit costs are excluded.
@@ -12,10 +12,9 @@ the user/admin analytics endpoints ([user summary](../api/analytics/tokens-summa
 
 ## Where the numbers come from
 
-`src/core/agents/usage.py::summarize_usage` reads `session.usage.model_usage` at teardown.
-The LiveKit agents SDK collects that itself from the plugin metrics of every component the
-`AgentSession` owns, so nothing here makes an extra provider call, and a self-hosted worker
-needs no Cloud credentials.
+The worker reads the usage the LiveKit agents SDK collected for the session. The SDK collects
+it itself from the plugin metrics of every component the session owns, so nothing here makes
+an extra provider call, and a self-hosted worker needs no Cloud credentials.
 
 The SDK reports **one entry per `(provider, model)` pair**. Those entries are stored in
 `model_usage` and summed into the flat columns. Metrics and model ids remain SDK-reported;
@@ -122,8 +121,8 @@ cache writes and reports `0`.
 
 `tts_input_tokens` and `tts_output_tokens` are always `0`, on every provider this platform
 can configure. The fields exist because `TTSModelUsage` carries them, but the SDK only fills
-them when a plugin calls `_set_token_usage`, and the sole plugin that does is OpenAI's TTS,
-which `create_tts` never builds. Cartesia, Sarvam, ElevenLabs and Mistral are all billed by
+them only when a plugin reports token usage, and the sole plugin that does is OpenAI's TTS,
+which this platform does not offer. Cartesia, Sarvam, ElevenLabs and Mistral are all billed by
 character or by audio. Read `tts_characters_count` and `tts_audio_duration`; a zero in the
 token fields means "not how this vendor bills", not "nothing was spoken".
 
@@ -137,42 +136,35 @@ read slightly below the string the assistant actually spoke.
 This applies to both modes that can run Sarvam, for the same reason: the plugin's own
 `RECOGNITION_USAGE` event carries whatever the server put in `metrics.audio_duration`. That
 field is absent on some responses and defaults to `0.0`, and the plugin emits no event at all
-for a turn whose transcript came back empty (`plugins/sarvam/stt.py:1568-1571`). Either way
+for a turn whose transcript came back empty. Either way
 the call would store a silent zero — indistinguishable from "no transcription ran", which is
 the exact failure this accounting exists to remove. So the runtime counts the audio itself.
 
 ### Pipeline mode
 
-`pipeline` mode transcribes on a parallel Sarvam tap
-(`src/core/agents/stt/sarvam_parallel.py`) that builds its own plugin STT and never hands it
-to the `AgentSession`, so nothing it emits reaches the SDK's usage collector. The tap
-therefore counts the audio itself — it sums the duration of every frame it pushes — and
-hands the total to `summarize_usage` as an `stt_usage` entry shaped exactly like one the SDK
-would have produced. It reaches both `stt_audio_duration` and the raw `model_usage` list.
+`pipeline` mode transcribes on a parallel Sarvam connection that sits beside the session
+rather than inside it, so nothing it emits reaches the SDK's usage collector. The worker
+therefore counts the audio itself — the duration of every frame sent to Sarvam — and stores
+the total as an STT entry shaped exactly like one the SDK would have produced. It reaches both
+`stt_audio_duration` and the raw `model_usage` list.
 
 Two consequences worth knowing before pricing off it:
 
 - The number is what the tap **sent**, not what Sarvam reported back. Expect a small
   difference from the invoice, never a false zero.
-- It is stream time, not speech time. `SpeechGate` zeroes non-speech samples in place and
-  returns the same frame, so gated audio still goes to Sarvam and is still counted — which
-  matches how a continuously open connection is metered.
-- The 2 s of silence the tap feeds Sarvam at hangup (`DRAIN_SILENCE_S`, so the caller's last
-  sentence comes back) is pushed on a different path and is not counted.
+- It is stream time, not speech time. Non-speech audio is silenced, not removed, so it still
+  goes to Sarvam and is still counted — which matches how a continuously open connection is
+  metered.
+- The 2 s of silence sent to Sarvam at hangup (so the caller's last sentence comes back) is
+  not counted.
 
 ### Cascade mode
 
 Cascade puts the STT on the `AgentSession` as a real stage, so unlike the tap its usage does
-reach the SDK's collector — with the wrong number in it. Two pieces fix that
-(`src/core/agents/stt/cascade_usage.py`):
-
-- `DynamicAssistant.stt_node` sums the duration of every frame the session hands the STT
-  stage. Same measurement as the tap, so the same caveat applies: stream time, including
-  frames `SpeechGate` muted.
-- `MeteredSarvamSTT` drops the plugin's own `metrics_collected` before it reaches the
-  collector. It has to be dropped rather than zeroed: the collector creates an `stt_usage`
-  entry from the first metric it sees, and `summarize_usage` sums every entry, so a zeroed
-  one would sit beside the measured one and the record would report the audio twice.
+reach the SDK's collector — with the wrong number in it. So the worker measures it the same
+way as in pipeline mode, summing the duration of every frame sent to the STT stage, with the
+same caveat: stream time, including silenced frames. The plugin's own figure is discarded, so
+the audio is counted once.
 
 The other four cascade providers are left alone. Cartesia, Deepgram and ElevenLabs count
 frames themselves, and OpenAI is the only STT provider that reports billing **tokens** —
@@ -198,8 +190,7 @@ OpenAI Realtime API transcribes the caller with a separate ASR model
 every `conversation.item.input_audio_transcription.completed` event, but the LiveKit plugin's
 handler keeps the transcript and drops the usage, so it reaches no collector.
 
-`src/core/agents/stt/native_usage.py` reads it off the plugin's public raw event stream
-(`openai_server_event_received`) and hands it to `summarize_usage` as an `stt_usage` entry.
+The worker reads it off the plugin's raw event stream and stores it as an STT entry.
 The numbers are OpenAI's own, not an estimate. It is token-billed, so
 `stt_audio_duration` stays `0` and the tokens land in `stt_input_tokens` /
 `stt_output_tokens`, split further into:
@@ -225,8 +216,7 @@ columns by design.
 
 The row is written repeatedly, always to the same `room_name`:
 
-- **Every 15 s while the call runs** (`USAGE_FLUSH_INTERVAL_S` in
-  `src/core/agents/session.py`), and skipped when none of the counts moved since the last
+- **Every 15 s while the call runs**, and skipped when none of the counts moved since the last
   write — a call sitting on hold does not rewrite the same numbers.
 - **Once at teardown**, after the last transcript has landed. This is the authoritative
   write, and the only one that sets `usage_finalized` to `true`.

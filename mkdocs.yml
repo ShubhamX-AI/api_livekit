@@ -49,6 +49,17 @@ extra_css:
 
 plugins:
   - search
+  - redirects:
+      redirect_maps:
+        architecture/index.md: concepts/index.md
+        architecture/runtime-modes.md: concepts/assistant-modes.md
+        architecture/cascade-pipeline.md: concepts/cascade.md
+        architecture/duplex-mode.md: concepts/duplex.md
+        architecture/call-flows.md: concepts/call-lifecycle.md
+        architecture/meeting-calls.md: concepts/meeting-calls.md
+        architecture/audio-pipeline.md: concepts/call-lifecycle.md
+        architecture/inbound.md: concepts/call-lifecycle.md
+        architecture/dependencies.md: concepts/index.md
 
 markdown_extensions:
   - admonition
@@ -84,16 +95,13 @@ nav:
     - Web Call: getting-started/web-call.md
     - Inbound Call: getting-started/inbound.md
     - End-to-End Example: getting-started/end-to-end-example.md
-  - Architecture:
-    - Overview: architecture/index.md
-    - Runtime Modes & Startup: architecture/runtime-modes.md
-    - Container Dependencies: architecture/dependencies.md
-    - Cascade Pipeline (STT/LLM/TTS): architecture/cascade-pipeline.md
-    - Duplex Mode (GPT-Live): architecture/duplex-mode.md
-    - Call Flows & Queueing: architecture/call-flows.md
-    - Google Meet Calls: architecture/meeting-calls.md
-    - Audio Pipeline: architecture/audio-pipeline.md
-    - Inbound Routing: architecture/inbound.md
+  - How It Works:
+    - Overview: concepts/index.md
+    - Assistant Modes: concepts/assistant-modes.md
+    - Cascade Mode (STT → LLM → TTS): concepts/cascade.md
+    - Duplex Mode (GPT-Live): concepts/duplex.md
+    - Life of a Call: concepts/call-lifecycle.md
+    - Google Meet Calls: concepts/meeting-calls.md
 
   - Guides:
     - Overview: guides/index.md

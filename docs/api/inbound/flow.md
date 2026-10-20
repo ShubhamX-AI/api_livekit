@@ -52,7 +52,7 @@ Render inputs are:
 
 - Existing top-level metadata keys.
 - `call.*` namespace containing the call metadata.
-- Optional `context.*` namespace when inbound context lookup succeeds.
+- The reply of the inbound context webhook is the whole JSON object. Its keys are rendered as placeholders: a flat `{"name": "x"}` renders `{{name}}`, and a nested `{"context": {"name": "x"}}` renders `{{context.name}}`. Nothing is wrapped for you.
 
 ## Optional Strategy and Fallback Behavior
 
@@ -64,7 +64,7 @@ If `inbound_context_strategy_id` is not present:
 If `inbound_context_strategy_id` is present:
 
 - The worker tries to load the strategy and call the configured webhook.
-- The webhook must return JSON with a top-level `context` object.
+- The webhook must return a JSON object. Each key becomes a placeholder, as described above.
 - Full request/response contract is documented in [Inbound Context Strategies](../inbound-context-strategy/index.md#webhook-request-payload).
 
 If strategy loading or webhook lookup fails:

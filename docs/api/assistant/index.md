@@ -12,7 +12,7 @@ with `assistant_llm_config.provider`, the LLM vendor):
 - `realtime`: one model handles STT + LLM + TTS and speaks its own audio. Vendor `gemini` (default) or
   `openai`.
 - `cascade`: a true three-stage pipeline — plugin STT, a plain (non-realtime) LLM, plugin TTS, each a
-  separate metered stage. LLM vendor is `openai` only. See [Cascade Pipeline](../../architecture/cascade-pipeline.md).
+  separate metered stage. LLM vendor is `openai` only. See [Cascade mode](../../concepts/cascade.md).
 - `duplex`: OpenAI GPT-Live (`gpt-live-1`), which listens while it speaks and hands reasoning and tools
   to a backend reasoning model. No TTS, no STT. LLM vendor is `openai` only. See
   [Models & Providers → GPT-Live](../../reference/models.md#gpt-live-duplex-mode-only).

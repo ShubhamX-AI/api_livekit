@@ -48,8 +48,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Where to look. README is included because GitHub renders Mermaid too.
-SEARCH_ROOTS = [REPO_ROOT / "docs", REPO_ROOT / "README.md"]
+# Where to look. README and dev-docs are included because GitHub renders Mermaid too.
+SEARCH_ROOTS = [REPO_ROOT / "docs", REPO_ROOT / "dev-docs", REPO_ROOT / "README.md"]
 
 FENCE_RE = re.compile(r"^([ \t]*)```mermaid[ \t]*$", re.MULTILINE)
 

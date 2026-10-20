@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logging P1 fixes — 2026-10-20-debug-logging-p1-fixes</title>
+<style>
+  :root {
+    --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; --soft: #f9fafb; --accent: #4f46e5;
+    --crit: #991b1b; --high: #dc2626; --med: #d97706; --low: #2563eb; --info: #6b7280;
+    --ok: #059669; --ok-bg: #ecfdf5; --chg-bg: #fffbeb; --bad-bg: #fef2f2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--fg); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 40px 16px 64px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.75rem; margin: 0 0 6px; }
+  h2 { font-size: 1.2rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+  h3 { font-size: 1rem; margin: 24px 0 8px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+  .meta, .legend { color: var(--muted); font-size: .88rem; margin: 2px 0; }
+  .headline { font-size: 1.05rem; margin: 14px 0 0; }
+  .legend b, .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+  code { background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--soft); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 0; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .two, .ct { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .two, .ct { grid-template-columns: 1fr; } }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  dt { color: var(--muted); font-weight: 600; } dd { margin: 0; }
+
+  /* summary numbers */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 12px 0; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted); font-size: .85rem; }
+  .tile b { display: block; font-size: 1.6rem; color: var(--fg); }
+  .tile.crit b { color: var(--crit); } .tile.high b { color: var(--high); } .tile.med b { color: var(--med); }
+  .tile.low b { color: var(--low); } .tile.info b { color: var(--info); }
+  .sevbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+  .sevbar .crit { background: var(--crit); } .sevbar .high { background: var(--high); } .sevbar .med { background: var(--med); }
+  .sevbar .low { background: var(--low); } .sevbar .info { background: var(--info); }
+
+  /* current -> target */
+  .panel { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-height: 280px; overflow-x: auto; }
+  .panel figcaption { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  .mermaid { background: none; padding: 0; text-align: center; }
+  .adr { border-left: 3px solid var(--med); padding: 4px 12px; margin-top: 10px; }
+  .tree .add { color: var(--ok); font-weight: 600; } .tree .chg { color: var(--med); font-weight: 600; }
+  .tree .del { color: var(--info); text-decoration: line-through; } .tree .bad { color: var(--high); font-weight: 600; }
+  .tree .why { color: var(--muted); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+  .box { border: 1px solid var(--fg); border-radius: 6px; padding: 4px 10px; }
+  .box.add { border-color: var(--ok); background: var(--ok-bg); } .box.chg { border-color: var(--med); background: var(--chg-bg); }
+  .box.bad { border-color: var(--high); background: var(--bad-bg); } .box.del { border: 1px dashed var(--info); color: var(--info); text-decoration: line-through; }
+  .box.deep { border: 3px solid var(--fg); padding: 10px 12px; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { display: block; height: 4px; background: var(--accent); border-radius: 2px; margin-top: 4px; margin-left: auto; }
+  .sev { font-weight: 700; } .sev.crit { color: var(--crit); } .sev.high { color: var(--high); }
+  .sev.med { color: var(--med); } .sev.low { color: var(--low); } .sev.info { color: var(--info); }
+  .pass, .better { color: var(--ok); font-weight: 600; } .fail, .worse { color: var(--high); font-weight: 600; }
+  .finding { border-left: 3px solid var(--info); } .finding.crit { border-left-color: var(--crit); }
+  .finding.high { border-left-color: var(--high); } .finding.med { border-left-color: var(--med); } .finding.low { border-left-color: var(--low); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Logging P1 fixes</h1>
+    <p class="meta">debug (fix) · 2026-10-20 · slug <code>2026-10-20-debug-logging-p1-fixes</code> ·
+      source audit <a href="2026-10-17-audit-logging-traceability.html">2026-10-17-audit-logging-traceability</a></p>
+    <p class="meta">Trace:
+      <a href="../plans/2026-10-20-debug-logging-p1-fixes/scope.md">scope</a> ·
+      <a href="../research/2026-10-20-debug-logging-p1-fixes.md">research</a> ·
+      <a href="../plans/2026-10-20-debug-logging-p1-fixes/plan.md">plan</a> ·
+      <a href="../plans/2026-10-20-debug-logging-p1-fixes/progress.md">progress</a></p>
+    <p class="legend"><b>Legend</b> <span class="fail">red</span> = problem before · <span class="pass">green</span> = added · <span class="sev med">amber</span> = changed</p>
+    <p class="headline">The six P1 findings of the logging audit are fixed, each with a test that fails on the old code.
+      Exotel bridge processes now log (with room and pid), secrets are masked in every log line while trace ids stay readable,
+      the MongoDB password is no longer logged, and the dispatcher and SIP listener can no longer fail silently.
+      668 tests pass (646 before); no new lint violations.</p>
+  </header>
+
+  <h2>1. Summary</h2>
+  <div class="tiles">
+    <div class="tile high"><b>6</b>High findings fixed</div>
+    <div class="tile"><b>22</b>new tests</div>
+    <div class="tile"><b>668</b>tests OK</div>
+    <div class="tile"><b>0</b>new lint errors</div>
+    <div class="tile"><b>7</b>review findings closed</div>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>ID</th><th>Was</th><th>Now</th></tr>
+    <tr><td>L-01</td><td>Bridge child processes had no log handlers unless the parent's <code>__main__</code> happened to configure them; under Gunicorn every bridge INFO line was dropped.</td><td>Both entry functions call <code>setup_logging()</code> first. Proven with a forkserver probe: line appears with fix, nothing without.</td></tr>
+    <tr><td>L-02</td><td>Outbound bridge lines had no <code>call_room</code>, no pid.</td><td><code>set_room_context(room_name)</code> in the outbound entry; pid in text (<code>%(process)d</code>) and JSON (<code>"pid"</code>).</td></tr>
+    <tr><td>L-03</td><td><code>database.py:42</code> logged the full <code>MONGODB_URL</code>, password included.</td><td>Logs only the host part after the last <code>@</code>.</td></tr>
+    <tr><td>L-05</td><td>One MongoDB error in the dispatcher loop ended outbound dispatch with nothing logged.</td><td>Startup pass and each tick guarded and logged with traceback; <code>log_dispatcher_exit</code> logs CRITICAL if the task ever dies.</td></tr>
+    <tr><td>L-06</td><td>SIP bind failure logged one line without a traceback and the process ran on deaf.</td><td>Traceback always; <code>sip_dispatcher_run.py</code> passes <code>required=True</code> and exits so Docker restarts it. The API process keeps serving.</td></tr>
+    <tr><td>L-09</td><td>Raw exception text (submitted API keys, emails) reached the log files while the HTTP body was redacted.</td><td>One <code>_RedactingFilter</code> on every handler runs <code>redact_log_text</code> over message and traceback.</td></tr>
+  </table></div>
+
+  <h2>2. Scope</h2>
+  <dl>
+    <dt>In</dt><dd>L-01, L-02, L-03, L-05, L-06, L-09 of the 2026-10-17 audit.</dd>
+    <dt>Out</dt><dd>All other findings (L-04, L-07, L-08, L-10 – L-28) and the unrelated observations.</dd>
+    <dt>Constraints</dt><dd>No behaviour change beyond each fix; no new dependencies; public API unchanged; nothing committed.</dd>
+    <dt>Decisions</dt><dd>L-06: crash the dedicated dispatcher only. L-09: one global log filter. (User, recorded in <code>scope.md</code>.)</dd>
+  </dl>
+
+  <h2>3. Method</h2>
+  <p>core-be-workflow → core-be-debug: each finding re-read at its <code>file:line</code>, fixed at the narrowest layer, with a regression
+    test that was run against the old code (by stashing the fix) to prove it fails there. The bridge fix was additionally proven with a
+    real forkserver child started from a <code>__main__</code> that never configures logging. Two subagents reviewed the diff:
+    a fresh-context correctness reviewer and a simplicity reviewer; their findings and what was done are in section 6.</p>
+
+  <h2>4. Current → Target</h2>
+  <div class="ct">
+    <figure class="panel"><figcaption>Before</figcaption>
+      <div class="row"><span class="box">route / worker / bridge</span> → <span class="box bad">raw <code>{e}</code>, traceback</span> → <span class="box">handler</span> → <span class="box bad">stdout + LOG_FILE (secrets)</span></div>
+      <div class="row"><span class="box">Gunicorn → dispatcher</span> → <span class="box bad">forkserver bridge child: no handlers</span> → <span class="box bad">lines dropped</span></div>
+      <div class="row"><span class="box">dispatcher task</span> → <span class="box bad">exception, never awaited</span> → <span class="box bad">silent stop</span></div>
+      <div class="row"><span class="box">SIP bind fails</span> → <span class="box bad">1 line, runs on deaf</span></div>
+    </figure>
+    <figure class="panel"><figcaption>After</figcaption>
+      <div class="row"><span class="box">route / worker / bridge</span> → <span class="box add"><code>_RedactingFilter</code></span> → <span class="box">handler (+ LiveKit's)</span> → <span class="box add">masked; ids kept</span></div>
+      <div class="row"><span class="box">any parent</span> → <span class="box chg">bridge entry: <code>setup_logging()</code> + room</span> → <span class="box add">lines with pid + call_room</span></div>
+      <div class="row"><span class="box">dispatcher tick</span> → <span class="box chg">guarded, ERROR + traceback</span> → <span class="box add">next tick runs</span> · <span class="box add">exit callback: CRITICAL</span></div>
+      <div class="row"><span class="box">SIP bind fails</span> → <span class="box chg">traceback</span> → <span class="box add">dispatcher exits, Docker restarts</span></div>
+    </figure>
+  </div>
+  <div class="adr"><b>Why a log-only redactor.</b> <code>redact_text</code> masks every 32+ character token. That would also mask
+    <code>queue_id</code> (32 hex), every UUID id and the SIP Call-ID — the ids calls are traced by. <code>redact_log_text</code> keeps the same rules
+    but lets a token through when it contains such an id and nothing credential-sized is left beside it. Longer hex secrets
+    (40-hex Deepgram key, <code>sk_</code>+hex, 64-hex signatures) are still masked, and URL credentials (<code>scheme://user:pass@</code>) are masked too.
+    HTTP error bodies keep using <code>redact_text</code>, unchanged.</div>
+
+  <h2>5. Changes</h2>
+  <div class="table-wrap"><table>
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>src/core/providers/keys.py</code></td><td><code>redact_log_text</code>, <code>_URL_USERINFO</code>, <code>_TRACE_ID</code>, <code>_OPAQUE_RUN</code>; <code>redact_text</code> split into <code>_redact_labelled</code> + long-token pass with identical output.</td></tr>
+    <tr><td><code>src/core/logger.py</code></td><td><code>_RedactingFilter</code> on both handlers; clears <code>exc_info</code> after masking so LiveKit's CLI formatter cannot re-render the raw traceback; JSON reads <code>exc_text</code> (forwarded job-process tracebacks now appear too); pid in both formats.</td></tr>
+    <tr><td><code>src/core/db/database.py</code></td><td>Connect line logs host only.</td></tr>
+    <tr><td><code>custom_sip_reach/bridge.py</code>, <code>inbound_worker.py</code></td><td><code>setup_logging()</code> in the subprocess entries; outbound also <code>set_room_context</code>.</td></tr>
+    <tr><td><code>outbound_dispatcher/dispatcher.py</code>, <code>__init__.py</code></td><td>Guarded startup and tick; <code>log_dispatcher_exit</code> exported.</td></tr>
+    <tr><td><code>custom_sip_reach/inbound_listener.py</code></td><td><code>ensure_inbound_server(*, required=False)</code>; traceback on bind failure.</td></tr>
+    <tr><td><code>sip_dispatcher_run.py</code>, <code>src/api/server.py</code></td><td>Exit callback on the dispatcher task; dedicated dispatcher passes <code>required=True</code>.</td></tr>
+    <tr><td><code>tests/test_logging.py</code></td><td>New, 22 tests.</td></tr>
+    <tr><td><code>docs/reference/troubleshooting.md</code></td><td>New section "Outbound calls stay queued, or inbound calls are never answered".</td></tr>
+  </table></div>
+
+  <h2>6. Verification</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Check</th><th>Before</th><th>After</th></tr>
+    <tr><td><code>uv run python -m unittest discover -s tests</code></td><td>646 OK</td><td class="pass">668 OK</td></tr>
+    <tr><td>New tests against the old code (fix stashed)</td><td>—</td><td class="pass">each group fails</td></tr>
+    <tr><td><code>uvx ruff check</code> on touched files</td><td>67 pre-existing</td><td class="pass">no new; 3 intentional broad catches carry <code>noqa: BLE001</code> with a reason</td></tr>
+    <tr><td>Forkserver probe, parent never configures logging</td><td class="fail">bridge line dropped</td><td class="pass">JSON line with <code>pid</code>, <code>call_room</code></td></tr>
+    <tr><td><code>uv run mkdocs build --strict</code> / <code>check_mermaid.py</code></td><td>—</td><td class="pass">OK / 21 checked, 0 broken</td></tr>
+  </table></div>
+  <h3>Review findings (fresh-context reviewer)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Sev</th><th>Finding</th><th>Outcome</th></tr>
+    <tr><td class="sev med">Medium</td><td>Any pure lowercase-hex token passed the log redactor (40-hex, <code>sk_</code>+hex, 64-hex).</td><td class="pass">Fixed: anchored ids + no 16+ opaque remainder; negative tests.</td></tr>
+    <tr><td class="sev med">Medium</td><td>LiveKit CLI handler re-renders <code>exc_info</code> unmasked in the worker main process.</td><td class="pass">Fixed: filter clears <code>exc_info</code>; tested.</td></tr>
+    <tr><td class="sev low">Low</td><td>Uppercase UUIDs masked.</td><td class="pass">Fixed: case-insensitive.</td></tr>
+    <tr><td class="sev low">Low</td><td><code>redis://:pw@host</code> not masked.</td><td class="pass">Fixed.</td></tr>
+    <tr><td class="sev low">Low</td><td><code>urlsplit</code> can raise on a bad IPv6 netloc.</td><td class="pass">Fixed: plain string split.</td></tr>
+    <tr><td class="sev low">Low</td><td>Two comments overstated behaviour.</td><td class="pass">Reworded.</td></tr>
+    <tr><td class="sev low">Low</td><td><code>extra=</code> attributes and dict <code>msg</code> not redacted.</td><td>Recorded; nothing in <code>src/</code> uses either today.</td></tr>
+  </table></div>
+
+  <h2>7. Out-of-scope observations and next tasks</h2>
+  <ul>
+    <li><b>Security, do now:</b> rotate the MongoDB password. Every process start before this change wrote it to stdout and the log files.</li>
+    <li><b>Security:</b> <code>POST /auth/create-key</code> is unauthenticated (<code>src/api/routes/auth.py:13-14</code>), from the audit; still open.</li>
+    <li>Residual: a provider key that is itself exactly UUID-shaped, logged with no label, passes the log filter.</li>
+    <li>Gunicorn's own error-log handlers are not covered by the filter.</li>
+    <li>Next from the audit: feature task for request tracing (L-04, L-11, L-12); fix task for worker lifecycle (L-07, L-08, L-18).</li>
+  </ul>
+
+  <h2>8. Docs updated</h2>
+  <p><code>docs/reference/troubleshooting.md</code> only. README unchanged: no env variable, endpoint, script or folder changed.
+    <code>AGENTS.md</code> / <code>CLAUDE.md</code> already carry the pack registration.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+- 2026-10-20 Fix task (user request): upload memory + the 11 High findings of `reports/2026-10-20-audit-public-docs.html`.
+  - Security: `src/api/routes/audio.py` reads at most `MAX_UPLOAD_BYTES + 1` bytes; a larger file is refused with 400 before it is held in memory. Regression test `tests/test_audio_upload_limit.py` (2 tests).
+  - H1 `docs/api/calls/web-call.md`, `docs/getting-started/web-call.md`: agent replies on `lk.transcription`; client sends on `lk.chat`; handler filters to agent participant.
+  - H2 `src/api/routes/web_call.py` returns `data.livekit_url` (from `settings.LIVEKIT_URL`); docs show `room.connect(data.livekit_url, data.token)`; 503 and `agent_dispatch` documented.
+  - H3 Twilio trunk bodies in `getting-started/outbound-sip.md`, `end-to-end-example.md` use `trunk_config`.
+  - H4 error examples rewritten to the real envelope (`create.md`, inbound-context pages, `sip/deactivate.md`); status tables on assistant create/update, tools attach/detach/create, trigger, sip create, inbound-context create/update moved schema errors to 422. Not every table on every page was touched (e.g. `inbound/manage.md` 400 row left).
+  - H5 `attach-tools` → `POST /tool/attach/{assistant_id}` in the live error string (`capabilities.py`), comments, `errors.md`, test comment.
+  - H6 ElevenLabs unread settings: "rejected with 422". H7 tool webhook timeout default 30.
+  - H8 inbound context reply: whole JSON object, flat keys → `{{name}}`, nested → `{{context.name}}`.
+  - H9 passthrough webhook documented as Exotel-only (docs side; the Twilio code path is unchanged and is a follow-up).
+  - H10 `sip/list.md` fields match the route; removed the nonexistent "trunk detail API" line.
+  - H11 MCP `instructions` and `api/mcp.md` no longer promise container/deployment content; version text 1.6.0.
+  - Verified: 670 tests OK; `mkdocs build --strict` passes; Mermaid 39 diagrams 0 broken; ruff counts unchanged on touched files.
+  - Not done: Medium items; the `livekit_url` addition has no unit test (needs a web-call route test with mocked LiveKit).

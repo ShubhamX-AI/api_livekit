@@ -58,7 +58,7 @@ log line:
 | A knob the model cannot read | `assistant_llm_config.temperature is not supported by model 'gpt-5-mini' — reasoning models reject temperature — set reasoning_effort instead.` |
 | A knob **value** the model refuses | `OpenAI rejected this configuration for model 'gpt-5-mini': Unsupported value: 'reasoning.effort' does not support 'none' with this model. (param: reasoning.effort)` |
 | A `service_tier` the model cannot use | `assistant_llm_config.service_tier is not supported by model 'gpt-4.1-nano' — 'flex' is a gpt-5 generation tier …` |
-| `tool_choice: "required"` with no tools attached | `… needs at least one tool — attach a tool (POST /assistant/attach-tools) or enable assistant_end_call_enabled, or use 'auto'` |
+| `tool_choice: "required"` with no tools attached | `… needs at least one tool — attach a tool (POST /tool/attach/{assistant_id}) or enable assistant_end_call_enabled, or use 'auto'` |
 | An STT/TTS model id that does not exist | `'deepgram' does not have a STT model called 'nova-9' — choose one of: …` |
 | A Sarvam speaker the pinned model cannot use | `'anushka' is a bulbul:v2 speaker and this platform runs bulbul:v3, whose roster shares no names with v2 — …` |
 | A voice from the other vendor's roster | `assistant_llm_config.voice 'Puck' is a Gemini Live voice and cannot be used with provider 'openai' — …` |

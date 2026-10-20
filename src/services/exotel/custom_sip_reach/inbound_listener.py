@@ -125,8 +125,14 @@ def unregister_call_id(key: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-async def ensure_inbound_server():
-    """Start the inbound SIP listener (once, idempotent). Must be called from the main loop."""
+async def ensure_inbound_server(*, required: bool = False):
+    """Start the inbound SIP listener (once, idempotent). Must be called from the main loop.
+
+    required=True re-raises a bind failure. The dedicated SIP dispatcher passes it: without the
+    listener every inbound INVITE, BYE and CANCEL is lost, so exiting (and being restarted by
+    Docker) beats running on. The API process leaves it False — with several Gunicorn workers
+    only the first can bind, and the rest must keep serving HTTP.
+    """
     global _inbound_server
     if not INBOUND_SIP_LISTEN:
         return
@@ -142,7 +148,11 @@ async def ensure_inbound_server():
                 EXOTEL_CUSTOMER_SIP_PORT,
             )
         except Exception as e:
-            logger.error(f"[SIP-IN] Failed to bind {EXOTEL_CUSTOMER_SIP_PORT}: {e}")
+            logger.error(
+                f"[SIP-IN] Failed to bind {EXOTEL_CUSTOMER_SIP_PORT}: {e}", exc_info=True
+            )
+            if required:
+                raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────

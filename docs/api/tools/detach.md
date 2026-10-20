@@ -34,7 +34,7 @@ Remove a set of tools from a specific assistant.
 | Code | Description                                         |
 | :--- | :-------------------------------------------------- |
 | 200  | Success - Tools detached successfully.              |
-| 400  | Bad Request - Invalid input (empty tool_ids array). |
+| 422  | Validation error - `tool_ids` is empty or malformed. |
 | 401  | Unauthorized - Invalid or missing Bearer token.     |
 | 404  | Not Found - Assistant not found.                    |
 | 500  | Server Error - Internal server error.               |

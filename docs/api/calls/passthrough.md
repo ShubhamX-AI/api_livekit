@@ -313,36 +313,7 @@ Queue state lifecycle: `pending → dispatching → dispatched` or `failed`.
 
 ## Step 5 — Receive the End-of-Call Webhook
 
-If `passthrough_webhook_url` is set on the trunk, a POST fires on **every terminal outcome**.
-
-=== "Twilio — Completed"
-
-    ```json
-    {
-      "success": true,
-      "message": "Call details fetched successfully",
-      "data": {
-        "room_name": "passthrough_abc123def456",
-        "queue_id": "8b7df5ea0fdc497ea4f44bd31954a387",
-        "assistant_id": null,
-        "assistant_name": null,
-        "is_passthrough": true,
-        "to_number": "+15550200000",
-        "call_status": "completed",
-        "call_status_reason": null,
-        "answered_at": "2024-01-15T10:00:05.000Z",
-        "recording_path": "https://your-bucket.s3.amazonaws.com/recordings/passthrough_abc123.ogg",
-        "transcripts": [],
-        "started_at": "2024-01-15T10:00:00.000Z",
-        "ended_at": "2024-01-15T10:05:30.000Z",
-        "call_duration_minutes": 5.42,
-        "billable_duration_minutes": 6,
-        "call_type": "outbound",
-        "call_service": "twilio",
-        "platform_number": "+15550100000"
-      }
-    }
-    ```
+If `passthrough_webhook_url` is set on an **Exotel** trunk, a POST fires on every terminal outcome. Twilio passthrough calls do not send this webhook yet: a Twilio passthrough call gets no POST; the orphan reaper eventually marks it `failed`. Poll `GET /call/records` for its final state.
 
 === "Exotel — Completed"
 
@@ -409,7 +380,7 @@ If `passthrough_webhook_url` is set on the trunk, a POST fires on **every termin
     - `transcripts` is always `[]` — no STT
     - `is_passthrough: true` — use to identify passthrough records
     - `usage` field is absent — no LLM/TTS consumed
-    - Webhook fires on **all** outcomes including `busy`, `no_answer`, `timeout`, `failed`
+    - Webhook fires on **all** outcomes including `busy`, `no_answer`, `timeout`, `failed` for Exotel trunks only (see Step 5)
     - `call_duration_minutes` measured from `answered_at` (not `started_at`) so ringing time is excluded
 
 ---

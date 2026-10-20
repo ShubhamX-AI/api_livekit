@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 from multiprocessing import current_process
 
 from src.core.config import settings
+from src.core.providers.keys import redact_log_text
 
 # Two-layer room context.
 #
@@ -70,8 +71,12 @@ class ColoredFormatter(logging.Formatter):
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
 
-    # Format: Time - LoggerName - Level - Message (File:Line)
-    format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+    # Format: Time - Pid - LoggerName - Level - Message (File:Line)
+    # The pid tells concurrent bridge processes apart: each Exotel call is its own process.
+    format_str = (
+        "%(asctime)s - %(process)d - %(name)s - %(levelname)s - %(message)s "
+        "(%(filename)s:%(lineno)d)"
+    )
 
     FORMATS = {
         logging.DEBUG: grey + format_str + reset,
@@ -109,17 +114,50 @@ class JsonFormatter(logging.Formatter):
             "module": record.module,
             "file": record.filename,
             "line": record.lineno,
+            "pid": record.process,
             "call_room": getattr(record, "call_room", None),
         }
 
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
+        # _RedactingFilter leaves the masked traceback in exc_text and clears exc_info;
+        # records forwarded from a LiveKit job process arrive the same way.
+        if record.exc_text or record.exc_info:
+            log_entry["exception"] = record.exc_text or self.formatException(record.exc_info)
 
         for key, value in record.__dict__.items():
             if key not in _STANDARD_RECORD_FIELDS and key not in log_entry:
                 log_entry[key] = value
 
         return json.dumps(log_entry, default=str)
+
+
+class _RedactingFilter(logging.Filter):
+    """Mask secrets in the message and traceback before a handler writes the record.
+
+    Exception text is the usual carrier: a pydantic error echoes a submitted api_key, a
+    driver error echoes its connection string. Doing it here, once per handler, means no
+    call site has to remember `redact_log_text`. The record is rewritten in place, so every
+    handler after this one (including the LiveKit CLI's own root handler in the worker)
+    writes the masked text; masking twice is harmless.
+
+    `exc_info` is cleared once the masked traceback is in `exc_text`: formatters, LiveKit's
+    included, re-render `exc_info` when it is set and would print the unmasked original.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 — any error in user %-args belongs to handleError
+            # Bad %-args: leave the record alone so the handler's own emit path reports
+            # it through handleError, exactly as it did before this filter existed.
+            return True
+        record.msg = redact_log_text(message)
+        record.args = None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        record.exc_info = None
+        if record.exc_text:
+            record.exc_text = redact_log_text(record.exc_text)
+        return True
 
 
 _logging_configured = False
@@ -150,11 +188,15 @@ def setup_logging() -> None:
     if current_process().name == _LIVEKIT_JOB_PROC_NAME:
         return
 
+    # On handlers, not loggers: propagated records skip parent-logger filters.
+    redacting_filter = _RedactingFilter()
+
     handler = logging.StreamHandler(sys.stdout)
     if settings.LOG_JSON_FORMAT:
         handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
     else:
         handler.setFormatter(ColoredFormatter())
+    handler.addFilter(redacting_filter)
     root_logger.addHandler(handler)
 
     if settings.LOG_FILE:
@@ -164,6 +206,7 @@ def setup_logging() -> None:
             backupCount=settings.LOG_BACKUP_COUNT,
         )
         file_handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
+        file_handler.addFilter(redacting_filter)
         root_logger.addHandler(file_handler)
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

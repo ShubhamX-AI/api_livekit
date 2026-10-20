@@ -111,7 +111,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
         | :--- | :--- | :--- | :--- |
         | `voice_id` | string | Yes | ElevenLabs voice ID. |
         | `model` | string | No | TTS model. Default: `eleven_v3`. Also `eleven_v3_conversational`, `eleven_v4`, `eleven_v4_turbo`, `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`. |
-        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. **Most models read only some of these.** `eleven_v3` (the default) reads only `stability`; `eleven_v3_conversational` adds `use_speaker_boost`; `eleven_v4` / `eleven_v4_turbo` read `stability` and `similarity_boost`; `eleven_turbo_v2_5` / `eleven_flash_v2_5` read all but `style` and `use_speaker_boost`; only `eleven_multilingual_v2` reads all five. The rest are accepted, then dropped before the call and logged. Table: [Models & Providers → TTS](../../reference/models.md#tts). On the v3 models, `stability` reads as three modes: `0.0` creative, `0.5` natural, `1.0` robust. |
+        | `voice_settings` | object | No | Voice tuning: `{ "stability": 0–1, "similarity_boost": 0–1, "style": 0–1, "speed": 0.25–4.0, "use_speaker_boost": bool }`. **Most models read only some of these.** `eleven_v3` (the default) reads only `stability`; `eleven_v3_conversational` adds `use_speaker_boost`; `eleven_v4` / `eleven_v4_turbo` read `stability` and `similarity_boost`; `eleven_turbo_v2_5` / `eleven_flash_v2_5` read all but `style` and `use_speaker_boost`; only `eleven_multilingual_v2` reads all five. The rest are rejected with `422`; the API names the settings a model does not read. Table: [Models & Providers → TTS](../../reference/models.md#tts). On the v3 models, `stability` reads as three modes: `0.0` creative, `0.5` natural, `1.0` robust. |
         | `api_key` | string | No | Optional ElevenLabs API key. Falls back to system `ELEVENLABS_API_KEY`. |
 
     === "Mistral"
@@ -212,7 +212,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
     A true three-stage pipeline: plugin STT → plain OpenAI chat model → plugin TTS. Each stage is
     separately metered, so this is the only mode that reports STT cost on its own. Full detail in
-    [Cascade Pipeline](../../architecture/cascade-pipeline.md).
+    [Cascade mode](../../concepts/cascade.md).
 
     **Required fields**
 
@@ -321,13 +321,17 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
         ```json title="422 response"
         {
-          "detail": [
-            {
-              "type": "value_error",
-              "loc": ["body", "assistant_llm_config"],
-              "msg": "Value error, assistant_llm_config.temperature is not supported by model 'gpt-5-mini' — reasoning models reject temperature — set reasoning_effort instead. See docs/reference/compatibility.md."
-            }
-          ]
+          "success": false,
+          "message": "Validation Error: body: Value error, assistant_llm_config.temperature is not supported by model 'gpt-5-mini' — reasoning models reject temperature — set reasoning_effort instead. See docs/reference/compatibility.md.",
+          "data": {
+            "errors": [
+              {
+                "type": "value_error",
+                "loc": ["body"],
+                "msg": "Value error, assistant_llm_config.temperature is not supported by model 'gpt-5-mini' — reasoning models reject temperature — set reasoning_effort instead. See docs/reference/compatibility.md."
+              }
+            ]
+          }
         }
         ```
 
@@ -343,7 +347,9 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
 
         ```json title="422 — the account cannot serve this model"
         {
-          "detail": "assistant_llm_config.model 'gpt-5.2-chat-latest' cannot be used — the OpenAI account for this key does not serve it. Either the model has been retired by OpenAI or this account has no access to it. Pick a model the account serves — `uv run python scripts/check_model_allowlist.py` lists them. Storing it would produce a call that connects and then stays silent, because OpenAI rejects every turn."
+          "success": false,
+          "message": "assistant_llm_config.model 'gpt-5.2-chat-latest' cannot be used — the OpenAI account for this key does not serve it. Either the model has been retired by OpenAI or this account has no access to it. Pick a model the account serves — `uv run python scripts/check_model_allowlist.py` lists them. Storing it would produce a call that connects and then stays silent, because OpenAI rejects every turn.",
+          "data": {}
         }
         ```
 
@@ -611,10 +617,14 @@ These sound settings are assistant defaults and apply to runtime sessions starte
 | Code | Description |
 | :--- | :--- |
 | 200 | Assistant created successfully. |
-| 400 | Validation or payload mismatch error. |
-| 401 | Unauthorized. |
+| 400 | The configuration is well-formed but conflicts with another setting (for example, a stored tool or greeting reference that cannot be used with this mode). `message` says which. |
+| 401 | Unauthorized: missing or invalid Bearer key. |
+| 404 | `assistant_greeting_audio.audio_id` does not name an active audio asset owned by the caller. |
+| 422 | Validation error: a field is out of range, has an unknown value, or a model, voice or knob is refused. The `data.errors` list gives each field's `loc` and `msg`. |
 | 500 | Internal server error. |
 
 ## API Keys
 
 Provider keys are stored as sent — they are not checked against the provider, so a wrong key first shows up as a failure during a call. Every `api_key` is returned masked by `GET /assistant/details` and `GET /assistant/list`, and sending a masked value back is rejected with `422`.
+
+Filler words are always generated by OpenAI. They use the assistant's `assistant_llm_config.api_key` only when the LLM provider is `openai`; otherwise they use the system `OPENAI_API_KEY`.

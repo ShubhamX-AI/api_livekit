@@ -54,9 +54,13 @@ async def lifespan(app: FastAPI):
         await ensure_inbound_server()
 
     if os.getenv("ENABLE_DISPATCHER", "true").lower() == "true":
-        from src.services.outbound_dispatcher import outbound_dispatcher_loop
+        from src.services.outbound_dispatcher import (
+            log_dispatcher_exit,
+            outbound_dispatcher_loop,
+        )
 
         dispatcher_task = asyncio.create_task(outbound_dispatcher_loop())
+        dispatcher_task.add_done_callback(log_dispatcher_exit)
 
     # Starlette does not propagate lifespan into mounted sub-apps, so the MCP
     # streamable-HTTP session manager has to be started here or /mcp 500s.

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Public Docs Audit</title>
+<style>
+  :root { --fg:#1f2937; --muted:#6b7280; --line:#e5e7eb; --soft:#f9fafb; --accent:#4f46e5;
+          --high:#dc2626; --med:#d97706; --low:#2563eb; --sec:#7c2d12; --ok:#16a34a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; color:var(--fg); font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:26px; margin:0 0 4px; } h2 { font-size:19px; margin:40px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  code { font:13px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--soft); padding:1px 4px; border-radius:4px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; } th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; } th { background:var(--soft); }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin:16px 0; }
+  .tile { border:1px solid var(--line); border-radius:10px; padding:12px 14px; } .tile b { display:block; font-size:26px; } .tile span { color:var(--muted); font-size:13px; }
+  .t-high b{color:var(--high)} .t-med b{color:var(--med)} .t-low b{color:var(--low)} .t-sec b{color:var(--sec)} .t-ok b{color:var(--ok)}
+  .sevbar { display:flex; height:10px; border-radius:6px; overflow:hidden; margin:4px 0 20px; } .sevbar div { height:100%; }
+  .pill { display:inline-block; font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px; color:#fff; white-space:nowrap; }
+  .p-high{background:var(--high)} .p-med{background:var(--med)} .p-low{background:var(--low)} .p-sec{background:var(--sec)}
+  .verdict { font-size:17px; border-left:4px solid var(--accent); padding:10px 14px; background:var(--soft); border-radius:0 8px 8px 0; }
+  .yes{color:var(--ok);font-weight:600} .no{color:var(--high);font-weight:600} .part{color:var(--med);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Public docs audit (MkDocs + MCP)</h1>
+<p class="sub">Slug <code>2026-10-20-audit-public-docs</code> · 2026-10-20 · target <code>docs/</code> as served by MkDocs and by <code>/mcp</code> · report only</p>
+
+<h2>Summary</h2>
+<p class="verdict"><b>The structure is complete; the accuracy is not.</b> Every route has a page, every page is in the nav, and the MCP serves all 96 pages. The reference pages (models, pricing, defaults) match the code. But an integrator who follows the docs exactly hits a wall on the first day in several places. The trunk example in Getting Started returns 422. A web chat client listens on the wrong topic and never sees a reply. Error bodies are shown in a shape the API never sends. And a web client cannot learn which LiveKit server to connect to.</p>
+
+<div class="tiles">
+  <div class="tile t-high"><b>11</b><span>High: integrator breaks</span></div>
+  <div class="tile t-med"><b>22</b><span>Medium: needed info missing or wrong</span></div>
+  <div class="tile t-low"><b>~25</b><span>Low: cosmetic</span></div>
+  <div class="tile t-sec"><b>3</b><span>Security observations (code)</span></div>
+</div>
+<div class="sevbar" aria-label="11 high, 22 medium, 25 low"><div style="width:19%;background:var(--high)"></div><div style="width:38%;background:var(--med)"></div><div style="width:43%;background:var(--low)"></div></div>
+
+<p><b>Fix first:</b> the web chat topic and LiveKit URL (H1, H2), the Getting Started trunk body (H3), and the error envelope and status codes across all pages (H4).</p>
+
+<h2>What is already right</h2>
+<ul>
+  <li>Nav covers every <code>.md</code> under <code>docs/</code>. All 50 routes have a page. The MCP indexes 96 pages, and <code>list_docs</code>, <code>get_doc</code> and <code>search_docs</code> work.</li>
+  <li>All 7 create and 6 update example bodies on the assistant pages pass the real Pydantic schemas.</li>
+  <li><code>pricing.md</code> lists every rate key; <code>models.md</code> lists every model id except three OpenAI STT ids. Every factory default matches.</li>
+  <li>The end-call webhook's retry and timeout rules, end reasons and statuses; the tool webhook's request and reply handling; the inbound-context request and fallbacks; queue status; meeting call; and auth (401/403).</li>
+</ul>
+
+<h2>High: an integrator following the docs breaks</h2>
+<table>
+<tr><th>#</th><th>Where</th><th>Docs say</th><th>Code does</th><th>Fix</th></tr>
+<tr><td>H1</td><td><code>api/calls/web-call.md:63-72</code>, <code>getting-started/web-call.md:45</code></td><td>Agent replies come back on <code>lk.chat</code>; the example listens there</td><td>Replies and transcripts are published on <code>lk.transcription</code> (SDK <code>TOPIC_TRANSCRIPTION</code>). <code>lk.chat</code> is input only.</td><td>Send on <code>lk.chat</code>, receive on <code>lk.transcription</code>, filter out the user's own lines</td></tr>
+<tr><td>H2</td><td><code>api/calls/web-call.md</code>, <code>getting-started/web-call.md:26</code></td><td><code>room.connect("wss://your-livekit-server", token)</code></td><td><code>get_token</code> returns <code>room_name</code>, <code>token</code>, <code>agent_dispatch</code>, with no server URL. An outside client cannot find it.</td><td>Return a public <code>livekit_url</code> (code) or state it; add a minimal client recipe: mic, remote audio, <code>startAudio()</code></td></tr>
+<tr><td>H3</td><td><code>getting-started/outbound-sip.md:15-21</code>, <code>end-to-end-example.md:66-72</code></td><td>Flat <code>trunk_address</code>, <code>trunk_numbers</code>, …</td><td><code>CreateOutboundTrunk</code> requires a <code>trunk_config</code> object, so the request gets 422</td><td>Use the shape from <code>api/sip/create.md</code></td></tr>
+<tr><td>H4</td><td>assistant create/update, tools, attach/detach, sip, inbound, inbound-context-strategy pages</td><td>Errors as <code>{"detail": …}</code>; schema errors listed as 400</td><td>Every error uses the envelope <code>{"success":false,"message":…,"data":{"errors":[…]}}</code>; schema errors are 422</td><td>Rewrite the error examples; add 422 to every status table</td></tr>
+<tr><td>H5</td><td><code>api/errors.md:61</code>; live string in <code>src/core/model_support/capabilities.py:366</code></td><td>"attach a tool (<code>POST /assistant/attach-tools</code>)"</td><td>No such route; the real one is <code>POST /tool/attach/{assistant_id}</code></td><td>Fix the API error string and the doc</td></tr>
+<tr><td>H6</td><td><code>api/assistant/create.md:114</code></td><td>Unread ElevenLabs <code>voice_settings</code> are dropped and logged</td><td>They are rejected with 422</td><td>Say 422</td></tr>
+<tr><td>H7</td><td><code>api/tools/create.md:143</code></td><td>Webhook <code>timeout</code> default 10</td><td>Default 30 (<code>tool_builder.py:178</code>)</td><td>30</td></tr>
+<tr><td>H8</td><td><code>api/inbound/{flow,index,manage}.md</code></td><td>The context webhook must return a <code>context</code> object</td><td>Any JSON object is spread flat; the strategy page is right</td><td>Align with <code>inbound-context-strategy/index.md</code></td></tr>
+<tr><td>H9</td><td><code>api/calls/passthrough.md:316-345</code></td><td>The passthrough webhook fires on every outcome; a Twilio example is shown</td><td>Only Exotel passthrough sends it. Twilio passthrough is later reaped as <code>failed</code> with no webhook.</td><td>Document as Exotel-only, or fix the code</td></tr>
+<tr><td>H10</td><td><code>api/sip/list.md:150-191</code></td><td><code>trunk_type</code>, <code>trunk_created_at</code> are returned; a "trunk detail API" exists</td><td>Only <code>trunk_id</code>, <code>trunk_name</code>, <code>trunk_created_by_email</code> are returned; there is no detail route</td><td>Fix the table and example</td></tr>
+<tr><td>H11</td><td><code>src/api/mcp_docs.py:126-129</code>, <code>api/mcp.md:11,243</code></td><td>The MCP promises "container deployment" content</td><td>That content moved to <code>dev-docs/</code> today, and the MCP does not serve it. <b>A leftover of the docs split.</b></td><td>Drop it from the instructions and from <code>mcp.md</code></td></tr>
+</table>
+
+<h2>Medium: information an integrator or agent needs</h2>
+<table>
+<tr><th>Topic</th><th>Gap</th></tr>
+<tr><td>Base URL, OpenAPI</td><td>No page states the base URL, how to swap it for a self-hosted deployment, or that <code>/openapi.json</code> and Swagger <code>/docs</code> exist. <code>changelog.md:3</code> mis-names <code>/docs</code> as the version source.</td></tr>
+<tr><td>Errors page</td><td><code>api/errors.md</code> is missing 202/403/409/503, lists 502/504 that nothing raises, omits <code>data.errors</code> on 422, and no page links to it.</td></tr>
+<tr><td>Rate limits</td><td>Documented nowhere. The real answer: no per-key limit; web and meeting calls get 503 at capacity; outbound calls are queued.</td></tr>
+<tr><td>End-call webhook</td><td>Unsigned, and the docs don't say so. The payload table misses <code>usage.estimated_cost_usd</code>, <code>pricing_*</code> and <code>unpriced_model_usage</code>; <code>recording_egress_id</code> is sent but not listed. <code>usage.mode</code> omits <code>duplex</code>. Backoff is 1/2/4/8 s.</td></tr>
+<tr><td>Web call</td><td>The <code>text_only</code> rule is wrong: cascade is allowed, realtime and duplex are rejected. The 503 at capacity and <code>data.agent_dispatch</code> are undocumented.</td></tr>
+<tr><td>Assistant get / tools get / audio get</td><td><code>duplex</code> and seven returned fields are missing from <code>assistant/get.md</code>; tool and audio responses each miss fields.</td></tr>
+<tr><td>STT language</td><td>Deepgram and OpenAI fall back to <code>multi</code> / language detection, not <code>en</code>. Cartesia takes ISO 639-1, defaults to None, and <code>ink-2</code> is missing.</td></tr>
+<tr><td>Update rules</td><td>The gemini → cascade example in <code>update.md:208</code> is wrong; the stored config is cleared, not refused.</td></tr>
+<tr><td>Tools</td><td><code>url</code> and <code>value</code> are documented as required but not validated; such a tool is silently skipped at call time.</td></tr>
+<tr><td>Inbound numbers</td><td>Normalized numbers look like <code>08044319240</code>, not <code>918044319240</code>. <code>caller_number</code> is the raw SIP user, or <code>"Unknown"</code>. The context-webhook timeout applies per phase, not as a total.</td></tr>
+<tr><td>Outbound</td><td>A passthrough trunk is not refused by <code>/call/outbound</code>. <code>best-practices.md</code> status table is wrong. <code>calls/flow.md:76,78</code> capacity and load numbers are stale. Passthrough <code>metadata</code> is not stored on the record.</td></tr>
+<tr><td>Analytics / admin</td><td>The token pages are prose stubs: no response schema, missing cost and STT fields, and an empty range returns <code>{}</code>.</td></tr>
+<tr><td><code>features.md</code></td><td>Still says "polls every 2 seconds" and "65 % CPU", keeps the Docker/<code>deploy.sh</code> section, and promises "architecture diagrams". <b>Leftovers of the docs split.</b></td></tr>
+<tr><td>Models</td><td><code>gpt-transcribe</code>, <code>gpt-4o-transcribe-diarize</code> and <code>gpt-4o-mini-transcribe-2025-12-15</code> are missing from <code>models.md</code>.</td></tr>
+<tr><td>MCP search</td><td>"error response format" does not surface <code>errors.md</code>; "rate limits", "base URL" and "OpenAPI" have no page to find.</td></tr>
+<tr><td>Live API error</td><td>The 422 for an unserved model tells API users to run <code>uv run python scripts/check_model_allowlist.py</code> (<code>src/core/model_support/openai_live.py:132</code>), a command only operators can run.</td></tr>
+</table>
+<p>About 25 Low items (example inconsistencies, regex and default details, ISO-week label, step numbering, ID prefixes) are listed in the <a href="../research/2026-10-20-audit-public-docs.md">research notes</a>.</p>
+
+<h2>Can an AI agent build on the platform through the MCP alone?</h2>
+<table>
+<tr><th>Question an agent asks</th><th>Right page in top 3</th><th>Answerable from it</th></tr>
+<tr><td>Make my first outbound call</td><td class="yes">yes</td><td class="part">partly (and the trunk body 422s, H3)</td></tr>
+<tr><td>Receive the end-call webhook</td><td class="yes">yes</td><td class="part">partly: no signing note, fields missing</td></tr>
+<tr><td>Write a tool webhook</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+<tr><td>Start a web call from React</td><td class="yes">yes</td><td class="no">no: no URL, wrong topic (H1, H2)</td></tr>
+<tr><td>Handle a 422 on create</td><td class="part">partly</td><td class="part">partly: wrong body shape (H4)</td></tr>
+<tr><td>Lowest-latency mode / pricing / duplex</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+<tr><td>Retry a failed queue item</td><td class="yes">yes</td><td class="no">no guidance</td></tr>
+<tr><td>Rate limits / base URL / OpenAPI / webhook signature</td><td class="no">no</td><td class="no">not documented</td></tr>
+</table>
+
+<h2>Security observations (code, outside this audit; report immediately)</h2>
+<table>
+<tr><th></th><th>Where</th><th>What</th><th>Fix</th></tr>
+<tr><td><span class="pill p-sec">SSRF</span></td><td><code>src/core/agents/inbound_context.py:184</code></td><td><code>follow_redirects=True</code> lets an allowed public URL redirect to <code>169.254.169.254</code> or another private host, bypassing the write-time address check</td><td>Disable redirects, or re-validate each hop</td></tr>
+<tr><td><span class="pill p-sec">SSRF</span></td><td><code>src/core/agents/tool_builder.py:173</code></td><td>Tool webhook <code>url</code> is not validated at all, so a tenant can make the worker call internal addresses</td><td>Apply the same private-address check as the context strategy</td></tr>
+<tr><td><span class="pill p-sec">DoS</span></td><td><code>src/api/routes/audio.py:47</code></td><td><code>/audio/upload</code> reads the whole file into memory before the 25 MB check</td><td>Stream with a size cap</td></tr>
+</table>
+<p>Other code bugs found: <code>GET /logs</code> with <code>limit=0</code> returns every row, and <code>page=0</code> is a 500 (<code>logs.py:15-21</code>). PATCH works on deleted assistants and tools. <code>PATCH /tool/update</code> skips the attach guard. The ISO-week label uses <code>%Y-W%V</code>.</p>
+
+<h2>Method</h2>
+<ul>
+  <li>Lead: nav vs files, routes vs pages, and live MCP <code>search_docs</code> on 10 questions. Spot-checked H1 (SDK constants), H3 (schema), H4, H5, H7 and H11, and the redirect SSRF, against code.</li>
+  <li>Three read-only investigators, each with code as the reference: (1) assistant, tools, audio, auth, errors, including running the doc examples through the schemas; (2) calls, telephony and all three webhooks; (3) analytics, admin, reference pages, and an 18-question MCP readiness walk.</li>
+  <li>One investigator claim was rejected after checking: <code>AGENTS.md</code> no longer references <code>docs/architecture/</code>.</li>
+</ul>
+
+<h2>Recommended follow-up</h2>
+<ol>
+  <li><b>Before committing the docs split:</b> fix H11 and the <code>features.md</code> leftovers. They are regressions from today's change.</li>
+  <li><b>A docs-fix task:</b> H1–H10 and the Medium table. Most are one-line doc edits.</li>
+  <li><b>Small code tasks:</b> the <code>attach-tools</code> error string (H5); a <code>livekit_url</code> in the web-call response (H2); the operator script in the 422 message; <code>/logs</code> parameter bounds.</li>
+  <li><b>A security task (<code>core-be-audit-security</code>):</b> the two SSRF paths and the upload memory cap.</li>
+</ol>
+
+<h2>Not reviewed</h2>
+<p>The humanization prompt pages, analytics numbers against real data, and the external connector repository.</p>
+<p><a href="../plans/2026-10-20-audit-public-docs/scope.md">scope</a> · <a href="../research/2026-10-20-audit-public-docs.md">research (all findings)</a></p>
+</main>
+</body>
+</html>

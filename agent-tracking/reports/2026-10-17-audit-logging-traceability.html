@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logging Traceability Audit — 2026-10-17-audit-logging-traceability</title>
+<style>
+  :root {
+    --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; --soft: #f9fafb; --accent: #4f46e5;
+    --crit: #991b1b; --high: #dc2626; --med: #d97706; --low: #2563eb; --info: #6b7280;
+    --ok: #059669; --ok-bg: #ecfdf5; --chg-bg: #fffbeb; --bad-bg: #fef2f2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--fg); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 40px 16px 64px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.75rem; margin: 0 0 6px; }
+  h2 { font-size: 1.2rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+  h3 { font-size: 1rem; margin: 24px 0 8px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+  .meta, .legend { color: var(--muted); font-size: .88rem; margin: 2px 0; }
+  .headline { font-size: 1.05rem; margin: 14px 0 0; }
+  .legend b, .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+  code { background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--soft); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 0; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .two, .ct { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .two, .ct { grid-template-columns: 1fr; } }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  dt { color: var(--muted); font-weight: 600; } dd { margin: 0; }
+
+  /* summary numbers */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 12px 0; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted); font-size: .85rem; }
+  .tile b { display: block; font-size: 1.6rem; color: var(--fg); }
+  .tile.crit b { color: var(--crit); } .tile.high b { color: var(--high); } .tile.med b { color: var(--med); }
+  .tile.low b { color: var(--low); } .tile.info b { color: var(--info); }
+  .sevbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+  .sevbar .crit { background: var(--crit); } .sevbar .high { background: var(--high); } .sevbar .med { background: var(--med); }
+  .sevbar .low { background: var(--low); } .sevbar .info { background: var(--info); }
+
+  /* current -> target */
+  .panel { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-height: 280px; overflow-x: auto; }
+  .panel figcaption { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  .mermaid { background: none; padding: 0; text-align: center; }
+  .adr { border-left: 3px solid var(--med); padding: 4px 12px; margin-top: 10px; }
+  .tree .add { color: var(--ok); font-weight: 600; } .tree .chg { color: var(--med); font-weight: 600; }
+  .tree .del { color: var(--info); text-decoration: line-through; } .tree .bad { color: var(--high); font-weight: 600; }
+  .tree .why { color: var(--muted); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+  .box { border: 1px solid var(--fg); border-radius: 6px; padding: 4px 10px; }
+  .box.add { border-color: var(--ok); background: var(--ok-bg); } .box.chg { border-color: var(--med); background: var(--chg-bg); }
+  .box.bad { border-color: var(--high); background: var(--bad-bg); } .box.del { border: 1px dashed var(--info); color: var(--info); text-decoration: line-through; }
+  .box.deep { border: 3px solid var(--fg); padding: 10px 12px; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { display: block; height: 4px; background: var(--accent); border-radius: 2px; margin-top: 4px; margin-left: auto; }
+  .sev { font-weight: 700; } .sev.crit { color: var(--crit); } .sev.high { color: var(--high); }
+  .sev.med { color: var(--med); } .sev.low { color: var(--low); } .sev.info { color: var(--info); }
+  .pass, .better { color: var(--ok); font-weight: 600; } .fail, .worse { color: var(--high); font-weight: 600; }
+  .finding { border-left: 3px solid var(--info); } .finding.crit { border-left-color: var(--crit); }
+  .finding.high { border-left-color: var(--high); } .finding.med { border-left-color: var(--med); } .finding.low { border-left-color: var(--low); }
+
+  .tree .ok { color: var(--ok); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Logging &amp; Traceability Audit</h1>
+    <p class="meta">audit · 2026-10-17 · slug <code>2026-10-17-audit-logging-traceability</code> · report only, no code changed</p>
+    <p class="meta">Trace:
+      <a href="../plans/2026-10-17-audit-logging-traceability/scope.md">scope</a> ·
+      <a href="../research/2026-10-17-audit-logging-traceability.md">research</a> ·
+      <a href="../plans/2026-10-17-audit-logging-traceability/plan.md">plan</a> ·
+      <a href="../plans/2026-10-17-audit-logging-traceability/progress.md">progress</a></p>
+    <p class="headline">Asked: are the logs done properly, properly structured, and can a call be traced through them?
+      <b>Partly.</b> The logger module itself is well designed and the worker side traces well, but the SIP bridge
+      processes lose their logs in one deployment and carry no call id in the other, the API has no request
+      tracing at all, and secrets (the MongoDB password, raw exception text) reach the log files.</p>
+  </header>
+
+  <section id="summary">
+    <h2>1. Summary</h2>
+    <div class="tiles">
+      <div class="tile high"><b>9</b>High</div>
+      <div class="tile med"><b>14</b>Medium</div>
+      <div class="tile low"><b>5</b>Low</div>
+      <div class="tile"><b>28</b>findings</div>
+      <div class="tile"><b>46</b>files that log</div>
+    </div>
+    <div class="sevbar">
+      <span class="high" style="width:32.1%"></span><span class="med" style="width:50.0%"></span><span class="low" style="width:17.9%"></span>
+    </div>
+    <h3>Fix these first</h3>
+    <ol>
+      <li><b>Stop logging the MongoDB URL</b> (<a href="#L-03">L-03</a>) and redact exception text in logs (<a href="#L-09">L-09</a>). Rotate the DB password afterwards.</li>
+      <li><b>Configure logging and set the room in every bridge process</b> (<a href="#L-01">L-01</a>, <a href="#L-02">L-02</a>): two lines per entry function, and the Exotel call path becomes traceable.</li>
+      <li><b>Add a request-id middleware with one access line per request</b> (<a href="#L-04">L-04</a>), and make the dispatcher loop and the SIP listener fail loudly (<a href="#L-05">L-05</a>, <a href="#L-06">L-06</a>).</li>
+    </ol>
+    <div class="card" style="border-color: var(--high)">
+      <b>Security issue found during the audit (outside scope):</b> <code>POST /auth/create-key</code>
+      (<code>src/api/routes/auth.py:13-14</code>) has no authentication dependency, and the router is mounted
+      without one (<code>src/api/server.py:157</code>). Anyone who can reach the API can mint a working
+      <code>lvk_</code> key. Reported in chat at once; needs its own fix task.
+    </div>
+  </section>
+
+  <section id="scope">
+    <h2>2. Scope</h2>
+    <dl>
+      <dt>In</dt><dd>All of <code>src/</code>, <code>agent_run.py</code>, <code>server_run.py</code>, <code>sip_dispatcher_run.py</code></dd>
+      <dt>Out</dt><dd><code>scripts/</code>, <code>tests/</code>, <code>docs/</code>; the production log pipeline (not in the repo)</dd>
+      <dt>Depth</dt><dd>Deep: every in-scope file read, one outbound and one inbound call traced across processes</dd>
+      <dt>Constraints</dt><dd>Report only; findings without patches</dd>
+    </dl>
+  </section>
+
+  <section id="method">
+    <h2>3. Method</h2>
+    <ul>
+      <li>Read <code>src/core/logger.py</code>, the settings, the three entry points and the Gunicorn/compose configuration myself.</li>
+      <li>Traced the id carried on each hop of an outbound and an inbound call.</li>
+      <li>Ran a probe that starts a <code>forkserver</code> child the way the dispatcher does, with and without a top-level <code>setup_logging()</code> in <code>__main__</code>, to settle L-01 by experiment rather than by reading.</li>
+      <li>Three read-only reviewers covered every log statement and except block in the API, worker and services layers against one checklist (level, entity and outcome, context ids, traceback, secrets and personal data, hot-path volume). Every finding in this report was opened at its <code>file:line</code> by me before inclusion; one impact (L-08) is marked <b>suspected</b>.</li>
+      <li>Yardstick: <code>core-be-coding-standards</code> (errors handled explicitly, no secrets in logs).</li>
+    </ul>
+  </section>
+
+  <section id="automated">
+    <h2>4. Automated results (before any change)</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Measure</th><th>Count</th><th>Note</th></tr>
+      <tr><td><code>logger.debug / info / warning / error / exception / critical</code></td><td class="num">15 / 238 / 105 / 123 / 1 / 0</td><td>grep over scope</td></tr>
+      <tr><td>Logging calls / f-string messages</td><td class="num">474 / 374</td><td>AST count; context baked into text</td></tr>
+      <tr><td><code>exc_info=</code> uses</td><td class="num">27</td><td>against 123 <code>error</code> calls</td></tr>
+      <tr><td><code>extra=</code> uses</td><td class="num">0</td><td><code>JsonFormatter</code> would promote them</td></tr>
+      <tr><td>Ruff <code>BLE001</code> blind except</td><td class="num">120</td><td rowspan="4"><code>uvx ruff check src *.py --select G,LOG,TRY400,TRY401,BLE001,S110,S112</code>. Ruff only recognises loggers from <code>logging.getLogger</code>, so G004 undercounts; the AST figure is the real one.</td></tr>
+      <tr><td>Ruff <code>G004</code> f-string in logging</td><td class="num">20</td></tr>
+      <tr><td>Ruff <code>S110</code> try/except/pass</td><td class="num">14</td></tr>
+      <tr><td>Ruff <code>TRY400</code> error instead of exception</td><td class="num">8</td></tr>
+    </table></div>
+  </section>
+
+  <section id="trace">
+    <h2>5. Can one call be traced?</h2>
+    <p>Each hop below shows which id a log line carries and whether it joins the previous hop.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Hop</th><th>Process</th><th>Id on the line</th><th>Gap</th><th>Result</th></tr>
+      <tr><td>POST /call/outbound</td><td>API</td><td><code>queue_id</code>, to-number, email in text (<code>call.py:58-61</code>)</td><td>No request id; <code>call_room</code> null</td><td class="sev med">by text search</td></tr>
+<tr><td>Dispatcher claims and dispatches</td><td>Dispatcher</td><td><code>queue_id → room</code> once (<code>dispatcher.py:651</code>); later lines <code>room=</code> in text</td><td><code>call_room</code> never set (L-11)</td><td class="sev med">by text search</td></tr>
+<tr><td>Exotel bridge: SIP INVITE, RTP</td><td>Bridge child</td><td>One line with room (<code>bridge.py:78</code>)</td><td>No <code>call_room</code>; INFO lost when the API hosts the dispatcher (L-01, L-02)</td><td class="fail">lost / unjoinable</td></tr>
+<tr><td>Worker session</td><td>Worker</td><td><code>call_room</code> on every line, incl. callbacks</td><td>No job id or <code>queue_id</code> (L-12); end line unreliable (L-07)</td><td class="pass">traceable</td></tr>
+<tr><td>End-call webhook</td><td>Worker</td><td>room, attempt n/N, HTTP code (<code>livekit_svc.py:381-438</code>)</td><td>URL logged in full (L-14)</td><td class="pass">traceable</td></tr>
+<tr><td>Inbound INVITE → room</td><td>Dispatcher</td><td>SIP <code>call-id</code>, then <code>call_id → room</code> (<code>inbound_bridge.py:282</code>), task-scoped <code>call_room</code></td><td>Room-creation failure names no call-id (<code>:284</code>)</td><td class="pass">traceable</td></tr>
+<tr><td>Inbound bridge process</td><td>Bridge child</td><td><code>call_room</code> set (<code>inbound_worker.py:49</code>)</td><td>Only works in the dispatcher container (L-01)</td><td class="sev med">by text search</td></tr>
+    </table></div>
+    <h3>Logging setup conformance</h3>
+<pre class="tree">src/core/logger.py                  <span class="ok">one setup, idempotent, call_room stamped at record creation</span>
+├── JsonFormatter                   <span class="ok">promotes extra= keys</span>
+├── ColoredFormatter                <span class="bad">no call_room, no pid (L-23, L-02)</span>
+├── RotatingFileHandler             <span class="bad">opened by every process (L-10)</span>
+└── job_proc early return           <span class="ok">no duplicate lines in the worker</span>
+server_run.py → gunicorn            <span class="bad">no access log, no request id (L-04)</span>
+sip_dispatcher_run.py               <span class="chg">configures children only by accident (L-01)</span>
+custom_sip_reach/bridge.py          <span class="bad">no setup_logging, no set_room_context (L-01, L-02)</span>
+custom_sip_reach/inbound_worker.py  <span class="chg">sets call_room, but no setup_logging (L-01)</span>
+core/agents/session.py              <span class="ok">call_room for every line after :293</span>
+</pre>
+  </section>
+
+  <section id="findings">
+    <h2>6. Findings</h2>
+    <div class="table-wrap"><table>
+      <tr><th>ID</th><th>Severity</th><th>Category</th><th>Primary location</th></tr>
+      <tr><td><a href="#L-01">L-01</a></td><td class="sev high">High</td><td>Logging not configured in child processes</td><td><code>src/services/outbound_dispatcher/dispatcher.py:53-65</code></td></tr>
+<tr><td><a href="#L-02">L-02</a></td><td class="sev high">High</td><td>No call identity on outbound bridge lines</td><td><code>bridge.py (whole run_bridge)</code></td></tr>
+<tr><td><a href="#L-03">L-03</a></td><td class="sev high">High</td><td>Database credentials in logs</td><td><code>src/core/db/database.py:42</code></td></tr>
+<tr><td><a href="#L-04">L-04</a></td><td class="sev high">High</td><td>No request tracing in the API</td><td><code>src/api/server.py:114-125, :148-154</code></td></tr>
+<tr><td><a href="#L-05">L-05</a></td><td class="sev high">High</td><td>Dispatcher loop can die without a log line</td><td><code>src/services/outbound_dispatcher/dispatcher.py:800-818</code></td></tr>
+<tr><td><a href="#L-06">L-06</a></td><td class="sev high">High</td><td>SIP listener bind failure is logged and ignored</td><td><code>src/services/exotel/custom_sip_reach/inbound_listener.py:144-145</code></td></tr>
+<tr><td><a href="#L-07">L-07</a></td><td class="sev high">High</td><td>Worker session end is not logged reliably</td><td><code>src/core/agents/session.py:1559</code></td></tr>
+<tr><td><a href="#L-08">L-08</a></td><td class="sev high">High</td><td>Worker gives up after a single error line</td><td><code>src/core/agents/session.py:285-288, :298-300, :889-894</code></td></tr>
+<tr><td><a href="#L-09">L-09</a></td><td class="sev high">High</td><td>Raw exception text logged while the response is redacted</td><td><code>src/api/routes/assistant.py:129</code></td></tr>
+<tr><td><a href="#L-10">L-10</a></td><td class="sev med">Medium</td><td>Several processes write one rotating file</td><td><code>src/core/logger.py:161-167</code></td></tr>
+<tr><td><a href="#L-11">L-11</a></td><td class="sev med">Medium</td><td>Context lives in message text, not fields</td><td><code>374 f-string messages, 0 uses of extra=</code></td></tr>
+<tr><td><a href="#L-12">L-12</a></td><td class="sev med">Medium</td><td>Worker cannot be joined to the queue item or job</td><td><code>src/core/agents/session.py:294</code></td></tr>
+<tr><td><a href="#L-13">L-13</a></td><td class="sev med">Medium</td><td>Phone numbers and emails in logs</td><td><code>call.py:21-22, :58-61</code></td></tr>
+<tr><td><a href="#L-14">L-14</a></td><td class="sev med">Medium</td><td>Webhook URLs and response bodies logged</td><td><code>src/core/agents/tool_builder.py:181-182</code></td></tr>
+<tr><td><a href="#L-15">L-15</a></td><td class="sev med">Medium</td><td>Errors logged without a traceback</td><td><code>123 logger.error vs 27 exc_info and 1 logger.exception</code></td></tr>
+<tr><td><a href="#L-16">L-16</a></td><td class="sev med">Medium</td><td>Analytics and admin errors logged twice</td><td><code>analytics.py:114, :185, :249, :308, :361</code></td></tr>
+<tr><td><a href="#L-17">L-17</a></td><td class="sev med">Medium</td><td>SIP monitor and BYE failures swallowed</td><td><code>sip_client.py:431-432, :441-442</code></td></tr>
+<tr><td><a href="#L-18">L-18</a></td><td class="sev med">Medium</td><td>Silent failures in the worker</td><td><code>session.py:1262-1263, :1614-1620, :1250-1257</code></td></tr>
+<tr><td><a href="#L-19">L-19</a></td><td class="sev med">Medium</td><td>Wrong levels for expected outcomes</td><td><code>sip_client.py:365</code></td></tr>
+<tr><td><a href="#L-20">L-20</a></td><td class="sev med">Medium</td><td>Per-packet error logging on the RTP path</td><td><code>rtp_bridge.py:320, :426, :272, :284</code></td></tr>
+<tr><td><a href="#L-21">L-21</a></td><td class="sev med">Medium</td><td>Bridge config failure reported as a timeout</td><td><code>bridge.py:59-64</code></td></tr>
+<tr><td><a href="#L-22">L-22</a></td><td class="sev med">Medium</td><td>Inbound connection errors at INFO</td><td><code>inbound_listener.py:315-316</code></td></tr>
+<tr><td><a href="#L-23">L-23</a></td><td class="sev med">Medium</td><td>Production writes coloured text to stdout</td><td><code>src/core/config.py:30</code></td></tr>
+<tr><td><a href="#L-24">L-24</a></td><td class="sev low">Low</td><td>Two logger naming schemes</td><td><code>database.py:19</code></td></tr>
+<tr><td><a href="#L-25">L-25</a></td><td class="sev low">Low</td><td>Steady INFO noise</td><td><code>dispatcher.py:690-694, :757, :777</code></td></tr>
+<tr><td><a href="#L-26">L-26</a></td><td class="sev low">Low</td><td>Lines that name no entity</td><td><code>auth.py:15, :25, :33</code></td></tr>
+<tr><td><a href="#L-27">L-27</a></td><td class="sev low">Low</td><td>Raw exception text persisted to records</td><td><code>dispatcher.py:659, :518</code></td></tr>
+<tr><td><a href="#L-28">L-28</a></td><td class="sev low">Low</td><td>Auth failures and unpriced usage leave no log</td><td><code>src/api/dependencies/auth.py:21-26</code></td></tr>
+    </table></div>
+    <div class="card finding high" id="L-01">
+  <h3>L-01 · <span class="sev high">High</span> · Logging not configured in child processes</h3>
+  <p class="meta"><code>src/services/outbound_dispatcher/dispatcher.py:53-65 · bridge.py:378 (_bridge_subprocess_entry, target at dispatcher.py:618) · inbound_worker.py:169 · sip_dispatcher_run.py:19</code></p>
+  <p><b>What.</b> SIP bridges run in <code>forkserver</code> children. No bridge module calls <code>setup_logging()</code>. A child is configured only because multiprocessing re-imports the parent's <code>__main__</code>, and <code>sip_dispatcher_run.py:19</code> happens to call <code>setup_logging()</code> at top level. Gunicorn's main does not. Verified with a probe script: without that top-level call the child's root logger has no handlers, every <code>logger.info</code> is dropped, and warnings come out as a bare message on stderr through <code>logging.lastResort</code>, with no timestamp, level, <code>call_room</code>, or JSON, and never reach <code>LOG_FILE</code>.</p>
+  <p><b>Why it matters.</b> When the API process runs the dispatcher (<code>ENABLE_DISPATCHER=true</code>, the default, and the <code>full</code> deployment), every bridge INFO line for every Exotel call is lost. In the dedicated dispatcher container it works by accident; any refactor of <code>sip_dispatcher_run.py</code> silently breaks it there too.</p>
+  <p><b>Fix.</b> Call <code>setup_logging()</code> explicitly at the top of both subprocess entry functions (it is idempotent), followed by <code>set_room_context(room_name)</code>.</p>
+</div><div class="card finding high" id="L-02">
+  <h3>L-02 · <span class="sev high">High</span> · No call identity on outbound bridge lines</h3>
+  <p class="meta"><code>bridge.py (whole run_bridge) · sip_client.py:266-440 · rtp_bridge.py:116-471</code></p>
+  <p><b>What.</b> The outbound bridge never calls <code>set_room_context</code>, so <code>call_room</code> is null. Apart from <code>bridge.py:78</code> (<code>phone=… room=… rtp_port=…</code>), lines such as <code>[SIP] ❌ SIP/2.0 486 Busy Here</code> or <code>[BRIDGE] Call ended — reason=rtp_silence_after_flow</code> name no room, Call-ID or queue id. Neither formatter prints a pid or process name.</p>
+  <p><b>Why it matters.</b> Each outbound call is its own process, and all of them write to the same stdout and file. With a dozen concurrent calls, a SIP failure or RTP silence cannot be tied to the call it happened on.</p>
+  <p><b>Fix.</b> Same fix as L-01: <code>set_room_context(room_name)</code> at the start of the bridge process. Add <code>%(process)d</code> to the text format.</p>
+</div><div class="card finding high" id="L-03">
+  <h3>L-03 · <span class="sev high">High</span> · Database credentials in logs</h3>
+  <p class="meta"><code>src/core/db/database.py:42</code></p>
+  <p><b>What.</b> <code>logger.info(f"Successfully connected to MongoDB at {settings.MONGODB_URL}")</code>. The URL carries user and password (<code>src/core/config.py:15-16</code>, default <code>admin:secretpassword</code>).</p>
+  <p><b>Why it matters.</b> Written at INFO on every process start and on every worker job, into stdout and the rotated files. Anyone with log access has the database password.</p>
+  <p><b>Fix.</b> Log only the host and <code>DATABASE_NAME</code> (strip userinfo with <code>urllib.parse.urlsplit</code>). Rotate the password once the line is gone.</p>
+</div><div class="card finding high" id="L-04">
+  <h3>L-04 · <span class="sev high">High</span> · No request tracing in the API</h3>
+  <p class="meta"><code>src/api/server.py:114-125, :148-154 · server_run.py:9-19 · src/core/logger.py:169</code></p>
+  <p><b>What.</b> Gunicorn starts without <code>--access-logfile</code>, <code>uvicorn.access</code> is raised to WARNING, no middleware assigns a request id, and <code>http_exception_handler</code> logs nothing. The generic 500 handler (<code>:128-135</code>) logs a trace with no method, path or caller.</p>
+  <p><b>Why it matters.</b> A 401, 404, 400 guard rejection or 503 cap refusal leaves no trace unless the route logged first, and most do not. Concurrent requests interleave with nothing to group their lines.</p>
+  <p><b>Fix.</b> One HTTP middleware: read or generate <code>X-Request-ID</code>, put it in a ContextVar that <code>_make_log_record</code> stamps like <code>call_room</code>, log method, path, status, duration and key id once per request, echo the id in the response.</p>
+</div><div class="card finding high" id="L-05">
+  <h3>L-05 · <span class="sev high">High</span> · Dispatcher loop can die without a log line</h3>
+  <p class="meta"><code>src/services/outbound_dispatcher/dispatcher.py:800-818 · sip_dispatcher_run.py:29, :43</code></p>
+  <p><b>What.</b> <code>_fail_stale_calls_on_startup()</code> and, inside <code>while True</code>, <code>_recover_stuck_dispatching()</code> are outside any try. The task is created at <code>sip_dispatcher_run.py:29</code> and awaited only at shutdown (<code>:43</code>).</p>
+  <p><b>Why it matters.</b> One MongoDB error ends outbound dispatch. Nothing is logged until the container stops, and the process still looks healthy, so queued calls simply never go out.</p>
+  <p><b>Fix.</b> Wrap the loop body in <code>try/except Exception: logger.error(…, exc_info=True)</code> and add a done-callback on <code>dispatcher_task</code> that logs its exception.</p>
+</div><div class="card finding high" id="L-06">
+  <h3>L-06 · <span class="sev high">High</span> · SIP listener bind failure is logged and ignored</h3>
+  <p class="meta"><code>src/services/exotel/custom_sip_reach/inbound_listener.py:144-145</code></p>
+  <p><b>What.</b> <code>except Exception as e: logger.error(f"[SIP-IN] Failed to bind …: {e}")</code>, then the process carries on.</p>
+  <p><b>Why it matters.</b> The dispatcher keeps running with no inbound listener: every inbound INVITE, BYE and CANCEL is lost, and the only evidence is one line at startup.</p>
+  <p><b>Fix.</b> Re-raise so the container restarts and health fails; at minimum keep the traceback and expose a health flag.</p>
+</div><div class="card finding high" id="L-07">
+  <h3>L-07 · <span class="sev high">High</span> · Worker session end is not logged reliably</h3>
+  <p class="meta"><code>src/core/agents/session.py:1559 · _flush_and_end_call :612-712</code></p>
+  <p><b>What.</b> <code>Agent session ended for room: …</code> is logged immediately after <code>asyncio.create_task(_flush_and_end_call(…))</code>, before teardown runs, and only on the participant-disconnect path. The silence path (<code>voice_features.py:178</code>) and max duration (<code>session.py:1577</code>) log why they end, but the end_call tool path logs no end line, and <code>_flush_and_end_call</code> has no completion line on any path.</p>
+  <p><b>Why it matters.</b> "Did this call finish cleanly, and why did it end?" cannot be answered from the worker logs.</p>
+  <p><b>Fix.</b> Delete line 1559. Add one INFO line at the end of <code>_flush_and_end_call</code> with <code>end_reason</code>, duration, <code>assistant_id</code> and job id.</p>
+</div><div class="card finding high" id="L-08">
+  <h3>L-08 · <span class="sev high">High</span> · Worker gives up after a single error line</h3>
+  <p class="meta"><code>src/core/agents/session.py:285-288, :298-300, :889-894</code></p>
+  <p><b>What.</b> DB connect failure (logged before <code>set_room_context</code> at <code>:293</code>, so no <code>call_room</code>, and no traceback), assistant not found, LLM or STT not built: each logs one line and <code>return</code>s from <code>entrypoint</code>.</p>
+  <p><b>Why it matters.</b> The caller hears silence and the log line cannot always be tied to the call. Whether the CallRecord is left non-terminal is <b>suspected</b>, not verified; the dispatcher's silent-call guard (<code>dispatcher.py:347</code>) covers part of this for outbound Exotel only.</p>
+  <p><b>Fix.</b> Call <code>set_room_context(ctx.room.name)</code> first thing in <code>entrypoint</code>. Route every early exit through one helper that logs with <code>exc_info</code>, marks the call failed with a reason, and deletes the room.</p>
+</div><div class="card finding high" id="L-09">
+  <h3>L-09 · <span class="sev high">High</span> · Raw exception text logged while the response is redacted</h3>
+  <p class="meta"><code>src/api/routes/assistant.py:129 · auth.py:30 · tool.py:43 · sip.py:43, :74 · inbound_context_strategy.py:65 · src/api/server.py:134-135</code></p>
+  <p><b>What.</b> <code>logger.error(f"Failed to create assistant: {e}")</code> and the same shape elsewhere. The HTTP body goes through <code>redact_text</code>; the log line does not. The generic 500 handler logs the unredacted traceback although its own comment (<code>:137-139</code>) says the text can contain a submitted api_key.</p>
+  <p><b>Why it matters.</b> A pydantic error from <code>Assistant(**assistant_data)</code> echoes <code>input_value</code>, which can include a provider <code>api_key</code>; a duplicate-key error at <code>auth.py:30</code> echoes the user email (the <code>lvk_</code> key is also a unique index, but a collision is negligible). Secrets and personal data reach the log files.</p>
+  <p><b>Fix.</b> Log <code>redact_text(str(e))</code> with <code>exc_info</code>, or add a logging filter that runs <code>redact_text</code> over every message and formatted exception, so no call site can forget.</p>
+</div><div class="card finding med" id="L-10">
+  <h3>L-10 · <span class="sev med">Medium</span> · Several processes write one rotating file</h3>
+  <p class="meta"><code>src/core/logger.py:161-167 · docker-compose.yml:18-19, :49</code></p>
+  <p><b>What.</b> Every Gunicorn worker (<code>GUNICORN_WORKERS: "4"</code>) opens a <code>RotatingFileHandler</code> on <code>/app/logs/api.log</code>; in the dispatcher container every bridge child opens one on <code>dispatcher.log</code>. The stdlib handler is not multi-process safe.</p>
+  <p><b>Why it matters.</b> Each process rotates on its own count: lines are lost, or keep landing in the rotated <code>.1</code> file.</p>
+  <p><b>Fix.</b> Write files only from the main process (or not at all in containers and let Docker collect stdout), or send child records to the parent with a <code>QueueHandler</code>.</p>
+</div><div class="card finding med" id="L-11">
+  <h3>L-11 · <span class="sev med">Medium</span> · Context lives in message text, not fields</h3>
+  <p class="meta"><code>374 f-string messages, 0 uses of extra= · dispatcher.py:546-553 · web_call.py:55 · meeting_call.py:65-110</code></p>
+  <p><b>What.</b> <code>call_room</code> is set in three places only (<code>session.py:293</code>, <code>inbound_bridge.py:281</code>, <code>inbound_worker.py:49</code>). The dispatcher and the web and meeting call routes know the room but never set it, so the room exists only as <code>room=…</code> inside the text. <code>JsonFormatter</code> already promotes <code>extra</code> keys, but no call site uses them.</p>
+  <p><b>Why it matters.</b> A JSON query on <code>call_room</code> misses every dispatcher and API line for the call; ids can be grepped but not filtered.</p>
+  <p><b>Fix.</b> <code>set_room_context(room_name, global_fallback=False)</code> as soon as the room exists in the dispatcher and routes (child tasks inherit it). Move ids (<code>queue_id</code>, <code>assistant_id</code>, <code>tool_id</code>) into <code>extra=</code>.</p>
+</div><div class="card finding med" id="L-12">
+  <h3>L-12 · <span class="sev med">Medium</span> · Worker cannot be joined to the queue item or job</h3>
+  <p class="meta"><code>src/core/agents/session.py:294 · dispatcher.py:550-552</code></p>
+  <p><b>What.</b> The start line has room and assistant_id only. <code>ctx.job.id</code> is never logged; the dispatcher does not put <code>queue_id</code> in the job metadata. The only <code>queue_id → room</code> link is one line at <code>dispatcher.py:651</code>.</p>
+  <p><b>Why it matters.</b> Following a call from <code>POST /call/outbound</code> to the worker depends on finding that single line.</p>
+  <p><b>Fix.</b> Add <code>queue_id</code> to the job metadata and log it, with <code>job_id</code>, <code>call_type</code> and <code>call_service</code>, on the worker start line.</p>
+</div><div class="card finding med" id="L-13">
+  <h3>L-13 · <span class="sev med">Medium</span> · Phone numbers and emails in logs</h3>
+  <p class="meta"><code>call.py:21-22, :58-61 · dispatcher.py:622, :651 · session.py:342 · bridge.py:78 · inbound_bridge.py:241, :250, :274 · analytics/admin routes (user email)</code></p>
+  <p><b>What.</b> Caller and callee numbers are logged at INFO on every call; the bridge process is even named <code>bridge-out-{to_number}</code>, so reaper lines leak it too. User emails appear on most request lines.</p>
+  <p><b>Why it matters.</b> Personal data spread across stdout and rotated files with no retention control.</p>
+  <p><b>Fix.</b> One small masking helper (<code>****1234</code>); name processes after the room; log the key id rather than the email.</p>
+</div><div class="card finding med" id="L-14">
+  <h3>L-14 · <span class="sev med">Medium</span> · Webhook URLs and response bodies logged</h3>
+  <p class="meta"><code>src/core/agents/tool_builder.py:181-182 · src/services/livekit/livekit_svc.py:390-437</code></p>
+  <p><b>What.</b> Customer webhook URLs are logged in full at INFO; on a rejected (non-2xx) response, the end-call webhook logs up to 500 chars of the receiver's body (<code>livekit_svc.py:421-423</code>); tool arguments are logged at DEBUG.</p>
+  <p><b>Why it matters.</b> Webhook URLs often carry a token in the query string; responses and tool arguments can echo caller data.</p>
+  <p><b>Fix.</b> Log only scheme and host; drop the body (ActivityLog already stores it); log argument keys only.</p>
+</div><div class="card finding med" id="L-15">
+  <h3>L-15 · <span class="sev med">Medium</span> · Errors logged without a traceback</h3>
+  <p class="meta"><code>123 logger.error vs 27 exc_info and 1 logger.exception · e.g. dispatcher.py:305, :351, :481, :498 · inbound_bridge.py:284, :306, :348 · tool_builder.py:70, :232 · session.py:450 · llm/factory.py:144-151 · database.py:65</code></p>
+  <p><b>What.</b> Failures on finalize, webhook, setup, tool build and transcript paths are logged as <code>str(e)</code>, which for <code>TimeoutError()</code> and similar is empty.</p>
+  <p><b>Why it matters.</b> The line says something failed but not where or why.</p>
+  <p><b>Fix.</b> <code>logger.exception(…)</code> or <code>exc_info=True</code> on every error path that is not an expected outcome.</p>
+</div><div class="card finding med" id="L-16">
+  <h3>L-16 · <span class="sev med">Medium</span> · Analytics and admin errors logged twice</h3>
+  <p class="meta"><code>analytics.py:114, :185, :249, :308, :361 · admin.py:58, :121, :181, :229, :268, :356, :427</code></p>
+  <p><b>What.</b> <code>except Exception as e: logger.error(f"[…] failed for {email}: {e}"); raise</code>, then the generic handler logs it again.</p>
+  <p><b>Why it matters.</b> Two ERROR lines per failure, the first without a stack.</p>
+  <p><b>Fix.</b> Delete these try/except blocks; the global handler already covers them.</p>
+</div><div class="card finding med" id="L-17">
+  <h3>L-17 · <span class="sev med">Medium</span> · SIP monitor and BYE failures swallowed</h3>
+  <p class="meta"><code>sip_client.py:431-432, :441-442 · bridge.py:304-307, :357</code></p>
+  <p><b>What.</b> Any exception in <code>wait_for_disconnection</code> is logged at INFO as <code>Monitor ended</code>; the bridge then records <code>sip_bye_outbound_tcp</code> and sets <code>ended_by_remote_bye=True</code>, so no BYE is sent. <code>send_bye</code> has <code>except Exception: pass</code>.</p>
+  <p><b>Why it matters.</b> The logged end reason is false, and a failed or skipped BYE (an Exotel leg still up and billing) leaves no trace.</p>
+  <p><b>Fix.</b> Log at WARNING with <code>exc_info</code>; return the real reason and set <code>ended_by_remote_bye</code> only on a BYE; warn when <code>send_bye</code> fails.</p>
+</div><div class="card finding med" id="L-18">
+  <h3>L-18 · <span class="sev med">Medium</span> · Silent failures in the worker</h3>
+  <p class="meta"><code>session.py:1262-1263, :1614-1620, :1250-1257 · voice_features.py:85-86, :350-351 · tts/factory.py:217-218 · dispatcher.py:585, :625, :637, :734</code></p>
+  <p><b>What.</b> A malformed <code>call_answered</code> packet is dropped with <code>pass</code> (the logs show only the later 60 s timeout); filler words stop with nothing logged; the Sarvam keepalive failure is DEBUG only; fire-and-forget tasks have no done-callback; the try around <code>create_task</code> at <code>:1614</code> can never catch the task's error.</p>
+  <p><b>Why it matters.</b> Features stop working and the only symptom is the call itself.</p>
+  <p><b>Fix.</b> Log at WARNING with <code>exc_info</code> (once per call where noisy); one <code>_spawn(coro, what)</code> helper that logs <code>task.exception()</code>.</p>
+</div><div class="card finding med" id="L-19">
+  <h3>L-19 · <span class="sev med">Medium</span> · Wrong levels for expected outcomes</h3>
+  <p class="meta"><code>sip_client.py:365 · bridge.py:188 · src/api/server.py:102</code></p>
+  <p><b>What.</b> 486 Busy, 480 and 603 are logged at ERROR; every client 422 is logged at ERROR.</p>
+  <p><b>Why it matters.</b> Normal outcomes flood error alerting and hide real faults.</p>
+  <p><b>Fix.</b> INFO or WARNING for busy, no answer, rejected and validation errors; ERROR for 5xx and genuine failures.</p>
+</div><div class="card finding med" id="L-20">
+  <h3>L-20 · <span class="sev med">Medium</span> · Per-packet error logging on the RTP path</h3>
+  <p class="meta"><code>rtp_bridge.py:320, :426, :272, :284</code></p>
+  <p><b>What.</b> <code>[RTP] Decode error</code> logs a full traceback per packet; <code>[RTP] Send error</code> logs per 20 ms frame.</p>
+  <p><b>Why it matters.</b> A persistent fault produces about 50 lines a second per call, with tracebacks.</p>
+  <p><b>Fix.</b> Log the first occurrence with <code>exc_info</code>, count the rest, and report the counts in the existing stop summary (<code>:461</code>).</p>
+</div><div class="card finding med" id="L-21">
+  <h3>L-21 · <span class="sev med">Medium</span> · Bridge config failure reported as a timeout</h3>
+  <p class="meta"><code>bridge.py:59-64 · dispatcher.py:425-438</code></p>
+  <p><b>What.</b> <code>if not validate_config(): return</code> without <code>_send_result</code>. The parent waits and records <code>Exotel SIP setup timed out</code>.</p>
+  <p><b>Why it matters.</b> The CallRecord and dispatcher log state the wrong cause; the real one is only in the child's log, which L-01 may have dropped.</p>
+  <p><b>Fix.</b> Send a failure result naming the config problem before returning.</p>
+</div><div class="card finding med" id="L-22">
+  <h3>L-22 · <span class="sev med">Medium</span> · Inbound connection errors at INFO</h3>
+  <p class="meta"><code>inbound_listener.py:315-316</code></p>
+  <p><b>What.</b> <code>except Exception as e: logger.info(f"[SIP-IN] Connection ended: {e}")</code> covers both a normal close and a parser bug that drops every dialog on the connection.</p>
+  <p><b>Why it matters.</b> Real faults look like normal hang-ups.</p>
+  <p><b>Fix.</b> Connection errors at INFO; anything else at WARNING with <code>exc_info</code>.</p>
+</div><div class="card finding med" id="L-23">
+  <h3>L-23 · <span class="sev med">Medium</span> · Production writes coloured text to stdout</h3>
+  <p class="meta"><code>src/core/config.py:30 · docker-compose.yml · src/core/logger.py:74</code></p>
+  <p><b>What.</b> <code>LOG_JSON_FORMAT</code> defaults to false and docker-compose does not set it, so container stdout is ANSI-coloured text. The text format has no <code>call_room</code>.</p>
+  <p><b>Why it matters.</b> Whatever collects container stdout gets escape codes and no call id; only the file handler is JSON.</p>
+  <p><b>Fix.</b> Set <code>LOG_JSON_FORMAT=true</code> in every deployed service; add <code>[%(call_room)s]</code> to the text format for development.</p>
+</div><div class="card finding low" id="L-24">
+  <h3>L-24 · <span class="sev low">Low</span> · Two logger naming schemes</h3>
+  <p class="meta"><code>database.py:19 · tool_builder.py:21 · utils.py:4 · inbound_context.py:9 · smtp_service.py:8</code></p>
+  <p><b>What.</b> Most modules use the shared <code>app</code> logger; these use <code>getLogger(__name__)</code>.</p>
+  <p><b>Why it matters.</b> A filter on <code>logger=app</code> misses tool, inbound-context and DB lines; the logger field does not identify the module consistently.</p>
+  <p><b>Fix.</b> Pick one: either everything on <code>getLogger(__name__)</code> (the stdlib idiom, and <code>module</code> is already in the JSON) or everything on <code>app</code>.</p>
+</div><div class="card finding low" id="L-25">
+  <h3>L-25 · <span class="sev low">Low</span> · Steady INFO noise</h3>
+  <p class="meta"><code>dispatcher.py:690-694, :757, :777 · inbound_listener.py:285-287 · bridge.py:75</code></p>
+  <p><b>What.</b> "No slots available" on every tick while at capacity; a change-stream line for every call end; one INFO per Exotel OPTIONS keep-alive; every bridge child logs <code>[PortPool] Ready with 500 ports</code>.</p>
+  <p><b>Why it matters.</b> Volume hides the lines that matter.</p>
+  <p><b>Fix.</b> DEBUG when nothing happened; build the port pool only when the child owns the port.</p>
+</div><div class="card finding low" id="L-26">
+  <h3>L-26 · <span class="sev low">Low</span> · Lines that name no entity</h3>
+  <p class="meta"><code>auth.py:15, :25, :33 · assistant.py:78, :119 · call.py:251 · web_call.py:46 · meeting_call.py:60 · dispatcher.py:188-190 · livekit_svc.py recording lines</code></p>
+  <p><b>What.</b> "API key created successfully", "Received payload after end call", "recovered N stuck queue item(s)" with no ids.</p>
+  <p><b>Why it matters.</b> Each tells you that something happened but not to what.</p>
+  <p><b>Fix.</b> Add the id the line is about; delete lines the access log (L-04) will cover.</p>
+</div><div class="card finding low" id="L-27">
+  <h3>L-27 · <span class="sev low">Low</span> · Raw exception text persisted to records</h3>
+  <p class="meta"><code>dispatcher.py:659, :518 · bridge.py:350</code></p>
+  <p><b>What.</b> <code>item.last_error = str(e)</code> and <code>Monitor error: {e}</code> are stored and can be returned by <code>GET /call/queue/{id}</code> or the end-call webhook.</p>
+  <p><b>Why it matters.</b> Same leak as L-09, but at rest and visible to API callers.</p>
+  <p><b>Fix.</b> Store <code>redact_text(str(e))</code>.</p>
+</div><div class="card finding low" id="L-28">
+  <h3>L-28 · <span class="sev low">Low</span> · Auth failures and unpriced usage leave no log</h3>
+  <p class="meta"><code>src/api/dependencies/auth.py:21-26 · src/core/pricing/calculator.py:76-80</code></p>
+  <p><b>What.</b> A 401 is raised with no log; an unpriced model is flagged in data but never logged.</p>
+  <p><b>Why it matters.</b> Key-guessing attempts and pricing gaps are invisible until someone queries for them.</p>
+  <p><b>Fix.</b> One INFO line on auth rejection (key prefix only); one WARNING per unpriced provider and model.</p>
+</div>
+  </section>
+
+  <section id="good">
+    <h2>7. What is done well</h2>
+    <ul>
+      <li><code>call_room</code> is stamped at record creation, so it survives LiveKit's IPC pickle and reaches callbacks and plugin tasks in the worker; the job_proc early return prevents duplicated lines.</li>
+      <li>The dispatcher-side inbound path uses a task-scoped ContextVar (<code>global_fallback=False</code>), correct for a process that interleaves calls.</li>
+      <li>422 bodies and their log line are built from <code>loc</code>/<code>msg</code> only, with secret inputs masked; every HTTP error body goes through <code>redact_text</code>.</li>
+      <li>SIP digest headers, full SIP messages, LiveKit JWTs and S3 keys are never logged.</li>
+      <li>LLM build lines log model and knobs, exclude <code>api_key</code>, and print the replay command; config-drop warnings name the value and the fix.</li>
+      <li>RTP logs first RX/TX once and a summary at stop, not per packet (except the error paths in L-20).</li>
+      <li>No <code>print()</code> in shipped code paths; <code>openai_live</code> caches by key fingerprint and never logs the key.</li>
+    </ul>
+  </section>
+
+  <section id="next">
+    <h2>8. Out-of-scope observations and recommended next tasks</h2>
+    <ul>
+      <li><b>core-be-audit-security / fix:</b> authenticate <code>POST /auth/create-key</code> (<code>auth.py:13-14</code>).</li>
+      <li><b>Fix task, logging P1:</b> L-01, L-02, L-03, L-09 (redacting filter in <code>src/core/logger.py</code>), L-05, L-06.</li>
+      <li><b>Feature task:</b> request-id middleware and access line (L-04), <code>queue_id</code> and job id through to the worker (L-12), <code>set_room_context</code> in dispatcher and call routes (L-11).</li>
+      <li><b>Fix task, worker lifecycle:</b> one end line and one abort helper in <code>session.py</code> (L-07, L-08), task done-callbacks (L-18).</li>
+      <li>Not logging, flagged by the services reviewer: <code>inbound_bridge.py:313-357</code> leaves the CallRecord <code>initiated</code> on cancel or dispatch failure; <code>smtp_service.py:72</code> has no timeout and blocks the event loop. Flagged by the worker reviewer: the module-global OpenAI client in <code>voice_features.py:28-29</code> keeps the first call's key. Not verified by me.</li>
+    </ul>
+  </section>
+
+  <section id="not-reviewed">
+    <h2>9. Not reviewed</h2>
+    <p><code>scripts/</code>, <code>tests/</code>, <code>docs/</code>; the log shipping and retention setup outside the repo; log output of third-party libraries beyond the levels set in <code>setup_logging</code>.</p>
+  </section>
+</main>
+</body>
+</html>

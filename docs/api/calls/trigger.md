@@ -82,7 +82,8 @@ See [Using Placeholders](../assistant/placeholders.md) for the full reference â€
 | Code | Description                                                                                |
 | :--- | :----------------------------------------------------------------------------------------- |
 | 202  | Accepted - outbound call request queued successfully.                                      |
-| 400  | Bad Request - Invalid input data, missing required fields, or trunk type and call service mismatch. |
+| 422  | Validation error - invalid input data or missing required fields. |
+| 400  | Bad Request - trunk type and call service do not match. |
 | 401  | Unauthorized - Invalid or missing Bearer token.                                            |
 | 404  | Not Found - Assistant or trunk not found.                                                  |
 | 500  | Server Error - Internal server error during queue insertion or later dispatch.             |

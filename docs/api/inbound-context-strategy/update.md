@@ -144,16 +144,16 @@ curl -X PATCH "https://api-livekit-vyom.indusnettechnologies.com/inbound_context
 | `400` | No fields sent | `No fields provided for update` |
 | `400` | `strategy_type` sent without `strategy_config` (or the reverse) | ``Provide both `strategy_type` and `strategy_config` together, or neither.`` |
 | `400` | A field sent as `null` | ``` `strategy_config` cannot be null; omit it to leave it unchanged. ``` |
-| `400` | A masked value echoed back from `GET /details` | ``` 'Authorization' is masked (as returned by GET /tool/details). Send the real value, or omit the field to keep the stored one. ``` |
-| `400` | URL scheme not `http`/`https` | `url must use http or https` |
-| `400` | URL points at a non-public address | `url host '169.254.169.254' resolves to a non-public address` |
-| `400` | URL host is internal | `url host 'localhost' is not allowed` |
-| `400` | `timeout_seconds` outside `0.5`–`10.0` | Pydantic range error on `strategy_config.timeout_seconds` |
+| `422` | A masked value echoed back from `GET /details` | ``` 'Authorization' is masked (as returned by GET /tool/details). Send the real value, or omit the field to keep the stored one. ``` |
+| `422` | URL scheme not `http`/`https` | `url must use http or https` |
+| `422` | URL points at a non-public address | `url host '169.254.169.254' resolves to a non-public address` |
+| `422` | URL host is internal | `url host 'localhost' is not allowed` |
+| `422` | `timeout_seconds` outside `0.5`–`10.0` | Pydantic range error on `strategy_config.timeout_seconds` |
 | `401` | Invalid or missing API key. | |
 | `404` | Strategy not found for the authenticated user. | |
 
 !!! danger "Do not echo back masked values"
 
-    `GET /details` and `GET /list` return secret-looking header values as `****`. Sending that `****` back on update is rejected with `400` — by design. Without it, a fetch-edit-save round trip would overwrite your real token with the literal string `****` and every subsequent lookup would fail with `401` from your own endpoint.
+    `GET /details` and `GET /list` return secret-looking header values as `****`. Sending that `****` back on update is rejected with `422` — by design. Without it, a fetch-edit-save round trip would overwrite your real token with the literal string `****` and every subsequent lookup would fail with `401` from your own endpoint.
 
     Because headers now merge, the safe pattern is simply: send only the headers you are actually changing, and never resend a header you did not edit.

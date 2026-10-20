@@ -1,7 +1,6 @@
 # Changelog
 
-Every release that changes platform behaviour is recorded here. The version is single-sourced in
-`src/core/version.py` and reported by the API at `GET /docs` (the OpenAPI `info.version`), so you
+Every release that changes platform behaviour is recorded here. The version is reported by the API at `GET /docs` (the OpenAPI `info.version`), so you
 can always tell which release a deployment is running.
 
 The minor version goes up whenever behaviour changes in a way an operator has to know about.
@@ -22,7 +21,7 @@ Given how this platform is used, that includes anything that changes **what a ca
 | [1.1.0](#110) | 2026-08-29        | Concurrency limits and call setup under load.                                                                                                                                                          |
 | [1.0.0](#100) | before 2026-08-29 | The platform before versioning: three assistant modes, telephony, web calls, tools.                                                                                                                    |
 
-Dates are the day the version was set in `src/core/version.py`.
+Dates are the day the version was set.
 
 ---
 
@@ -46,7 +45,7 @@ still always answers HTTP `200`, so container healthchecks behave as before — 
 `assistant_mode: "duplex"` runs OpenAI's full-duplex voice model, `gpt-live-1`, on this
 deployment's own OpenAI key. It listens while it speaks and decides its own turns, and hands
 reasoning and tool calls to a backend reasoning model (`assistant_llm_config.backend_model`,
-default `gpt-5.6-luna`). How it works: [Duplex Mode](architecture/duplex-mode.md). Fields:
+default `gpt-5.6-luna`). How it works: [Duplex Mode](concepts/duplex.md). Fields:
 [Models &amp; Providers → GPT-Live](reference/models.md#gpt-live-duplex-mode-only).
 
 It cannot speak a fixed string, so three things are refused when the assistant is saved: an
@@ -119,7 +118,7 @@ estimates for those models drop by about 20%.
 
 ### New docs pages
 
-- [Duplex Mode](architecture/duplex-mode.md): how a GPT-Live call runs.
+- [Duplex Mode](concepts/duplex.md): how a GPT-Live call runs.
 - [Pricing](reference/pricing.md): every rate behind `estimated_cost_usd`, with its source and date.
 - This page now opens with a table of every release and its date.
 
@@ -177,7 +176,7 @@ well, and `--apply` clears it so the assistant falls back to `nova-3`.
 
 Calls used to come back `pricing_complete: false` whenever they touched a provider the rate
 table did not carry. Added: Gemini Live (all four accepted models), Cartesia TTS and STT,
-Mistral TTS. Two carry a caveat, stated in `src/core/pricing/rates.py` beside the numbers:
+Mistral TTS. Two carry a caveat, stated in the rate table beside the numbers:
 
 - **Cartesia is derived**, not quoted — it publishes plan tiers rather than a per-unit price,
   so the rate comes from the $49 Startup tier. Replace it with your contract rate if you have
@@ -218,7 +217,7 @@ two rules that decide whether the meeting can hear the assistant at all — subs
 mix the assistant's tracks rather than picking one. It ends with a walkthrough of building a
 connector for a platform other than Google Meet.
 
-[Google Meet Call Architecture](architecture/meeting-calls.md) gains a census of how many workers,
+[Google Meet Call Architecture](concepts/meeting-calls.md) gains a census of how many workers,
 participants and audio tracks each call type puts in a LiveKit room, the mechanism of the audio
 path in both directions, and the behaviour that was previously undocumented: the agent-track
 subscription diagnostic, the third readiness-recovery path, and that recording egress starts at

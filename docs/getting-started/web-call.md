@@ -15,7 +15,7 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/get_tok
   }'
 ```
 
-The response contains a `token` and `room_name`. Pass the token to the LiveKit client SDK to join the room.
+The response contains `data.token` and `data.room_name`. Pass the token to the LiveKit client SDK to join the room, using the LiveKit server URL your deployment provides.
 
 ## B2 — Connect with LiveKit SDK
 
@@ -23,10 +23,10 @@ The response contains a `token` and `room_name`. Pass the token to the LiveKit c
 import { Room } from "livekit-client";
 
 const room = new Room();
-await room.connect("wss://your-livekit-server", token);
+await room.connect(LIVEKIT_URL, data.token);
 ```
 
-The assistant joins automatically once the room is created. Both audio and typed text input (`lk.chat` topic) are supported.
+The assistant joins automatically once the room is created. Both audio and typed text input (send typed text on the `lk.chat` topic) are supported. Agent replies arrive on the `lk.transcription` topic.
 
 ## B3 — Text-Only Chat (Optional)
 
@@ -42,4 +42,4 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/web_call/get_tok
   }'
 ```
 
-The LLM still runs and emits text on the `lk.chat` topic for both client → agent and agent → client. Only pipeline-mode assistants are supported; realtime-mode assistants return HTTP 400. See [API reference → Text-Only Mode](../api/calls/web-call.md#text-only-mode-text_only-true) for details.
+The LLM still runs. The client sends text on the `lk.chat` topic, and the agent's replies arrive on `lk.transcription`. Only pipeline-mode assistants are supported; realtime-mode assistants return HTTP 400. See [API reference → Text-Only Mode](../api/calls/web-call.md#text-only-mode-text_only-true) for details.

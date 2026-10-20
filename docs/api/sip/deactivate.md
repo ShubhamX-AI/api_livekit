@@ -54,7 +54,9 @@ curl -X DELETE "https://api-livekit-vyom.indusnettechnologies.com/sip/deactivate
 
 ```json
 {
-  "detail": "Trunk is already deactivated"
+  "success": false,
+  "message": "Trunk is already deactivated",
+  "data": {}
 }
 ```
 
@@ -62,7 +64,9 @@ curl -X DELETE "https://api-livekit-vyom.indusnettechnologies.com/sip/deactivate
 
 ```json
 {
-  "detail": "Trunk not found"
+  "success": false,
+  "message": "Trunk not found",
+  "data": {}
 }
 ```
 

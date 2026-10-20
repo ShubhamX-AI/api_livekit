@@ -1136,7 +1136,7 @@ async def entrypoint(ctx: JobContext):
     # interruption knob inert (see the comment on the AgentSession above). It runs upstream
     # of the realtime model, so noise never reaches the VAD that interrupts the agent.
     # AGC is off deliberately — the SDK default is True, and WebRTC AGC re-amplified the
-    # agent's own echo into false barge-ins (docs/architecture/audio-pipeline.md).
+    # agent's own echo into false barge-ins (dev-docs/subsystems/telephony-exotel.md).
     meeting_participant_kinds = [
         rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
         rtc.ParticipantKind.PARTICIPANT_KIND_SIP,

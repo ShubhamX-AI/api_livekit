@@ -24,6 +24,7 @@ Create a LiveKit room and return a participant token for browser or mobile web c
 | `data` | object | Generated room and access token payload. |
 | `data.room_name` | string | Unique LiveKit room created for this web call. |
 | `data.token` | string | Participant access token for joining the room. |
+| `data.agent_dispatch` | object | The agent dispatch created for the room. Informational; the client needs no action on it. |
 
 ### HTTP Status Codes
 
@@ -34,13 +35,33 @@ Create a LiveKit room and return a participant token for browser or mobile web c
 | 422 | Validation Error - Invalid request body. |
 | 401 | Unauthorized - Invalid or missing Bearer token. |
 | 404 | Not Found - Assistant not found for the authenticated user. |
+| 503 | Service Unavailable - the web-call capacity limit is reached. Retry shortly. |
 | 500 | Server Error - Internal error while generating the token. |
+
+### Connecting from a client
+
+```ts
+import { Room } from "livekit-client";
+
+const res = await fetch("https://api-livekit-vyom.indusnettechnologies.com/web_call/get_token", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+  body: JSON.stringify({ assistant_id: "<assistant_id>" }),
+});
+const { data } = await res.json();
+
+const room = new Room();
+await room.connect(LIVEKIT_URL, data.token);
+await room.localParticipant.setMicrophoneEnabled(true);
+```
+
+Keep your API key on your server. Browsers should call your own backend, which then calls this endpoint.
 
 ### Frontend Text + Voice Usage
 
 Web calls support both typed chat and microphone audio in the same room.
 
-Use the standard LiveKit text stream topic `lk.chat`:
+Send typed input on the standard LiveKit text stream topic `lk.chat`:
 
 ```ts
 import { useLocalParticipant } from "@livekit/components-react";
@@ -60,13 +81,16 @@ For pure chatbot use cases (no voice on either side), set `"text_only": true` in
 - Skips LiveKit Egress recording — no S3 storage cost, `CallRecord.recording_egress_id` and `recording_path` stay `null`.
 - Disables voice-only features: filler words, silence reprompts, background sound, thinking sound.
 
-The LLM (`gpt-realtime-1.5` in pipeline mode) still runs and emits text. Replies are published back on the same `lk.chat` topic as transcription text — the client listens to that topic for both directions.
+The LLM (`gpt-realtime-1.5` in pipeline mode) still runs and emits text. Replies are published on the `lk.transcription` topic, not on `lk.chat`. `lk.chat` carries only what the client sends.
 
 **Constraint:** only pipeline-mode assistants are supported. Realtime-mode assistants (Gemini realtime / OpenAI realtime bundling STT+LLM+TTS) return HTTP 400 because their audio model has no clean text-only path.
 
 ```ts
-// Client receives agent replies on the same topic
-room.registerTextStreamHandler("lk.chat", async (reader) => {
+// Agent replies arrive on lk.transcription. The same topic also carries the user's own
+// transcribed speech, so keep only the messages sent by the agent participant.
+room.registerTextStreamHandler("lk.transcription", async (reader, participantInfo) => {
+  const sender = room.remoteParticipants.get(participantInfo.identity);
+  if (!sender?.isAgent) return;
   const text = await reader.readAll();
   console.log("agent:", text);
 });

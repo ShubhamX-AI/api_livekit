@@ -28,10 +28,10 @@ Scope: `src/`, `agent_run.py`, `server_run.py`, `sip_dispatcher_run.py`.
 |---|---|---|
 | Files that log | 46 (13,476 lines) | `grep -rlE "logger\.(…)"` |
 | `logger.debug` / `info` / `warning` / `error` / `exception` / `critical` | 15 / 238 / 105 / 123 / 1 / 0 | grep per level |
-| f-string log messages | 291 | `grep -rE 'logger\.\w+\(f"'` |
+| f-string log messages | 374 (AST; the first grep missed multi-line calls) | AST pass |
 | `%`-style lazy messages | 11 | grep |
-| `exc_info=` uses | 29 | grep |
-| `extra=` uses | 18 | grep |
+| `exc_info=` uses | 27 at call sites | AST pass |
+| `extra=` uses | 0 (the 18 grep hits were pydantic `ConfigDict`) | AST pass |
 | `print(` calls | 1 real (`src/core/agents/stt/lang.py:234`) | grep |
 | Ruff `BLE001` blind except | 120 | `uvx ruff check … --select G,LOG,TRY400,TRY401,BLE001,S110,S112 --statistics` |
 | Ruff `G004` f-string in logging | 20 (Ruff only recognises `logging.getLogger` loggers, so the grep count is the real one) | same |

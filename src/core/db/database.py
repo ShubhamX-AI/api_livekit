@@ -39,7 +39,10 @@ class Database:
 
             # Test connection
             await cls.client.admin.command("ping")
-            logger.info(f"Successfully connected to MongoDB at {settings.MONGODB_URL}")
+            # The URL carries the DB user and password; log only where it points.
+            authority = settings.MONGODB_URL.split("://", 1)[-1].split("/", 1)[0]
+            host = authority.rpartition("@")[2]
+            logger.info(f"Successfully connected to MongoDB at {host}")
 
             # Initialize Beanie with document models
             await init_beanie(

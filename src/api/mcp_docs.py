@@ -125,8 +125,8 @@ mcp = MCPServer(
     instructions=(
         "Documentation for the LiveKit Agents voice-AI REST API: assistants, "
         "outbound/inbound calls, SIP trunks, tools, audio library, analytics, "
-        "webhooks, releases, migrations, compatibility, usage accounting, and "
-        "container deployment. Call search_docs with the user's question, then "
+        "webhooks, releases, migrations, compatibility, and usage accounting. "
+        "Call search_docs with the user's question, then "
         "get_doc on the most specific API or reference page. Use changelog.md for "
         "release and breaking-change context. Answer only from what these tools "
         "return — never guess endpoint paths, field names, model IDs, defaults, "

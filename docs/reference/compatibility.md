@@ -4,10 +4,9 @@ Which combinations of `assistant_mode`, LLM provider, STT provider and TTS provi
 and what happens when you pick one that doesn't. [Models & Providers](models.md) documents *what each
 knob does*; this page documents *what you are allowed to combine*.
 
-Sourced from the validators in `src/api/models/api_schemas/config/llm_config.py` and
-`src/api/routes/assistant.py`, and from the runtime in `src/core/agents/session.py` plus the three
-factories under `src/core/agents/`. If this page and any other doc disagree, check the code — and
-then fix whichever doc is wrong.
+Every rule on this page is enforced by the API at create and update, or describes what happens at
+call time when a combination is accepted. If this page and another page disagree, this page is the
+one that describes what the API accepts.
 
 ## Legend
 
@@ -48,10 +47,10 @@ talks to a different API.
 
 | Mode | Accepted models | On anything else |
 |---|---|---|
-| `pipeline` | `REALTIME_MODELS` — `gpt-realtime`, `gpt-realtime-1.5`, `gpt-realtime-2`, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`, `gpt-realtime-2025-08-28`, `gpt-realtime-mini` | `422`. A chat model such as `gpt-4.1` belongs to cascade mode. |
-| `realtime` + `openai` | same `REALTIME_MODELS` list | `422` |
+| `pipeline` | `gpt-realtime`, `gpt-realtime-1.5`, `gpt-realtime-2`, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`, `gpt-realtime-2025-08-28`, `gpt-realtime-mini` | `422`. A chat model such as `gpt-4.1` belongs to cascade mode. |
+| `realtime` + `openai` | the same realtime list as `pipeline` | `422` |
 | `realtime` + `gemini` | `gemini-3.8-live` (default), `gemini-3.8-live-extended-thinking`, `gemini-3.1-flash-live-preview`, `gemini-2.5-flash-native-audio-preview-12-2025`. `gemini-live-2.5-flash-native-audio` is Vertex-only and also a `422` | `422` |
-| `cascade` | `OPENAI_CASCADE_MODELS` — the chat and reasoning models listed in [Models & Providers](models.md#cascade-llm-cascade-mode-only) | `422` |
+| `cascade` | the chat and reasoning models listed in [Models & Providers](models.md#cascade-llm-cascade-mode-only) | `422` |
 | `duplex` — `model` | `gpt-live-1` | `422`. The reasoning model goes in `backend_model`. |
 | `duplex` — `backend_model` | the reasoning models only (`gpt-5*`, `gpt-6-luna`, `gpt-6-sol`) | `422` |
 
@@ -62,12 +61,7 @@ job ends with no audio and nothing naming the cause.
 
 The older `gpt-4o-realtime-preview` / `gpt-4o-mini-realtime-preview` pair is **no longer
 accepted**: measured on 2026-08-13, the account does not serve either, so storing one produced a
-session that could not connect. They are still named in the code, because the
-`session.truncation` rule is asked about stored rows too and those two predate that field.
-
-Every list lives in `src/core/model_support/capabilities.py`. `REALTIME_TRUNCATION_MODELS` is
-*derived* from the realtime list rather than restated, because a restated copy drifted: it named
-two models the API allowlist rejected, making both entries unreachable.
+session that could not connect.
 
 Beyond these lists, create/update asks OpenAI whether the account still serves the model —
 see [Models & Providers → On the allowlist](models.md#on-the-allowlist).
@@ -159,8 +153,8 @@ those say anything about the configuration.
     Those models refuse `reasoning.effort` in any request carrying function tools — and an
     assistant has tools whenever it has `tool_ids` or `assistant_end_call_enabled`. Worse,
     the OpenAI plugin sets a default effort **by itself** on those models, so an assistant
-    with an empty `assistant_llm_config` hit this too. `create_llm` now clears it before the
-    call (`src/core/agents/llm/factory.py`) and logs one line when it does. Nothing to
+    with an empty `assistant_llm_config` hit this too. The platform now clears it before the
+    call and logs one line when it does. Nothing to
     configure; a `reasoning_effort` you set explicitly is dropped with a warning instead.
 
 !!! danger "The `*-chat-latest` aliases are retired"
@@ -175,7 +169,7 @@ A model outside the allowlist (a row written before it existed, or by a direct M
 has no known family, so its knobs are forwarded untouched rather than guessed at.
 
 Assistants written *before* this gate existed can still hold a knob their model rejects. Calls
-run — `create_llm` drops it and logs which one — but every PATCH to that assistant is refused
+run — the knob is dropped at call time and the worker logs which one — but every PATCH to that assistant is refused
 with a `400` until the knob is cleared, because the rules are re-checked against the merged row.
 `uv run python scripts/migrate_llm_knobs.py` lists them (`--apply` to clear them).
 
@@ -268,13 +262,13 @@ cost and nothing else. No warning is logged because nothing is lost. (This also 
 rows working, where `assistant_stt_model="openai"` *meant* native transcription.)
 
 **Why the degrade.** `cartesia`, `deepgram` and `elevenlabs` are plugin STTs with no parallel-tap
-implementation for pipeline mode. Rather than start a call with no transcripts at all, `resolve_stt`
+implementation for pipeline mode. Rather than start a call with no transcripts at all, the worker
 logs a warning and falls back to native transcription, so the caller still leaves with a transcript.
 The selection is *stored* — switch the assistant to `cascade` and it takes effect with no further
 edit. Same fallback applies in pipeline mode when a plugin provider is selected but no API key is
 available.
 
-**Cascade does not degrade.** In cascade mode a missing API key is fatal: `create_stt` returns `None`
+**Cascade does not degrade.** In cascade mode a missing API key is fatal: the STT stage cannot be built
 and the job ends before the call connects. See [Failure modes](#failure-modes).
 
 **`openai` STT: `use_realtime: false` needs `whisper-1`.** The batch REST path reports no usage at
@@ -378,16 +372,16 @@ cascade model, and a stored `gpt-realtime-1.5` is not a GPT-Live model.
 
 What a wrong combination actually looks like, in order of how early you find out.
 
-| Symptom | Cause | Where |
+| Symptom | Cause | Stage |
 |---|---|---|
-| `422 Unprocessable Entity` at create, or at update when the request names `assistant_mode` | The rule table in `validate_mode_config` — bad provider, bad model for the mode, `native` STT in cascade, missing TTS pair, or a generation knob the cascade model cannot read | `src/api/models/api_schemas/config/llm_config.py` |
-| `400 Bad Request` at update | The request is well-formed, but merged with what is already stored it produces an unrunnable assistant — e.g. `{"assistant_mode": "cascade"}` on a row holding `provider: "gemini"` or a non-allowlisted model | `enforce_stored_mode_constraints` in `src/api/routes/assistant.py` |
+| `422 Unprocessable Entity` at create, or at update when the request names `assistant_mode` | The per-mode rules — bad provider, bad model for the mode, `native` STT in cascade, missing TTS pair, or a generation knob the cascade model cannot read | API request validation |
+| `400 Bad Request` at update | The request is well-formed, but merged with what is already stored it produces an unrunnable assistant — e.g. `{"assistant_mode": "cascade"}` on a row holding `provider: "gemini"` or a non-allowlisted model | API, checked against the stored assistant |
 | Call connects, transcripts appear, but a knob you set does nothing | The field is ignored in this mode | [Config keys ignored per mode](#config-keys-ignored-per-mode) |
-| Call connects, transcripts appear, but from a different engine than you chose | Cascade-only STT in pipeline mode, or a plugin STT with no API key — both degrade to `native` and log a warning | `resolve_stt`, `src/core/agents/stt/factory.py` |
-| Call never starts. No error to the caller, one `ERROR` line in the worker log | A factory returned `None` and `entrypoint()` returned early: missing STT key in cascade, missing TTS key, unsupported TTS model, unsupported cascade LLM provider | `create_stt` / `create_tts` / `create_llm` |
-| Call runs but produces no user transcripts | `pipeline` + Sarvam tap whose key fails to authenticate — the tap disables the model's own transcription, so nothing writes transcripts. (`realtime` + `gemini` is **not** on this list any more: the Google plugin turns on `input_audio_transcription` by default, so leaving it unset is what enables it.) | `resolve_stt`, `src/core/agents/stt/factory.py` |
-| Cascade call connects, then total silence. Worker log repeats `Error in _llm_inference_task ... APIStatusError: 'There was an issue with your request'` on every turn | OpenAI rejected the request shape. A knob the model cannot read (see [Cascade LLM knobs](#cascade-llm-knobs)) or a tool schema it refuses. The WebSocket error frame carries no detail, so read the `Cascade LLM built \| ... \| knobs=` line logged at session start to see exactly what was sent | `src/core/agents/llm/factory.py`, `src/core/agents/tool_builder.py` |
-| Worker log: `Unknown assistant_mode '<x>' — treating as 'pipeline'` | `assistant_mode` was written outside the API (migration, direct Mongo edit). The DB field is a plain string with no enum. | `src/core/agents/session.py` |
+| Call connects, transcripts appear, but from a different engine than you chose | Cascade-only STT in pipeline mode, or a plugin STT with no API key — both degrade to `native` and log a warning | Call start, STT selection |
+| Call never starts. No error to the caller, one `ERROR` line in the worker log | A speech or LLM stage could not be built and the job ended early: missing STT key in cascade, missing TTS key, unsupported TTS model, unsupported cascade LLM provider | Call start, stage construction |
+| Call runs but produces no user transcripts | `pipeline` + Sarvam tap whose key fails to authenticate — the tap disables the model's own transcription, so nothing writes transcripts. (`realtime` + `gemini` is **not** on this list any more: the Google plugin turns on `input_audio_transcription` by default, so leaving it unset is what enables it.) | During the call, STT |
+| Cascade call connects, then total silence. Worker log repeats `Error in _llm_inference_task ... APIStatusError: 'There was an issue with your request'` on every turn | OpenAI rejected the request shape. A knob the model cannot read (see [Cascade LLM knobs](#cascade-llm-knobs)) or a tool schema it refuses. The WebSocket error frame carries no detail, so read the `Cascade LLM built \| ... \| knobs=` line logged at session start to see exactly what was sent | During the call, every LLM turn |
+| Worker log: `Unknown assistant_mode '<x>' — treating as 'pipeline'` | `assistant_mode` was written outside the API (migration, direct Mongo edit). The stored field is a plain string with no enum. | Call start |
 
 Everything above the last two rows is caught at the API. The remaining two are a provider
 limitation and a hand-edited database row, not configuration errors.
@@ -443,6 +437,6 @@ entirely when `assistant_stt_model` is set, and the API fills in a defaults-only
 ## See also
 
 - [Models & Providers](models.md) — every provider, model ID and config default.
-- [Runtime Modes](../architecture/runtime-modes.md) — what each mode is and how to pick one.
-- [Cascade Pipeline](../architecture/cascade-pipeline.md) — the three-stage mode in depth.
+- [Assistant modes](../concepts/assistant-modes.md) — what each mode is and how to pick one.
+- [Cascade mode](../concepts/cascade.md) — the three-stage mode in depth.
 - [Create Assistant](../api/assistant/create.md) — request shape and per-mode examples.

@@ -168,7 +168,7 @@ async def run_sarvam_parallel_stt(
         # RoomIO applies to the LLM's input — it needs its own instance (the APM and VAD
         # are both stateful per stream). Gating here also keeps Sarvam from transcribing
         # noise, which is what produced the hallucinated scripts described in
-        # docs/architecture/audio-pipeline.md.
+        # dev-docs/subsystems/telephony-exotel.md.
         audio = rtc.AudioStream(
             track, sample_rate=16000, num_channels=1, noise_cancellation=SpeechGate()
         )

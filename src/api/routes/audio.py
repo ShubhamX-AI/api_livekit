@@ -10,6 +10,7 @@ from src.core.logger import logger
 from src.core.providers.keys import redact_text
 from src.services.storage import s3_audio
 from src.services.storage.audio_transcode import (
+    MAX_UPLOAD_BYTES,
     AudioDecodeError,
     AudioTooLong,
     transcode_to_wav,
@@ -44,7 +45,10 @@ async def upload_audio(
     current_user: APIKey = Depends(get_current_user),
 ):
     logger.info(f"Received audio upload: {audio_name}")
-    raw = await file.read()
+    # Read at most one byte past the cap: a larger file is refused without ever being held in memory.
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Audio file must be 25 MB or smaller")
 
     # Accept any format; normalize to WAV 48kHz mono (PyAV, in-process) and enforce the 30s cap.
     try:

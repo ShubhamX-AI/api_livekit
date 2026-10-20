@@ -14,7 +14,7 @@ import sys
 from src.core.logger import setup_logging, logger
 from src.core.db.database import init_db, close_db
 from src.services.exotel.custom_sip_reach.inbound_listener import ensure_inbound_server
-from src.services.outbound_dispatcher import outbound_dispatcher_loop
+from src.services.outbound_dispatcher import log_dispatcher_exit, outbound_dispatcher_loop
 
 setup_logging()
 
@@ -23,10 +23,11 @@ async def main():
     await init_db()
     logger.info("sip_dispatcher: DB connected")
 
-    await ensure_inbound_server()
+    await ensure_inbound_server(required=True)
 
     # dispatcher_loop runs until cancelled
     dispatcher_task = asyncio.create_task(outbound_dispatcher_loop())
+    dispatcher_task.add_done_callback(log_dispatcher_exit)
 
     # Graceful shutdown on SIGTERM / SIGINT (Docker stop sends SIGTERM)
     loop = asyncio.get_running_loop()

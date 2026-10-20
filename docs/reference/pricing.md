@@ -1,12 +1,11 @@
 # Pricing
 
 The rates behind `estimated_cost_usd` on every usage record. They are public pay-as-you-go list
-prices, kept as a static table in `src/core/pricing/rates.py`, so a stored estimate can always be
+prices, kept as a static table in the platform, so a stored estimate can always be
 reproduced. They are estimates, not your invoice: a contract rate, a promotion or a tax changes
 what you actually pay. How the estimate is built: [Usage Accounting](usage-accounting.md).
 
-A test checks that every model in the rate table is listed on this page. When a rate changes,
-change it in `rates.py` and here, with the date it was checked.
+Every model the platform prices is listed on this page, with the date its rate was checked.
 
 ## OpenAI text models (`cascade`, and the `duplex` backend)
 

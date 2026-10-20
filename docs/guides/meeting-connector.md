@@ -9,12 +9,14 @@ browser. Google Meet support is provided by a separate worker registered under t
 `meet-connector`; this guide documents the contract that worker implements, so you can modify it or
 write another one for Zoom, Teams, Webex, or anything else with a web client.
 
-Read [Google Meet call architecture](../architecture/meeting-calls.md) first if you have not. This
-guide assumes you know that a meeting call is two LiveKit jobs in one room.
+Read [Meeting calls](../concepts/meeting-calls.md) first if you have not. One fact this guide
+builds on: a meeting call is **two LiveKit jobs in one room**. The platform's assistant job runs the
+conversation; your connector job joins the meeting in a browser, publishes the meeting's mixed audio
+into the room as one track, and plays the assistant's audio back into the meeting.
 
 !!! info "Where the connector source lives"
     Citations prefixed `connector:` in this guide refer to the Google Meet connector repository,
-    which is deployed separately from this one. Paths without a prefix are in this repository.
+    which is deployed separately from this one.
 
 ## The contract
 
@@ -48,7 +50,7 @@ sequenceDiagram
 ### 1. Register under a dispatch name
 
 The API dispatches the connector explicitly, by name. That name comes from
-`MEETING_CONNECTOR_AGENT_NAME` (default `meet-connector`, `src/core/config.py`), so your worker's
+`MEETING_CONNECTOR_AGENT_NAME` (default `meet-connector`), so your worker's
 `agent_name` and that environment variable have to agree. Nothing else routes the job.
 
 ```python
@@ -205,9 +207,7 @@ by the same amount — and a call that never reports it is never recorded.
     The assistant fails a call that is not ready within `MEETING_CONNECTOR_READY_TIMEOUT_SECONDS`
     (default `360`). If your own waiting-room timeout is longer, the assistant gives up first and
     the call record says only "readiness timed out" instead of carrying the real reason your
-    connector would have reported. Keep yours comfortably below it —
-    `tests/test_meeting_calls.py::TestConnectorTimeoutContract` pins the relationship from this
-    side.
+    connector would have reported. Keep yours comfortably below it.
 
 ### 6. End the job cleanly
 

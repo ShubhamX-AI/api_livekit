@@ -4,7 +4,7 @@ The one instruction file for every coding agent in this repo (Claude Code, Codex
 opencode). `CLAUDE.md` only imports it, so edit this file — never add content to `CLAUDE.md`.
 
 It holds the working agreement, the commands, the architecture, the system-of-record for each
-topic, and the **recent cross-cutting changes** so agents do not reintroduce regressions. The
+topic, and the **guardrails** that keep past regressions from coming back. The
 `core-be` block near the end is managed by the skill pack; the `## Project structure` section
 after it belongs to this repo.
 
@@ -33,7 +33,8 @@ fix, a rename, or a plain question skips all of it; do those directly.
 
 Everything an agent produces that is **not** shipped code or product documentation goes under
 `agent-tracking/`, never in the repo root and never in `docs/`. `docs/` is the published MkDocs
-site and is for users of the API; `agent-tracking/` is for us.
+site and is for users of the API; `dev-docs/` explains how the system is built, for developers of
+this repo; `agent-tracking/` is for us.
 
 One folder per task, named by a slug `YYYY-MM-DD-<type>-<topic>` (type is `feature`, `debug`,
 `refactor`, `audit`, `security`, `test`, `structure` or `health`). The same slug is used in every
@@ -72,11 +73,14 @@ A change to models, providers or config knobs is finished only when all of these
 - Tests updated and green: `uv run python -m unittest discover -s tests`.
 - Docs updated in **every** place that lists the thing you changed: `docs/reference/models.md`,
   `docs/reference/compatibility.md`, `docs/reference/troubleshooting.md`,
-  `docs/architecture/cascade-pipeline.md`, `docs/api/assistant/{create,update,index,list}.md`,
+  `docs/concepts/` (the mode or flow you changed), `docs/api/assistant/{create,update,index,list}.md`,
   plus `README.md` / `docs/features.md` when the feature list changes. `grep` for a sibling
   provider's name to find them all. A change to a contract an *external* worker implements also
   belongs in `docs/guides/`, and anything under `docs/` must be added to `nav:` in `mkdocs.yml` or
   the strict build fails.
+- How it is built changed: update the matching `dev-docs/subsystems/` page. A decision made or
+  reversed: add a record to `dev-docs/decisions/`. Public `docs/` pages name no source files —
+  code pointers go in `dev-docs/`, and `dev-docs/` links to `docs/`, never the other way.
 - Docs build clean: `uv run mkdocs build --strict`, and diagrams parse:
   `uv run python scripts/check_mermaid.py`. The strict build cannot catch a broken Mermaid
   diagram — they render in the browser, so a bad one deploys clean and then shows an error box.
@@ -146,7 +150,7 @@ Queue states: `pending` → `dispatching` → `dispatched` (or `failed` after 3 
 - `MAX_CONCURRENT_INVITE_SETUPS` (default `24`) bounds inbound INVITEs *in setup*, not live calls.
 - The LiveKit worker stops accepting new jobs once it is already running `MAX_CONCURRENT_SESSIONS`,
   counted from its own active jobs (`_worker_load` + `load_threshold=1.0` in
-  `src/core/agents/session.py`). It used to use the SDK default, which reads whole-machine CPU — so
+  `agent_run.py`). It used to use the SDK default, which reads whole-machine CPU — so
   a busy SIP dispatcher on the same host silently stopped agent intake and calls connected with no
   agent behind them.
 - Providers: outbound supports `twilio` + `exotel`; inbound supports `exotel` only (no Twilio inbound).
@@ -193,7 +197,7 @@ Selected by the `assistant_mode` field (`pipeline` | `realtime` | `cascade` | `d
 
 - **`pipeline`** (default, half-cascade): OpenAI realtime for STT+LLM, separate TTS provider. Requires `assistant_tts_model` + `assistant_tts_config`. Provider must be `openai` — Gemini is rejected here (its Live API cannot do text-only modality on native-audio models); use `realtime` for Gemini.
 - **`realtime`**: Gemini realtime handles STT+LLM+TTS in one model. `assistant_tts_model` / `assistant_tts_config` are ignored at runtime.
-- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` rejected); provider must be `openai`. Docs: `docs/architecture/cascade-pipeline.md`.
+- **`cascade`**: a true three-stage pipeline — plugin STT + non-realtime `openai.responses.LLM` + plugin TTS, all passed to one `AgentSession(stt=, llm=, tts=, vad=)`. Requires TTS like pipeline; `assistant_stt_model` must be `sarvam`, `cartesia`, `deepgram`, `elevenlabs` or `openai` (`native` rejected); provider must be `openai`. Docs: `docs/concepts/cascade.md` (behaviour), `dev-docs/subsystems/speech-and-llm-stages.md` (build).
 - **`duplex`**: OpenAI GPT-Live (`openai.realtime.GPTLiveModel`, a `DuplexModel` — not a `RealtimeModel`) on our own key, built by `create_gpt_live`. Listens while it speaks and decides its own turns; hands reasoning and tools to `assistant_llm_config.backend_model` (a reasoning model, default `gpt-5.6-luna`), so the generation knobs are judged against the backend. No TTS, no STT, explicit local Silero VAD for barge-in. `session.say()` raises without a TTS, so greeting audio, filler words and `text_only` are rejected at the API. Voice and both instruction sets are fixed for the session. Switching into or out of duplex clears the stored `assistant_llm_config`.
 
 TTS providers: `cartesia`, `sarvam`, `elevenlabs`, `mistral`. Per-provider config lives in `assistant_tts_config` dict on the `Assistant` document; factory is `src/core/agents/tts/factory.py`.
@@ -261,7 +265,7 @@ All read in `src/core/config.py` (`Settings`). Beyond `ENABLE_SIP_LISTENER` / `E
   seconds, default `30`), `END_CALL_WEBHOOK_ATTEMPTS` (default `3`)
 - Server: `PORT`, `GUNICORN_WORKERS`
 
-## Runtime behaviors (see README.md for full detail)
+## Runtime behaviors (user-facing detail: `docs/concepts/`)
 
 - **Web call modes**: voice + text (`lk.chat`), plus opt-in `text_only: true` (disables mic/TTS/STT/recording for pure chatbot). `docs/api/calls/web-call.md`.
 - **Passthrough mode**: human web user ↔ SIP phone caller, no AI agent. `docs/api/calls/passthrough.md`.
@@ -271,18 +275,10 @@ All read in `src/core/config.py` (`Settings`). Beyond `ENABLE_SIP_LISTENER` / `E
 
 ## One-off scripts
 
-`scripts/` holds migration/backfill jobs (e.g. `migrate_assistants.py`, `migrate_stt_config.py`, `backfill_call_records.py`, `backfill_billable_duration_minutes.py`, `migrate_llm_knobs.py`, `migrate_retired_models.py`, `migrate_tts_settings.py`). Run with `uv run python scripts/<name>.py`.
-
-**Diagnostics** (read-only unless noted; details in `docs/reference/troubleshooting.md`):
-
-| Script | Answers |
-|---|---|
-| `check_model_allowlist.py` | Does every allowlisted model still exist for this key? Exits 1 on drift, so it doubles as a pre-deploy gate. **Run it before editing any model list.** |
-| `audit_assistant_models.py` | Which stored assistants hold a model this deployment cannot run? `--apply` clears the model field so they fall back to the default. |
-| `check_mermaid.py` | Does every Mermaid diagram in the docs actually render? Catches both parse errors and diagrams that parse but draw wrong (a literal `\n` in a label). Exits 1 on failure. |
-| `replay_cascade_request.py <assistant_id>` | *Why* did OpenAI refuse this assistant's request? Replays the exact payload over HTTPS, where the error has detail; `--bisect` names every offending knob. |
-
-`migrate_stt_config.py` runs in two passes: default copies the legacy `assistant_interaction_config.user_stt_provider` / `.stt_api_key` into `assistant_stt_model` / `assistant_stt_config` (safe before deploy), `--unset` removes the old keys (after deploy is verified).
+`scripts/` holds diagnostics and migrations. Every script, its exact command, and whether it
+writes: `dev-docs/operations/scripts.md`. Run migrations as a dry run first; they change data
+only with `--apply` (or `--unset` for `migrate_stt_config.py`). Run
+`uv run python scripts/check_model_allowlist.py` before editing any model list.
 
 ## Webhook contracts
 
@@ -297,7 +293,8 @@ Canonical payload docs (not code):
 |---|---|
 | Models, providers, config defaults, values, change-effects | `docs/reference/models.md` (auto-doc'd from the factories) |
 | Every config knob for create/update, examples, defaults | `docs/api/assistant/create.md`, `docs/api/assistant/update.md` |
-| Cascade mode specifics + validation rules | `docs/architecture/cascade-pipeline.md` |
+| Cascade mode specifics + validation rules | `docs/concepts/cascade.md`, `dev-docs/subsystems/validation-and-models.md` |
+| How the system is built, and why | `dev-docs/` (`architecture.md`, `subsystems/`, `decisions/`) |
 | Which mode × LLM × STT × TTS combinations are legal | `docs/reference/compatibility.md` |
 | What a failure looks like and which command diagnoses it | `docs/reference/troubleshooting.md` |
 | What an external worker must implement to plug into the platform | `docs/guides/` (currently the meeting connector contract) |
@@ -308,206 +305,36 @@ Canonical payload docs (not code):
 
 If a doc disagrees with the factory code, **the factory code wins** — fix the doc.
 
-## Recent changes — 1.6.0: duplex mode, GPT-6, new speech models (2026-10)
+## Guardrails
 
-`livekit-agents` is pinned to `~=1.8.8` (was `~=1.8.2`), in `pyproject.toml` **and**
-`docker/requirements-agent.txt`. `mistralai` is held below 3 to match the agent image.
+Each rule below prevents a regression this repo has already shipped once. The full context and
+reasoning are in `dev-docs/decisions/` (record number in brackets); read the record before
+changing a rule.
 
-- **New `duplex` mode** (OpenAI GPT-Live, `create_gpt_live` in `src/core/agents/llm/factory.py`).
-  A fourth branch in `validate_mode_config`: model `gpt-live-1`, a GPT-Live voice, and a
-  reasoning `backend_model` that takes the tools and the generation knobs. Greeting audio,
-  filler words, `text_only` and `temperature` are refused. Gates 3 and 4 run against both
-  models. Switching into or out of duplex clears `assistant_llm_config`. Architecture:
-  `docs/architecture/duplex-mode.md`.
-- **Models added**: `gpt-6-luna`, `gpt-6-sol` (cascade + duplex backend), `gpt-realtime-2.1`,
-  `gpt-realtime-2.1-mini`, ElevenLabs `eleven_v4` / `eleven_v4_turbo`,
-  Sarvam `bulbul:v4-flash` through a new `assistant_tts_config.model` field with its own
-  224-speaker roster and the 12 IN22 languages.
-- **Models removed**: `gpt-5.1`, `gpt-5.4-nano` (OpenAI retires both on 2027-04-01).
-  `scripts/migrate_retired_models.py --apply` moves stored rows to `gpt-6-sol` / `gpt-6-luna`.
-- **TTS settings a model ignores are a 422**: ElevenLabs `voice_settings` per model
-  (`ELEVENLABS_UNREAD_SETTINGS` in `src/core/model_support/speech.py`, from ElevenLabs'
-  `/v1/models` flags and model notes) and Sarvam `temperature` on `bulbul:v4-flash`. The
-  retired `eleven_monolingual_v1` / `eleven_multilingual_v1` are rejected too.
-  `scripts/migrate_tts_settings.py --apply` cleans stored rows; until then the factory drops
-  the ignored settings at call time.
-- **Pricing**: a `session_second` rate for GPT-Live, a dated-snapshot fallback for reasoning
-  models, current ElevenLabs rates. Every rate is listed on `docs/reference/pricing.md`, and a
-  test fails when a rated model is missing there.
-
-## Recent changes — the silent call, closed off (2026-08)
-
-One failure mode caused most "the assistant is broken" reports: the config is accepted, the call
-connects, OpenAI rejects **every** LLM turn, and the caller hears silence. Over the WebSocket the
-runtime uses, that rejection is `status_code=-1` with no parameter name — nothing to act on.
-
-What changed, in the order a request meets it:
-
-1. **The cascade allowlist lost five ids.** `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and
-   `gpt-5.3-chat-latest` were retired by OpenAI on 2026-06-19; `chat-latest` is a LiveKit
-   Inference gateway id (needs Cloud credentials); `gpt-oss-120b` is served by baseten/groq, not
-   `api.openai.com`. Do not restore any of them, and do not add a replacement from memory.
-2. **Two new gates that ask OpenAI** (`src/core/model_support/openai_live.py`): does the account
-   still serve the model, and will it accept this exact request (model + knobs + tool schemas)?
-   Both cached per key; both fail **open** on a network error, 401, 429 or 5xx. This is what
-   catches a `reasoning_effort` *value* a model refuses and a `service_tier` the account may not
-   use — neither is knowable from any table.
-3. **`tool_choice: "required"` needs a tool**, and `POST /tool/{attach,detach}` re-run the whole
-   guard: attaching or detaching moves both that rule and the `gpt-5.2`/`gpt-5.4*`
-   reasoning-with-tools rule.
-4. **STT/TTS model ids and Sarvam speakers are allowlisted** (`model_support/speech.py`), and a
-   provider with no key at all is refused instead of failing at job start.
-5. **Gemini Live models and realtime voices are validated.** The Live API is a five-id set; the
-   Gemini and OpenAI voice rosters share no names. (The default has since moved again — see the
-   Gemini 3.8 section below.)
-
-Three scripts carry the diagnosis: `check_model_allowlist.py` (is our list still true),
-`audit_assistant_models.py` (which stored rows are stale), `replay_cascade_request.py <id>
---bisect` (why OpenAI refused, over HTTPS where the error has detail). Operator-facing version:
-`docs/reference/troubleshooting.md`.
-
-## Recent changes — Gemini 3.8 Live (2026-09)
-
-`livekit-agents` is pinned to `~=1.8.2` (was `~=1.7.1`), in `pyproject.toml` **and**
-`docker/requirements-agent.txt`. Three things follow from it:
-
-1. **Two new Live models are allowlisted**, straight from the 1.8.2 plugin Literal:
-   `gemini-3.8-live` and `gemini-3.8-live-extended-thinking`. `GEMINI_LIVE_MODELS` is derived
-   from that Literal by a parity test — a plugin bump that adds a model fails the suite until
-   the allowlist follows.
-2. **The Gemini default is now `gemini-3.8-live`** (was
-   `gemini-2.5-flash-native-audio-preview-12-2025`). Assistants that omit `model` move with it.
-   Extended-thinking is selectable and reasons before speaking: slower first word, async-only
-   function calling, nothing rejects it.
-3. **The 3.1 mid-session guard is gone.** `GEMINI_NO_MIDSESSION_CONTENT_MODELS` and the warning
-   in `session.py` documented a **plugin** bug that `livekit-plugins-google` 1.8.2 fixes
-   upstream: `generate_reply()`, `update_instructions()` and `update_chat_ctx()` now work on
-   every Live model. Do not reintroduce the set; the remedy for the old symptom is the version
-   pin, and `docs/reference/troubleshooting.md` keeps the symptom documented that way.
-
-Two rules followed from the same audit:
-
-4. **`gemini-live-2.5-flash-native-audio` is refused at the API** (`GEMINI_VERTEX_ONLY_MODELS`).
-   It is in the plugin's Literal, so `GEMINI_LIVE_MODELS` keeps it for parity, but the plugin
-   raises while building the model unless `vertexai=True` — which this deployment never sets.
-   Accepted, it was a call that connected and then lost its worker.
-5. **The Deepgram STT allowlist is now a deliberate subset**, not plugin parity: the `nova-3`
-   line plus the two `flux` models. Deepgram stopped publishing a price for `nova-2`,
-   `enhanced`, `base` and hosted `whisper`, and this platform prices every call it accepts.
-   `tests/test_speech_models.py` asserts subset-of-plugin **and** that every accepted id has a
-   rate — do not re-add an id without a price.
-
-Pricing gained `GEMINI_LIVE_RATES`, `CARTESIA_TTS_RATES`, `CARTESIA_STT_RATES` and
-`MISTRAL_TTS_RATES` in `src/core/pricing/rates.py`, so every provider this platform runs is
-priced. Gemini is keyed under `gemini`, which is what the plugin reports for an API-key
-session once `normalize_provider` lowercases it. Two numbers are weaker than the
-rest and say so beside themselves: Cartesia is **derived** from its plan tiers (it quotes no
-per-unit price), and Deepgram is priced at its **regular** rate while the page shows a
-promotional one. Open questions from this work:
-`agent-tracking/plans/2026-09-21-feature-gemini-3.8-live/open-questions.md`.
-
-## Recent changes — the assistants' TTS + cascade LLM knobs (2026-08)
-
-New optional `assistant_tts_config` and `assistant_llm_config` keys. All are
-optional; **omitting one keeps the old behavior / SDK default** (that preserves
-existing assistants). When you touch these, keep behavior identical when the key
-is absent.
-
-### TTS providers (`assistant_tts_config`)
-
-- **Cartesia**: `speed` (float `0`–`3`, def `1.0` — preset strings rejected, `sonic-3` needs a float), `volume`
-  (def `1.0`), `emotion` (Sonic 3 only), `language` (def `en`),
-  `pronunciation_dict_id`. Factory: `src/core/agents/tts/factory.py`.
-- **Sarvam**: `pace` (def `1.0`), `speech_sample_rate` (def `24000`),
-  `temperature` (def `0.3`), `target_language_code`. Defaults match the SDK —
-  do not change them.
-- **ElevenLabs**: `model` (def `eleven_v3`), `voice_settings` (subkeys
-  `stability`, `similarity_boost`, `style`, `speed`, `use_speaker_boost`).
-  **CRITICAL: when `voice_settings` is absent, pass `NOT_GIVEN`, never `None`** —
-  the client treats `None` as "set" and `dataclasses.asdict(None)` crashes on
-  synthesis. See the regression tests in `tests/test_cascade_config.py`.
-
-### Cascade LLM (`assistant_llm_config`, mode=`cascade`, build = `openai.responses.LLM`)
-
-- `model` **must** be in `OPENAI_CASCADE_MODELS` (defined in
-  `src/core/model_support/capabilities.py`, re-exported from
-  `src/api/models/api_schemas/config/llm_config.py`); unknown → `422`. Default `gpt-4.1`. It is
-  then checked against OpenAI's own model list too — see the section above.
-- `temperature` (0–2): **ignored by reasoning models** (`gpt-5`/`gpt-5.x`) —
-  they take `reasoning_effort` instead. Do not show both on a reasoning model in
-  examples.
-- `reasoning_effort`: `none|minimal|low|medium|high|xhigh|max`, reasoning
-  models only. Which of those *values* a given model takes is per model and is checked against
-  OpenAI at create/update, not guessed here.
-- `max_output_tokens`, `service_tier`, `verbosity`, `tool_choice`,
-  `parallel_tool_calls`: forwarded when set; omitted keeps SDK default.
-- Factory only forwards a knob when its config value is **non-None** (or truthy
-  for strings/bools).
-
-Keep the "what changes if you change it" per-column style already in
-`docs/reference/models.md` — it is what users rely on.
-
-## Recent changes — secret redaction + key caps (2026-08)
-
-- **Error responses never echo secrets.** `redact_text` in `src/core/providers/keys.py`
-  scrubs secret-shaped substrings out of any exception message before it reaches an HTTP
-  body (labelled `api_key=…`/`Authorization: Bearer …` assignments, key prefixes
-  `sk-proj-`/`sk-ant-`/`AIza`/`ghp_`, bare `Bearer <jwt>`, and 32+-char opaque tokens).
-  `redact_validation_errors` masks a failing field's `input` when the field `loc` is a
-  secret name (and any nested dict value whose key is secret). Endpoints must not
-  interpolate a raw exception into `detail` — run it through `redact_text` first.
-- **Provider key cap is now 500 characters** on every `api_key` field (was 100 on
-  STT/TTS, 200 on LLM). `ProviderApiKey` stays an `Annotated` type; the per-field
-  `max_length=500` is intentional so validation errors name the offending field.
-
-## Recent changes — mode guardrails (2026-08)
-
-Combinations that used to be accepted and then failed at call time are now rejected
-at the API. If you add a provider or a mode, extend the same rule table — do not add
-a second one.
-
-- **`validate_mode_config(mode, llm_config, stt_model)`** in
-  `src/api/models/api_schemas/config/llm_config.py` is the single rule table for all
-  three modes. Called by both `CreateAssistant` and `UpdateAssistant` validators.
-- **`enforce_stored_mode_constraints`** in `src/api/routes/assistant.py` re-runs that
-  same table against `stored row + PATCH`, so a mode switch cannot land a combination
-  the request alone looked fine for. `400`, not `422` — the request is well-formed, the
-  merge is not.
-- **Gemini is rejected in `pipeline` and `cascade`.** Google's Live API cannot run the
-  text-only modality half-cascade needs on native-audio models
-  (googleapis/python-genai#1780). The pipeline Gemini branch in `session.py` is gone.
-  Realtime Gemini is untouched and fully supported.
-- **Three model allowlists** (all in `src/core/model_support/capabilities.py`):
-  `REALTIME_MODELS` (pipeline + realtime, OpenAI), `GEMINI_LIVE_MODELS` (realtime, Gemini) and
-  `OPENAI_CASCADE_MODELS` (cascade). They do not overlap. Gemini IDs are no longer free-form —
-  only five Live models exist and a chat id fails at connect with nothing naming the cause.
-- **`extra="forbid"` is now on every provider config** — all five STT shapes and all
-  four TTS shapes, not just some. A typo is a `422`.
-- **Missing API keys are checked before the plugin is constructed** in *both* factories.
-  `create_tts` returns `None` like `create_stt` already did, instead of letting a plugin
-  constructor raise out of `entrypoint()`.
-- **`CartesiaTTSConfig.speed` is float-only.** The preset strings (`slow`/`normal`/`fast`)
-  were accepted by the schema but `sonic-3` — the pinned model — raises
-  `ValueError: speed must be a float for sonic-3` inside the plugin constructor. Do not
-  re-add them without also un-pinning the model.
-- **Deepgram is two plugin classes.** `nova-*` -> `deepgram.STT` (/listen/v1), `flux-*` ->
-  `deepgram.STTv2` (/listen/v2, `language_hint` instead of `language`). Neither validates the
-  model at construction, so `create_stt` dispatches on the name. Adding a Deepgram model means
-  checking which family it belongs to.
-- **OpenAI STT streams only if you ask.** The plugin's `use_realtime` defaults to `False`
-  (batch REST, no interim results); `create_stt` passes `True` because a live call needs
-  streaming. `gpt-realtime-whisper` is rejected outright — it has no server-side endpointing
-  and the plugin then requires a `livekit-plugins-silero` VAD, which is not installed (the
-  session's VAD is `inference.VAD`, which an STT plugin cannot take).
-- **`assistant_stt_model="openai"` means two different things per mode.** Cascade builds the
-  real OpenAI STT plugin; pipeline collapses it to `native` (same vendor, same model, one less
-  connection) — which also keeps pre-migration rows working.
-- **Sarvam TTS numeric bounds mirror the provider**, verified against the LiveKit Sarvam TTS
-  page: `pace` 0.3-3.0, `temperature` 0.01-2.0 (not 0.0), `speech_sample_rate` an enum of
-  8000/16000/22050/24000/32000/44100/48000 rather than a range.
-- **`SarvamTTSConfig.target_language_code` defaults to `None`**, not `bn-IN`. The field is
-  always serialized, so a concrete default silently overrode the factory's `en-IN`
-  fallback for every assistant that omitted it.
+- **Model lists come from the API.** Edit any allowlist only after
+  `scripts/check_model_allowlist.py`. The retired `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest`,
+  `gpt-5.3-chat-latest`, `gpt-5.1`, `gpt-5.4-nano`, the gateway id `chat-latest` and
+  `gpt-oss-120b` stay off the cascade allowlist. [0001, 0006]
+- **Config is validated four ways before it is stored**, and gates 3–4 fail open on anything that
+  is not a clear refusal. `POST /tool/{attach,detach}` re-runs the whole guard. [0001]
+- **An omitted optional knob keeps the SDK default.** Factories forward a knob only when it is
+  set. ElevenLabs `voice_settings` absent → pass `NOT_GIVEN`, never `None`. Knobs a model ignores
+  are a `422` at the API and dropped at call time. [0002, 0006]
+- **Error bodies go through `redact_text`**; every provider `api_key` field caps at 500
+  characters. [0003]
+- **One rule table for every mode.** A new mode or provider extends `validate_mode_config`;
+  `enforce_stored_mode_constraints` (`src/api/validation/assistant_guard.py`) re-runs it against
+  the stored row. Every provider config is `extra="forbid"`. [0004]
+- **Provider plugin quirks are pinned in the factories**: `CartesiaTTSConfig.speed` is float-only
+  while `sonic-3` is pinned; Deepgram `nova-*` and `flux-*` are different plugin classes; OpenAI STT
+  streams only with `use_realtime`; `gpt-realtime-whisper` is refused. [0004]
+- **Gemini runs in `realtime` only.** Mid-session updates are fixed by the plugin pin, so
+  `generate_reply()`/`update_instructions()` work on every Live model; `GEMINI_VERTEX_ONLY_MODELS`
+  is refused. [0004, 0005]
+- **Every accepted speech model has a price.** The Deepgram allowlist is a priced subset of the
+  plugin's, and a rated model missing from `docs/reference/pricing.md` fails a test. [0005, 0006]
+- **`livekit-agents` is pinned twice**, `~=1.8.8` in `pyproject.toml` and
+  `docker/requirements-agent.txt`; bump both together. [0006]
 
 <!-- core-be:start -->
 # AGENTS.md — Backend Engineering Rules

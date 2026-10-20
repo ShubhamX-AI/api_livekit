@@ -24,7 +24,7 @@ Two stages:
    speech-start no matter how sensitive the model's VAD is.
 
 AGC and AEC are deliberately off. AGC re-amplified the agent's own echo into false
-barge-ins the last time it was enabled (see docs/architecture/audio-pipeline.md), and AEC
+barge-ins the last time it was enabled (see dev-docs/subsystems/telephony-exotel.md), and AEC
 needs a reverse stream that RoomIO never feeds a FrameProcessor.
 """
 

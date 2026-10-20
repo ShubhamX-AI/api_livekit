@@ -159,7 +159,7 @@ class CreateAssistant(BaseModel):
         # instead of a dead job later.
         #
         # `has_tools`: a fresh assistant has no `tool_ids` yet (tools are attached afterwards
-        # through /assistant/attach-tools, which re-runs this check), so the built-in end_call
+        # through /tool/attach/{assistant_id}, which re-runs this check), so the built-in end_call
         # tool is the only one that can be present at creation.
         validate_mode_config(
             self.assistant_mode,

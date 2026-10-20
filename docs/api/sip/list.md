@@ -17,8 +17,7 @@ List all active SIP trunks created by the current user.
 | `data`                    | array   | List of trunk objects.                       |
 | `data[].trunk_id`         | string  | Unique identifier for the trunk.             |
 | `data[].trunk_name`       | string  | Name of the trunk.                           |
-| `data[].trunk_type`       | string  | Provider type (`twilio` or `exotel`).       |
-| `data[].trunk_created_at` | string  | ISO 8601 timestamp of creation.              |
+| `data[].trunk_created_by_email` | string | Email of the user who created the trunk. |
 
 !!! note "Security Note"
 
@@ -49,14 +48,12 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/sip/list" \
     {
       "trunk_id": "ST_a1b2c3d4e5f6...",
       "trunk_name": "Twilio Production",
-      "trunk_type": "twilio",
-      "trunk_created_at": "2024-01-15T10:00:00.000000"
+      "trunk_created_by_email": "ops@example.com"
     },
     {
       "trunk_id": "ST_b2c3d4e5f6a7...",
       "trunk_name": "Exotel India",
-      "trunk_type": "exotel",
-      "trunk_created_at": "2024-01-15T11:00:00.000000"
+      "trunk_created_by_email": "ops@example.com"
     }
   ]
 }
@@ -65,4 +62,3 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/sip/list" \
 ### Operational Notes
 
 - Use this endpoint for inventory views and trunk pickers.
-- Fetch details from the trunk detail API when full provider configuration is required.
