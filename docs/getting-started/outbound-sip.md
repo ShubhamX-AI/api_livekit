@@ -14,11 +14,13 @@ Prerequisite: complete [Step 1–3](index.md) to have an `assistant_id`.
       -H "Content-Type: application/json" \
       -d '{
         "trunk_name": "My Twilio Trunk",
-        "trunk_address": "your-twilio-sip-domain.sip.twilio.com",
-        "trunk_numbers": ["+15550100000"],
-        "trunk_auth_username": "your_twilio_username",
-        "trunk_auth_password": "your_twilio_password",
-        "trunk_type": "twilio"
+        "trunk_type": "twilio",
+        "trunk_config": {
+          "address": "your-twilio-sip-domain.sip.twilio.com",
+          "numbers": ["+15550100000"],
+          "username": "your_twilio_username",
+          "password": "your_twilio_password"
+        }
       }'
     ```
 

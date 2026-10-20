@@ -363,7 +363,7 @@ def unsupported_knob_reason(
     if knob == "tool_choice" and value == "required" and not has_tools:
         return (
             "tool_choice 'required' needs at least one tool — attach a tool "
-            "(POST /assistant/attach-tools) or enable assistant_end_call_enabled, or use "
+            "(POST /tool/attach/{assistant_id}) or enable assistant_end_call_enabled, or use "
             "'auto'"
         )
 

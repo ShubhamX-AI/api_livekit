@@ -15,7 +15,7 @@ Configure a SIP trunk for outbound calls.
 | `trunk_type`              | string  | Yes      | Provider type. One of: `twilio`, `exotel`.                                                      |
 | `trunk_config`            | object  | Yes      | The trunk configuration object (see below).                                                     |
 | `passthrough_mode`        | boolean | No       | Default `false`. When `true`, trunk is used for human-to-SIP passthrough calls (no AI agent).   |
-| `passthrough_webhook_url` | string  | No       | URL to POST call details when a passthrough call ends. Fires on all outcomes (completed/failed/busy/no_answer/timeout). |
+| `passthrough_webhook_url` | string  | No       | URL to POST call details when a passthrough call ends. Exotel trunks only. Fires on all outcomes (completed/failed/busy/no_answer/timeout). |
 
 ### Trunk Configuration
 
@@ -55,7 +55,8 @@ Configure a SIP trunk for outbound calls.
 | Code | Description                                                 |
 | :--- | :---------------------------------------------------------- |
 | 200  | Success - Trunk created successfully.                       |
-| 400  | Bad Request - Invalid input data or mismatched configuration. |
+| 422  | Validation error - invalid input data or missing required fields. |
+| 400  | Bad Request - the trunk type is not supported. |
 | 401  | Unauthorized - Invalid or missing Bearer token.             |
 | 500  | Server Error - Internal server error during trunk creation. |
 

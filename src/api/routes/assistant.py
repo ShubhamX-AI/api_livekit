@@ -90,7 +90,7 @@ async def create_assistant(
     # The offline rules ran inside the schema. These two ask OpenAI what no local list can
     # know: whether it still serves the model, and whether it accepts this exact request.
     # A new assistant has no tool_ids yet, so end_call is the only tool that can be present —
-    # /assistant/attach-tools re-runs the same guard when tools arrive.
+    # /tool/attach re-runs the same guard when tools arrive.
     enforce_provider_keys(
         assistant_data.get("assistant_mode"),
         assistant_data.get("assistant_stt_model"),

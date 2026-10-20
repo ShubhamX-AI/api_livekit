@@ -84,14 +84,21 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/inbound_context_
 
 ```json
 {
-  "detail": [
-    {
-      "loc": ["body", "strategy_config", "url"],
-      "msg": "Value error, url host '169.254.169.254' resolves to a non-public address"
-    }
-  ]
+  "success": false,
+  "message": "Validation Error: body.strategy_config.url: Value error, url host '169.254.169.254' resolves to a non-public address",
+  "data": {
+    "errors": [
+      {
+        "type": "value_error",
+        "loc": ["body", "strategy_config", "url"],
+        "msg": "Value error, url host '169.254.169.254' resolves to a non-public address"
+      }
+    ]
+  }
 }
 ```
+
+The status is `422`.
 
 ## If You Do Not Attach It Anywhere
 
@@ -101,10 +108,11 @@ Nothing changes at runtime until the strategy is attached to an inbound mapping.
 
 | Code | Reason | Message |
 | :--- | :--- | :--- |
-| `400` | URL scheme not `http`/`https` | `url must use http or https` |
-| `400` | URL points at a non-public address | `url host '10.0.0.5' resolves to a non-public address` |
-| `400` | URL host is internal | `url host 'localhost' is not allowed` |
-| `400` | A header value is the literal mask `****` | ``` 'Authorization' is masked (as returned by GET /tool/details). Send the real value, or omit the field to keep the stored one. ``` |
-| `400` | `timeout_seconds` outside `0.5`–`10.0` | Pydantic range error on `strategy_config.timeout_seconds` |
-| `400` | Other validation or create failure (for example invalid config shape). | |
+| `422` | URL scheme not `http`/`https` | `url must use http or https` |
+| `422` | URL points at a non-public address | `url host '10.0.0.5' resolves to a non-public address` |
+| `422` | URL host is internal | `url host 'localhost' is not allowed` |
+| `422` | A header value is the literal mask `****` | ``` 'Authorization' is masked (as returned by GET /tool/details). Send the real value, or omit the field to keep the stored one. ``` |
+| `422` | `timeout_seconds` outside `0.5`–`10.0` | Pydantic range error on `strategy_config.timeout_seconds` |
+| `422` | Invalid config shape: a field has the wrong type or the `strategy_type` and `strategy_config` do not match. The `data.errors` list gives each field. | |
+| `400` | Create failed after validation (the stored write was refused). `message` says why. | |
 | `401` | Invalid or missing API key. | |

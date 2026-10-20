@@ -3,7 +3,7 @@
 A POST request is sent when a call reaches a terminal state:
 
 - **AI calls**: if the assistant has `assistant_end_call_url` configured
-- **Passthrough calls**: if the trunk has `passthrough_webhook_url` configured (fires on **all** terminal outcomes — completed, busy, no_answer, timeout, failed)
+- **Passthrough calls**: if the trunk has `passthrough_webhook_url` configured (Exotel trunks only; fires on **all** terminal outcomes — completed, busy, no_answer, timeout, failed)
 
 ### Webhook Request
 

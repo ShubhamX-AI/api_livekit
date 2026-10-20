@@ -277,7 +277,8 @@ Update an existing assistant. Only send fields you want to change.
 | Code | Description |
 | :--- | :--- |
 | 200 | Assistant updated successfully. |
-| 400 | Validation or payload mismatch error. |
-| 401 | Unauthorized. |
+| 400 | The merged result of the stored assistant and this PATCH conflicts (for example, a mode switch that leaves an incompatible setting). `message` says which. |
+| 401 | Unauthorized: missing or invalid Bearer key. |
 | 404 | Assistant not found. |
+| 422 | Validation error: a field is out of range, has an unknown value, or a model, voice or knob is refused. The `data.errors` list gives each field's `loc` and `msg`. |
 | 500 | Internal server error. |

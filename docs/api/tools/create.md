@@ -140,7 +140,7 @@ Define a new tool that can be used by your assistants.
 
     | Field | Type | Description |
     | :--- | :--- | :--- |
-    | `timeout` | number | Request timeout in seconds (default: 10). |
+    | `timeout` | number | Request timeout in seconds (default: 30). |
     | `headers` | object | Additional HTTP headers. |
 
     **Example:**
@@ -228,7 +228,8 @@ Define a new tool that can be used by your assistants.
 | Code | Description                                                             |
 | :--- | :---------------------------------------------------------------------- |
 | 200  | Success - Tool created successfully.                                    |
-| 400  | Bad Request - Invalid input data (invalid name format, missing fields). |
+| 422  | Validation error - invalid name format or a malformed field. |
+| 400  | Bad Request - the tool could not be created (the stored write was refused). |
 | 401  | Unauthorized - Invalid or missing Bearer token.                         |
 | 500  | Server Error - Internal server error.                                   |
 

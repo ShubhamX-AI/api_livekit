@@ -252,7 +252,7 @@ Lookup is best-effort by design: no failure mode drops the call.
 
 ## URL Requirements
 
-`strategy_config.url` is validated when you create or update a strategy. A URL that fails any of these is rejected with `400`.
+`strategy_config.url` is validated when you create or update a strategy. A URL that fails any of these is rejected with `422`, and the error body is the standard validation envelope (`data.errors`).
 
 | Rule | Accepted | Rejected |
 | :--- | :--- | :--- |
@@ -264,14 +264,21 @@ Rejection looks like this:
 
 ```json
 {
-  "detail": [
-    {
-      "loc": ["body", "strategy_config", "url"],
-      "msg": "Value error, url host '169.254.169.254' resolves to a non-public address"
-    }
-  ]
+  "success": false,
+  "message": "Validation Error: body.strategy_config.url: Value error, url host '169.254.169.254' resolves to a non-public address",
+  "data": {
+    "errors": [
+      {
+        "type": "value_error",
+        "loc": ["body", "strategy_config", "url"],
+        "msg": "Value error, url host '169.254.169.254' resolves to a non-public address"
+      }
+    ]
+  }
 }
 ```
+
+The status is `422`.
 
 !!! warning "Prefer https"
 
@@ -284,7 +291,7 @@ The check runs on the URL you send, at write time. DNS is not re-resolved when t
 When strategies are returned from list/details endpoints:
 
 - Sensitive header values (for keys like `authorization`, `token`, `secret`, `api-key`) are masked as `****`.
-- Sending a masked `****` value back on create/update is rejected with `400`. Send the real value, or omit `strategy_config` to leave the stored one untouched — otherwise a GET-edit-PATCH round trip would silently overwrite your real token with the mask.
+- Sending a masked `****` value back on create/update is rejected with `422`. Send the real value, or omit `strategy_config` to leave the stored one untouched — otherwise a GET-edit-PATCH round trip would silently overwrite your real token with the mask.
 
 ## Updating Headers
 

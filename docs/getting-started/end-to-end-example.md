@@ -65,11 +65,13 @@ curl -X POST "https://api-livekit-vyom.indusnettechnologies.com/sip/create-outbo
   -H "Content-Type: application/json" \
   -d '{
     "trunk_name": "My Twilio Trunk",
-    "trunk_address": "your-sip-domain.sip.twilio.com",
-    "trunk_numbers": ["+15550100000"],
-    "trunk_auth_username": "your_username",
-    "trunk_auth_password": "your_password",
-    "trunk_type": "twilio"
+    "trunk_type": "twilio",
+    "trunk_config": {
+      "address": "your-sip-domain.sip.twilio.com",
+      "numbers": ["+15550100000"],
+      "username": "your_username",
+      "password": "your_password"
+    }
   }'
 ```
 

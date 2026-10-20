@@ -26,7 +26,7 @@ If no strategy is attached:
 
 - Call routing still succeeds.
 - The assistant still starts.
-- Prompt rendering uses call metadata only, without fetched `context` values.
+- Prompt rendering uses call metadata only; no caller-context values are fetched.
 
 If strategy lookup fails at runtime:
 

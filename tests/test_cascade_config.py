@@ -978,7 +978,7 @@ class TestCascadeSchemaRules(unittest.TestCase):
 
         Which is the silent-call shape again: the call connects, the assistant never speaks.
         A fresh assistant has no `tool_ids` yet, so end_call is the only tool it can have at
-        creation — /assistant/attach-tools re-checks this when real tools arrive.
+        creation — /tool/attach re-checks this when real tools arrive.
         """
         with self.assertRaises(ValidationError) as ctx:
             CreateAssistant(
