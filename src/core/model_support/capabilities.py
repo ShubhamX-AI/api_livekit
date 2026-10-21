@@ -194,7 +194,7 @@ DEFAULT_DUPLEX_BACKEND_INSTRUCTIONS = (
 
 # ── Gemini realtime (realtime mode only) ─────────────────────────────────────────────
 # There is no `/v1/models` equivalent to ask, so this list is the gate. Straight from
-# `livekit.plugins.google.realtime.api_proto.LiveAPIModels` in livekit-agents 1.8.2 — the Live
+# `livekit.plugins.google.realtime.api_proto.LiveAPIModels` in livekit-agents 1.8.8 — the Live
 # API is a small, slow-moving set, unlike the Gemini chat models.
 #
 # A non-Live Gemini id (`gemini-2.5-flash`, say) is not rejected by the plugin: it opens a

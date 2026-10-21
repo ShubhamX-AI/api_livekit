@@ -38,7 +38,7 @@ Update an existing assistant. Only send fields you want to change.
 - `provider="gemini"` is rejected in `pipeline` and `cascade` mode — it is supported in `realtime` mode only. See the [Compatibility Matrix](../../reference/compatibility.md#mode-llm-provider).
 - `assistant_llm_config.api_key` overrides the system key for the selected provider (`OPENAI_API_KEY` or `GOOGLE_API_KEY`). Omit `assistant_llm_config` to use system keys + mode default provider.
 - You can update `assistant_llm_config` alone (without re-sending `assistant_mode` or TTS fields) and the existing TTS config is preserved.
-- In `realtime` mode, `assistant_llm_config` is required only when switching into realtime; it defaults to `provider="gemini"`.
+- In `realtime` mode, `assistant_llm_config` is required only when switching into realtime; it defaults to `provider="gemini"`. With provider `gemini`, only `temperature` and `max_output_tokens` are sent to the model; `reasoning_effort`, `verbosity`, `service_tier`, `tool_choice` and `parallel_tool_calls` are a `422` ([Compatibility](../../reference/compatibility.md#gemini-realtime-reads-two-knobs)).
 - Defaults when fields are omitted — Gemini: `model="gemini-3.8-live"`, `voice="Puck"`; OpenAI realtime: `model="gpt-realtime-1.5"`, `voice="marin"`.
 
 ## Switching Modes

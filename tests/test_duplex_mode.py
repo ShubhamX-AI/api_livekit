@@ -9,7 +9,7 @@ feature that needs `session.say()` (GPT-Live has no TTS to say anything with).
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import get_args
+from typing import ClassVar, get_args
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
@@ -20,7 +20,7 @@ from src.api.routes.assistant import update_assistant
 from src.api.validation import enforce_openai_config, enforce_stored_mode_constraints
 from src.core.db.db_schemas import AssistantInteractionConfig, GreetingAudioConfig
 from src.core.model_support.capabilities import GPT_LIVE_VOICES
-from src.core.pricing import price_model_usage
+from src.core.pricing import duplex_cost_split, price_model_usage
 
 BASE = {
     "assistant_name": "A",
@@ -325,6 +325,77 @@ class TestDuplexPricing(unittest.TestCase):
         )
         self.assertEqual(result.estimated_cost_usd, Decimal(0))
         self.assertTrue(result.pricing_complete)
+
+
+class TestDuplexServiceTier(unittest.TestCase):
+    """The tier is a backend setting: it scales the token rate, never the per-second voice rate."""
+
+    ENTRIES: ClassVar[list[dict]] = [
+        {"type": "llm_usage", "provider": "openai", "model": "gpt-live-1", "session_duration": 120},
+        {
+            "type": "llm_usage",
+            "provider": "openai",
+            "model": "gpt-6-luna-2026-09-30",
+            "input_tokens": 1_000_000,
+            "output_tokens": 1_000_000,
+        },
+    ]
+
+    def _price(self, tier):
+        return price_model_usage(self.ENTRIES, pricing_context={"openai_service_tier": tier})
+
+    def test_flex_halves_the_backend_and_leaves_the_voice_model_alone(self):
+        result = self._price("flex")
+        self.assertTrue(result.pricing_complete)
+        self.assertEqual(result.estimated_cost_usd, Decimal("0.10") + Decimal("0.60") / 2)
+
+    def test_fast_and_priority_double_the_backend(self):
+        for tier in ("fast", "priority"):
+            with self.subTest(tier=tier):
+                result = self._price(tier)
+                self.assertTrue(result.pricing_complete)
+                self.assertEqual(result.estimated_cost_usd, Decimal("0.10") + Decimal("0.60") * 2)
+
+    def test_a_tier_with_no_known_multiplier_leaves_only_the_backend_unpriced(self):
+        result = self._price("ultrafast")
+        self.assertFalse(result.pricing_complete)
+        self.assertEqual([e["model"] for e in result.unpriced_model_usage], ["gpt-6-luna-2026-09-30"])
+        self.assertEqual(result.estimated_cost_usd, Decimal("0.10"))
+
+    def test_a_realtime_api_model_under_a_tier_stays_unpriced(self):
+        result = price_model_usage(
+            [{"type": "llm_usage", "provider": "openai", "model": "gpt-realtime-1.5", "input_audio_tokens": 10}],
+            pricing_context={"openai_service_tier": "flex"},
+        )
+        self.assertFalse(result.pricing_complete)
+
+
+class TestDuplexCostSplit(unittest.TestCase):
+    def test_the_total_is_split_into_voice_and_backend(self):
+        priced = price_model_usage(TestDuplexServiceTier.ENTRIES)
+        split = duplex_cost_split(priced.model_usage)
+        self.assertEqual(split["voice_model"], "gpt-live-1")
+        self.assertEqual(split["backend_model"], "gpt-6-luna-2026-09-30")
+        self.assertEqual(split["estimated_cost_voice_usd"], Decimal("0.10"))
+        self.assertEqual(split["estimated_cost_backend_usd"], Decimal("0.60"))
+        self.assertEqual(
+            split["estimated_cost_voice_usd"] + split["estimated_cost_backend_usd"], priced.estimated_cost_usd
+        )
+
+    def test_stored_entries_with_string_costs_split_too(self):
+        split = duplex_cost_split(
+            [
+                {"type": "llm_usage", "model": "gpt-live-1", "session_duration": 60, "estimated_cost_usd": "0.05"},
+                {"type": "llm_usage", "model": "gpt-6-sol-2026-09-30", "estimated_cost_usd": "0.2"},
+            ]
+        )
+        self.assertEqual(split["estimated_cost_voice_usd"], Decimal("0.05"))
+        self.assertEqual(split["estimated_cost_backend_usd"], Decimal("0.2"))
+
+    def test_an_unpriced_backend_is_named_with_zero_cost(self):
+        split = duplex_cost_split([{"type": "llm_usage", "model": "gpt-6-luna-20261001", "input_tokens": 5}])
+        self.assertEqual(split["backend_model"], "gpt-6-luna-20261001")
+        self.assertEqual(split["estimated_cost_backend_usd"], Decimal(0))
 
 
 class TestCreateGPTLive(unittest.TestCase):

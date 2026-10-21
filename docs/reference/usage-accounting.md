@@ -28,6 +28,23 @@ New records contain `estimated_cost_usd`, `pricing_schema_version`, `pricing_com
 the usage dimensions needed to price it; the call still succeeds and the known entries are
 included in the partial total. Unknown pricing is never represented as a misleading zero.
 
+An OpenAI `service_tier` of `flex` prices a token-billed entry at half the standard rate, and
+`fast` or `priority` at double. The tier applies to token-billed models only: in `duplex` mode it
+scales the backend model and never the GPT-Live voice model, which is billed per second. An
+unknown tier, or a tier on an OpenAI Realtime API model, leaves that entry unpriced.
+
+### Duplex cost split
+
+A `duplex` call bills two models, and `estimated_cost_usd` is their sum. The end-call webhook
+`usage` object adds the two parts, for `duplex` calls only:
+
+| Field | Meaning |
+|---|---|
+| `voice_model` | The GPT-Live voice model, such as `gpt-live-1`. |
+| `backend_model` | The backend model as OpenAI reported it, snapshot date included. |
+| `estimated_cost_voice_usd` | Voice model cost, from session seconds. |
+| `estimated_cost_backend_usd` | Backend model cost, from tokens. `0` with the model listed in `unpriced_model_usage` means it has no rate. |
+
 Every rate is listed on [Pricing](pricing.md). Gemini Live calls are priced too (list price per
 1M tokens, per model). Cartesia and
 Mistral are priced as well, so

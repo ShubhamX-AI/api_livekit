@@ -81,6 +81,17 @@ OPENAI_RATES = {
     "gpt-6-sol": _tokens("2.00", ".20", "10.00"),
 }
 
+# What a non-default `service_tier` does to a Responses model's token price, from the same
+# page, checked 2026-10-21: Flex is half the standard rate, Fast (the tier OpenAI renamed from
+# Priority on 2026-07-30) is double. The API still accepts `priority`, so both spellings are
+# listed. Realtime-API models and GPT-Live's per-second rate are not scaled — see
+# `calculator._tier_multiplier`.
+SERVICE_TIER_MULTIPLIER = {
+    "flex": Decimal("0.5"),
+    "fast": Decimal(2),
+    "priority": Decimal(2),
+}
+
 OPENAI_REALTIME_RATES = {
     "gpt-realtime": _realtime("32", "4", ".40", ".40", "64", "16", "5"),
     "gpt-realtime-1.5": _realtime("32", "4", ".40", ".40", "64", "16", "5"),

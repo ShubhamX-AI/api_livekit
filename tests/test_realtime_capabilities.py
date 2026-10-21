@@ -134,6 +134,40 @@ class TestGeminiLiveModelRules(unittest.TestCase):
                         None,
                     )
 
+    def test_a_knob_gemini_never_receives_is_refused(self):
+        """Stored and then silently ignored is the failure this rule exists to stop."""
+        from src.api.models.api_schemas.config.llm_config import GEMINI_UNREAD_KNOBS
+
+        for knob in GEMINI_UNREAD_KNOBS:
+            for provider in ("gemini", None):
+                with self.subTest(knob=knob, provider=provider), self.assertRaises(ValueError) as ctx:
+                    validate_mode_config(
+                        "realtime",
+                        SimpleNamespace(provider=provider, model=None, voice=None, **{knob: "high"}),
+                        None,
+                    )
+                self.assertIn(knob, str(ctx.exception))
+
+    def test_the_knobs_gemini_reads_are_accepted_and_the_plugin_takes_them(self):
+        from livekit.plugins import google
+
+        validate_mode_config(
+            "realtime",
+            SimpleNamespace(provider="gemini", model=None, voice=None, temperature=0.4, max_output_tokens=256),
+            None,
+        )
+        # The kwargs session.py forwards must exist on the installed plugin.
+        model = google.realtime.RealtimeModel(api_key="test", temperature=0.4, max_output_tokens=256)
+        self.assertEqual(model._opts.temperature, 0.4)
+        self.assertEqual(model._opts.max_output_tokens, 256)
+
+    def test_openai_realtime_keeps_accepting_its_knobs(self):
+        validate_mode_config(
+            "realtime",
+            SimpleNamespace(provider="openai", model=None, voice=None, service_tier="flex"),
+            None,
+        )
+
     def test_the_default_live_model_is_the_3_8_stable_line(self):
         self.assertEqual(DEFAULT_GEMINI_LIVE_MODEL, "gemini-3.8-live")
 

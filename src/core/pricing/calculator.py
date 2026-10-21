@@ -3,7 +3,12 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from src.core.pricing.rates import PRICING_SCHEMA_VERSION, ModelRate, get_rate
+from src.core.pricing.rates import (
+    PRICING_SCHEMA_VERSION,
+    SERVICE_TIER_MULTIPLIER,
+    ModelRate,
+    get_rate,
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,21 @@ def _cost(entry: dict, rate: ModelRate) -> Decimal:
     )
 
 
+def _tier_multiplier(rate: ModelRate, service_tier: str | None) -> Decimal | None:
+    """Factor the OpenAI `service_tier` applies to this rate, or None when it is not known.
+
+    The tier is a backend setting. GPT-Live's voice model is billed per second of session, so a
+    tier never touches it — in duplex mode it must keep its price while the backend model's
+    token rate scales. Realtime-API models have no published tier price, so they stay unpriced
+    rather than guessed.
+    """
+    if service_tier in (None, "auto", "default") or rate.session_second:
+        return Decimal(1)
+    if rate.input_audio or rate.output_audio:
+        return None
+    return SERVICE_TIER_MULTIPLIER.get(service_tier)
+
+
 def price_model_usage(model_usage: list[dict], pricing_context: dict | None = None) -> PricingResult:
     """Price each billable entry, retaining unknown entries as an explicit partial result."""
     pricing_context = pricing_context or {}
@@ -71,14 +91,15 @@ def price_model_usage(model_usage: list[dict], pricing_context: dict | None = No
     for original in model_usage:
         entry = dict(original)
         rate = get_rate(entry.get("type", ""), entry.get("provider", ""), entry.get("model", ""))
-        if entry.get("provider") == "openai" and entry.get("type") == "llm_usage" and service_tier not in (None, "auto", "default"):
-            rate = None
-        if rate is None:
+        multiplier = Decimal(1)
+        if rate is not None and entry.get("provider") == "openai" and entry.get("type") == "llm_usage":
+            multiplier = _tier_multiplier(rate, service_tier)
+        if rate is None or multiplier is None:
             entry["pricing_complete"] = False
             unpriced.append(entry)
             enriched.append(entry)
             continue
-        cost = _cost(entry, rate)
+        cost = _cost(entry, rate) * multiplier
         entry["estimated_cost_usd"] = cost
         entry["pricing_complete"] = True
         enriched.append(entry)
@@ -90,3 +111,33 @@ def price_model_usage(model_usage: list[dict], pricing_context: dict | None = No
         model_usage=enriched,
         unpriced_model_usage=unpriced,
     )
+
+
+def duplex_cost_split(model_usage: list[dict]) -> dict:
+    """Split a duplex call's priced entries into the voice model and the backend model.
+
+    GPT-Live reports two entries: the voice model by `session_duration` and the backend
+    Responses model by tokens. `estimated_cost_usd` is their sum, which hides what the
+    backend cost. Works on stored entries too, whose costs were serialized as strings.
+    An entry that could not be priced adds nothing, so a split that falls short of the total
+    is explained by `unpriced_model_usage`.
+    """
+    parts = {"voice": [], "backend": []}
+    for entry in model_usage:
+        if entry.get("type") != "llm_usage":
+            continue
+        role = "voice" if entry.get("session_duration") else "backend"
+        parts[role].append(entry)
+
+    def cost(entries: list[dict]) -> Decimal:
+        return sum((Decimal(str(e.get("estimated_cost_usd") or 0)) for e in entries), Decimal(0))
+
+    def models(entries: list[dict]) -> str | None:
+        return ", ".join(dict.fromkeys(e["model"] for e in entries if e.get("model"))) or None
+
+    return {
+        "voice_model": models(parts["voice"]),
+        "backend_model": models(parts["backend"]),
+        "estimated_cost_voice_usd": cost(parts["voice"]),
+        "estimated_cost_backend_usd": cost(parts["backend"]),
+    }

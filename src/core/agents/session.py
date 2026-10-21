@@ -93,7 +93,7 @@ from src.core.model_support.capabilities import (
     DEFAULT_REALTIME_MODEL,
     realtime_supports_truncation,
 )
-from src.core.pricing import price_model_usage
+from src.core.pricing import duplex_cost_split, price_model_usage
 from src.core.providers.keys import provider_key_or_system
 from src.services.livekit.livekit_svc import TERMINAL_CALL_STATUSES, LiveKitService
 from src.services.storage import s3_audio
@@ -508,6 +508,16 @@ async def entrypoint(ctx: JobContext):
             metered["pricing_schema_version"] = pricing.pricing_schema_version
             metered["pricing_complete"] = pricing.pricing_complete
             metered["unpriced_model_usage"] = pricing.unpriced_model_usage
+            if pricing.unpriced_model_usage and final:
+                # Zero cost for a model reads like a free call, so name what has no rate.
+                logger.warning(
+                    "Usage not fully priced | room=%s | unpriced=%s",
+                    room_name,
+                    [
+                        f"{e.get('provider')}/{e.get('model')}"
+                        for e in pricing.unpriced_model_usage
+                    ],
+                )
             telephony_provider = job_metadata.get("call_service") or job_metadata.get("service")
             # Neither a web call nor a meeting call has a telephony provider to attribute
             # carrier cost to, so the field would otherwise carry a meaningless value.
@@ -574,6 +584,16 @@ async def entrypoint(ctx: JobContext):
                 f"(audio={usage.stt_input_audio_tokens}) | "
                 f"estimated_cost_usd={usage.estimated_cost_usd}"
             )
+            if is_duplex:
+                split = duplex_cost_split(usage.model_usage)
+                logger.info(
+                    "Duplex cost | room=%s | voice=%s $%s | backend=%s $%s",
+                    room_name,
+                    split["voice_model"],
+                    split["estimated_cost_voice_usd"],
+                    split["backend_model"],
+                    split["estimated_cost_backend_usd"],
+                )
         except Exception as e:
             logger.error(f"Failed to persist usage record: {e}", exc_info=True)
 
@@ -909,12 +929,20 @@ async def entrypoint(ctx: JobContext):
     elif is_realtime:
         # Full realtime mode: single model handles STT + LLM + TTS (audio out).
         if realtime_provider == "gemini":
+            # Only the knobs the plugin reads, and only when set, so an omitted one keeps
+            # Gemini's default. The API refuses the rest (GEMINI_UNREAD_KNOBS).
+            gemini_knobs = {
+                knob: llm_config[knob]
+                for knob in ("temperature", "max_output_tokens")
+                if llm_config.get(knob) is not None
+            }
             llm = google_realtime.RealtimeModel(
                 model=llm_config.get("model") or DEFAULT_GEMINI_LIVE_MODEL,
                 voice=llm_config.get("voice") or DEFAULT_GEMINI_VOICE,
                 modalities=["AUDIO"],
                 instructions=assistant.assistant_prompt,
                 api_key=llm_config.get("api_key") or settings.GOOGLE_API_KEY,
+                **gemini_knobs,
             )
         elif realtime_provider == "openai":
             llm = MeteredRealtimeModel(

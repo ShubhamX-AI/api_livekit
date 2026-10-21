@@ -6,7 +6,7 @@ This documentation is also served as an **MCP server**, so AI coding agents can 
 directly instead of you copy-pasting pages into a chat. Same markdown you are reading now,
 exposed as three callable tools over the Model Context Protocol.
 
-The server is read-only and versioned with the API release. At release `1.6.0`, it serves the
+The server is read-only and versioned with the API release. At release `1.7.0`, it serves the
 public documentation: API contracts, webhook payloads, compatibility rules, usage and pricing,
 release notes, and the concept pages that explain how the platform behaves. It does not serve
 the developer documentation of the platform's own code. It cannot inspect your assistant records,
