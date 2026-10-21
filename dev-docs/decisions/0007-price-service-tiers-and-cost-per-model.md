@@ -1,4 +1,4 @@
-# 0007. Price service tiers and split the duplex cost
+# 0007. Price service tiers and report cost the same way in every mode
 
 - **Status:** Accepted
 - **Date:** 2026-10
@@ -17,8 +17,11 @@ sent none of them.
 1. `service_tier` scales a token rate: flex 0.5, fast and priority 2 (OpenAI pricing page,
    2026-10-21). Per-second rates are never scaled. Realtime-API models and unknown tiers stay unpriced
    rather than guessed.
-2. Duplex calls report `voice_model`, `backend_model` and the two costs in the webhook `usage`
-   object, derived from `model_usage` at read time. No new stored field.
+2. Cost is reported one way for every mode: the priced `model_usage` entries, summed into
+   `estimated_cost_usd`. Duplex is not a special case, so it has no cost fields of its own; its
+   backend model is simply the second entry, typed `backend_llm_usage` next to GPT-Live's
+   `voice_llm_usage` the way cascade's parts are `llm_usage`, `stt_usage` and `tts_usage`. The relabel
+   is applied after pricing and totalling, which key on `llm_usage`; the analytics sums accept all three. The worker logs one `Cost by model` line per call.
 3. Gemini realtime refuses the five knobs it cannot read (`GEMINI_UNREAD_KNOBS`) and forwards
    `temperature` and `max_output_tokens`.
 
@@ -35,6 +38,8 @@ that estimate stays low.
 |---|---|---|
 | Tier multipliers | `src/core/pricing/rates.py` | `SERVICE_TIER_MULTIPLIER` |
 | Tier rule | `src/core/pricing/calculator.py` | `_tier_multiplier` |
-| Cost split | `src/core/pricing/calculator.py` | `duplex_cost_split` |
+| Duplex type labels | `src/core/agents/usage.py` | `label_duplex_usage` |
+| Analytics LLM types | `src/core/db/usage_aggregations.py` | `_LLM_TYPES` |
+| Cost per model log line | `src/core/agents/session.py` | `Cost by model` |
 | Gemini knob rule | `src/api/models/api_schemas/config/llm_config.py` | `GEMINI_UNREAD_KNOBS` |
 | Gemini knob forwarding | `src/core/agents/session.py` | `gemini_knobs` |

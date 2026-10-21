@@ -22,8 +22,5 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/call/records/ROOM
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-Response `data` is the stored `UsageRecord` without Mongo's internal `id`. The `duplex` cost
-split (`voice_model`, `backend_model`, `estimated_cost_voice_usd`, `estimated_cost_backend_usd`) is
-added to the [end-call webhook](webhook.md) only. Here, read the same two costs from the
-`estimated_cost_usd` on each `model_usage` entry. See
+Response `data` is the stored `UsageRecord` without Mongo's internal `id`. See
 [Usage accounting](../../reference/usage-accounting.md) for schema versions and pricing rules.

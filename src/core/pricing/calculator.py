@@ -111,33 +111,3 @@ def price_model_usage(model_usage: list[dict], pricing_context: dict | None = No
         model_usage=enriched,
         unpriced_model_usage=unpriced,
     )
-
-
-def duplex_cost_split(model_usage: list[dict]) -> dict:
-    """Split a duplex call's priced entries into the voice model and the backend model.
-
-    GPT-Live reports two entries: the voice model by `session_duration` and the backend
-    Responses model by tokens. `estimated_cost_usd` is their sum, which hides what the
-    backend cost. Works on stored entries too, whose costs were serialized as strings.
-    An entry that could not be priced adds nothing, so a split that falls short of the total
-    is explained by `unpriced_model_usage`.
-    """
-    parts = {"voice": [], "backend": []}
-    for entry in model_usage:
-        if entry.get("type") != "llm_usage":
-            continue
-        role = "voice" if entry.get("session_duration") else "backend"
-        parts[role].append(entry)
-
-    def cost(entries: list[dict]) -> Decimal:
-        return sum((Decimal(str(e.get("estimated_cost_usd") or 0)) for e in entries), Decimal(0))
-
-    def models(entries: list[dict]) -> str | None:
-        return ", ".join(dict.fromkeys(e["model"] for e in entries if e.get("model"))) or None
-
-    return {
-        "voice_model": models(parts["voice"]),
-        "backend_model": models(parts["backend"]),
-        "estimated_cost_voice_usd": cost(parts["voice"]),
-        "estimated_cost_backend_usd": cost(parts["backend"]),
-    }

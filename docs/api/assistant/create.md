@@ -176,6 +176,7 @@ For the full model/provider inventory (model IDs, defaults, per-mode validity) s
     | `model` | string | No | Provider model, **validated**. Gemini: one of `gemini-3.8-live` (default), `gemini-3.8-live-extended-thinking`, `gemini-3.1-flash-live-preview`, `gemini-2.5-flash-native-audio-preview-12-2025` — a Gemini *chat* id such as `gemini-2.5-flash`, or the Vertex-only `gemini-live-2.5-flash-native-audio`, is a `422`. OpenAI: a realtime id, default `gpt-realtime-1.5`. |
     | `voice` | string | No | Voice for the audio-out model. Gemini default: `Puck`; OpenAI default: `marin`. |
     | `api_key` | string | No | Optional per-assistant provider key. Falls back to system `GOOGLE_API_KEY` / `OPENAI_API_KEY`. |
+    | `temperature`, `max_output_tokens` | number, integer | No | Gemini only: sent to the model when set. With provider `gemini`, `reasoning_effort`, `verbosity`, `service_tier`, `tool_choice` and `parallel_tool_calls` are a `422` — Gemini Live has no counterpart. See [Compatibility](../../reference/compatibility.md#gemini-realtime-reads-two-knobs). |
 
     !!! tip "Sarvam parallel STT (pipeline mode)"
         In `pipeline` mode (either provider), user transcripts default to Sarvam Saras v3 (see `assistant_stt_model` in the Pipeline tab) — native-script Indic transcripts for code-switched calls. The LLM still consumes the audio directly for understanding. Realtime (audio-out) mode transcribes via the model itself.

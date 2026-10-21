@@ -1,5 +1,11 @@
 """Shared MongoDB aggregation pipelines for usage analytics."""
 
+# A duplex call stores its two language models under their own labels (see
+# `label_duplex_usage` in src/core/agents/usage.py). Both are LLM usage for every total below.
+VOICE_LLM_USAGE = "voice_llm_usage"
+BACKEND_LLM_USAGE = "backend_llm_usage"
+_LLM_TYPES = ["llm_usage", VOICE_LLM_USAGE, BACKEND_LLM_USAGE]
+
 _MODEL_TOTAL_FIELDS = {
     "total_estimated_cost_usd": ("estimated_cost_usd", "*"),
     "total_llm_input_audio_tokens": ("input_audio_tokens", "llm_usage"),
@@ -76,7 +82,13 @@ def usage_by_model_pipeline(match: dict) -> list[dict]:
         expression = (
             {"$ifNull": ["$model_usage.estimated_cost_usd", 0]}
             if usage_type == "*"
-            else {"$cond": [{"$eq": ["$model_usage.type", usage_type]}, value, 0]}
+            else {
+                "$cond": [
+                    {"$in": ["$model_usage.type", _LLM_TYPES if usage_type == "llm_usage" else [usage_type]]},
+                    value,
+                    0,
+                ]
+            }
         )
         group[output] = {"$sum": expression}
     return [

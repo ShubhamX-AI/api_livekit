@@ -8,7 +8,7 @@ code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:13px}tab
 <h1>Duplex pricing and Gemini knobs</h1>
 <p class="mut">Task <code>2026-10-21-feature-duplex-pricing-gemini-knobs</code> · fixes D-01, D-02, D-03, G-01, G-05 from the audit <code>2026-10-21-audit-duplex-gemini-pricing</code> · not committed</p>
 <h2>Summary</h2>
-<p>A service tier no longer zeroes a duplex call. The webhook and log now show voice and backend cost separately. Gemini realtime refuses settings it cannot read and sends the two it can. 681 tests pass (670 before).</p>
+<p>A service tier no longer zeroes a duplex call. The worker log now lists the cost of each model in one line, in every mode. Gemini realtime refuses settings it cannot read and sends the two it can. 681 tests pass (670 before).</p>
 <h2>Current → Target</h2>
 <div class="flow"><span class="box">duplex + <code>flex</code></span><span>→</span><span class="box bad">voice and backend unpriced, cost 0</span></div>
 <div class="flow"><span class="box">duplex + <code>flex</code></span><span>→</span><span class="box ok">voice at 1x + backend at 0.5x, <code>pricing_complete</code> true</span></div>
@@ -17,12 +17,12 @@ code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:13px}tab
 <table><tr><th>ID</th><th>Change</th><th>Where</th></tr>
 <tr><td>D-01</td><td>flex 0.5x, fast/priority 2x on token rates; per-second voice rate and Realtime-API models never scaled; unknown tier stays unpriced</td><td><code>pricing/rates.py</code>, <code>pricing/calculator.py</code></td></tr>
 <tr><td>D-02</td><td>WARNING naming each unpriced provider/model at final persist</td><td><code>agents/session.py</code></td></tr>
-<tr><td>D-03</td><td><code>duplex_cost_split</code>; webhook <code>usage</code> gains <code>voice_model</code>, <code>backend_model</code>, <code>estimated_cost_voice_usd</code>, <code>estimated_cost_backend_usd</code> (duplex only, additive); <code>Duplex cost</code> log line</td><td><code>pricing/calculator.py</code>, <code>livekit_svc.py</code>, <code>session.py</code></td></tr>
+<tr><td>D-03</td><td>one <code>Cost by model</code> log line per call, same shape in every mode; duplex shows GPT-Live and its backend model like cascade shows STT, LLM and TTS. No duplex-only fields: <code>model_usage</code> already carries each model's cost</td><td><code>agents/session.py</code></td></tr>
 <tr><td>G-01</td><td><code>GEMINI_UNREAD_KNOBS</code> refused with 422; <code>temperature</code> and <code>max_output_tokens</code> forwarded when set</td><td><code>llm_config.py</code>, <code>session.py</code></td></tr>
 <tr><td>G-05</td><td>stale 1.8.2 comment corrected</td><td><code>capabilities.py</code></td></tr></table>
 <h2>Verification</h2>
 <table><tr><th>Command</th><th>Result</th></tr>
-<tr><td><code>uv run python -m unittest discover -s tests</code></td><td>681 OK (was 670); 11 new tests</td></tr>
+<tr><td><code>uv run python -m unittest discover -s tests</code></td><td>677 OK (was 670); 7 new tests</td></tr>
 <tr><td><code>uv run mkdocs build --strict</code></td><td>builds</td></tr>
 <tr><td><code>uv run python scripts/check_mermaid.py</code></td><td>39 diagrams, 0 broken</td></tr>
 <tr><td><code>uvx ruff check</code> on touched files</td><td>no new findings; the remaining BLE001 and similar were already there</td></tr></table>
@@ -32,5 +32,5 @@ code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:13px}tab
 <li>Still open, need a live Gemini call: G-02 thinking tokens unmetered, G-03 greeting uses a private method, G-04 extended thinking with tools.</li>
 <li>The suite prints an exit-time <code>AssertionError</code> from <code>livekit/rtc/_ffi_client.py</code> about 1 run in 3, with and without these changes.</li></ul>
 <h2>Docs updated</h2>
-<p>usage-accounting, pricing, compatibility, assistant index and update, calls/webhook, changelog (Unreleased), dev-docs usage-and-pricing, ADR 0007 and its README row. Trace: <code>agent-tracking/plans/2026-10-21-feature-duplex-pricing-gemini-knobs/</code>.</p>
+<p>usage-accounting, pricing, compatibility, assistant index and update, calls/webhook (cost fields, duplex mode and example), assistant/logs (duplex mode), changelog, dev-docs usage-and-pricing, ADR 0007 and its README row. Trace: <code>agent-tracking/plans/2026-10-21-feature-duplex-pricing-gemini-knobs/</code>.</p>
 </body></html>

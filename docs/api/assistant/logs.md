@@ -65,7 +65,7 @@ When `data.logs[].usage` is not `null`, it contains the complete persisted
 | Field | Type | Description |
 | :---- | :--- | :---------- |
 | `usage.room_name` | string | LiveKit room associated with the usage record. |
-| `usage.mode` | string/null | Assistant mode: `pipeline`, `realtime`, or `cascade`. |
+| `usage.mode` | string/null | Assistant mode: `pipeline`, `realtime`, `cascade` or `duplex`. |
 | `usage.llm_input_tokens` | integer | Total LLM input tokens. |
 | `usage.llm_output_tokens` | integer | Total LLM output tokens. |
 | `usage.llm_total_tokens` | integer | Total LLM tokens reported for the call. |
@@ -155,7 +155,7 @@ curl -X GET "https://api-livekit-vyom.indusnettechnologies.com/assistant/call-lo
             }
           ],
           "estimated_cost_usd": "0.0234",
-          "pricing_schema_version": 1,
+          "pricing_schema_version": 2,
           "pricing_complete": true,
           "unpriced_model_usage": [],
           "usage_finalized": true

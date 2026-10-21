@@ -101,30 +101,22 @@ Content-Type: application/json
 
 ### `duplex` calls
 
-A `duplex` call is billed for two models: GPT-Live by session seconds and its backend model by
-tokens. `estimated_cost_usd` is their sum, and the `usage` object adds the split. Each
-`model_usage` entry also carries its own `estimated_cost_usd`.
+A `duplex` call is billed for two models, and `model_usage` has one entry for each, like every
+other mode: `voice_llm_usage` for GPT-Live (by session seconds) and `backend_llm_usage` for its backend model (by tokens). `estimated_cost_usd` is
+the sum of the entries' costs.
 
 ```json
 "usage": {
   "mode": "duplex",
   "llm_model": "gpt-live-1, gpt-6-luna-2026-09-30",
-  "llm_session_duration": 120.0,
   "model_usage": [
-    {"type": "llm_usage", "provider": "openai", "model": "gpt-live-1", "session_duration": 120.0, "estimated_cost_usd": "0.1000", "pricing_complete": true},
-    {"type": "llm_usage", "provider": "openai", "model": "gpt-6-luna-2026-09-30", "input_tokens": 1000, "output_tokens": 300, "estimated_cost_usd": "0.000152", "pricing_complete": true}
+    {"type": "voice_llm_usage", "provider": "openai", "model": "gpt-live-1", "session_duration": 120.0, "estimated_cost_usd": "0.1000", "pricing_complete": true},
+    {"type": "backend_llm_usage", "provider": "openai", "model": "gpt-6-luna-2026-09-30", "input_tokens": 1000, "output_tokens": 300, "estimated_cost_usd": "0.000152", "pricing_complete": true}
   ],
   "estimated_cost_usd": "0.100152",
-  "pricing_complete": true,
-  "voice_model": "gpt-live-1",
-  "backend_model": "gpt-6-luna-2026-09-30",
-  "estimated_cost_voice_usd": "0.1000",
-  "estimated_cost_backend_usd": "0.000152"
+  "pricing_complete": true
 }
 ```
-
-`estimated_cost_backend_usd` of `"0"` next to a backend model name means that model has no rate:
-look for it in `unpriced_model_usage`.
 
 ### Webhook Payload Schema
 
@@ -171,8 +163,6 @@ look for it in `unpriced_model_usage`.
 | `data.usage.tts_provider` | string | TTS provider configured for the call. |
 | `data.usage.llm_realtime_provider` | string | Realtime LLM provider, when applicable. |
 | `data.usage.llm_model`              | string | LLM model(s) used, comma-separated if more than one. |
-| `data.usage.voice_model`, `data.usage.backend_model` | string | `duplex` calls only: the GPT-Live voice model and the backend model. |
-| `data.usage.estimated_cost_voice_usd`, `data.usage.estimated_cost_backend_usd` | string | `duplex` calls only: estimated cost of each model; they sum to `estimated_cost_usd`. |
 | `data.usage.llm_input_tokens` | number | Total LLM input tokens. |
 | `data.usage.llm_output_tokens` | number | Total LLM output tokens. |
 | `data.usage.llm_input_audio_tokens` | number | LLM audio input tokens (`0` in cascade — the LLM receives text). |

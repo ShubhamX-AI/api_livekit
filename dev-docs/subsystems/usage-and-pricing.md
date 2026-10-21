@@ -83,9 +83,10 @@ the entry list.
   `SERVICE_TIER_MULTIPLIER` (`pricing/rates.py`): flex 0.5, fast and priority 2. `_tier_multiplier`
   in `pricing/calculator.py` skips per-second rates (GPT-Live's voice model; the tier is the
   backend's) and leaves Realtime-API models and unknown tiers unpriced. See
-  [decision 0007](../decisions/0007-price-service_tiers-and-split-duplex-cost.md).
-- `duplex_cost_split` derives the voice and backend cost from `model_usage`; the webhook and the
-  `Duplex cost` log line use it, so nothing new is stored.
+  [decision 0007](../decisions/0007-price-service-tiers-and-cost-per-model.md).
+- Cost is reported the same way in every mode: the priced `model_usage` entries. A duplex call has
+  two (GPT-Live as `voice_llm_usage`, its backend model as `backend_llm_usage`, relabelled by
+  `label_duplex_usage` after pricing). `_persist_usage` writes one `Cost by model` log line.
 - A dated snapshot name (`gpt-5.6-luna-2026-04-23`) falls back to its alias's rate only for
   reasoning models plus the two retired in 1.6.0, because older snapshots can carry a different
   price.

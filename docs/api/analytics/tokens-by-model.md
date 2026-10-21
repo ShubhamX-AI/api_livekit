@@ -2,7 +2,9 @@
 
 `GET /analytics/tokens/by-model` returns one row per `(type, provider, model)` for the
 authenticated user's calls. Rows include numeric usage totals, estimated AI-provider cost, and
-`total_records`.
+`total_records`. `type` is `llm_usage`, `stt_usage` or `tts_usage`; for a `duplex` call the two language
+models come back as `voice_llm_usage` (GPT-Live) and `backend_llm_usage` (the backend model), and the
+LLM token totals include both. Duplex calls recorded before 1.7.0 show `llm_usage`.
 
 ```bash
 curl "https://api-livekit-vyom.indusnettechnologies.com/analytics/tokens/by-model" \

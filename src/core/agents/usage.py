@@ -16,7 +16,9 @@ aggregation of plugin metrics, so it works on a self-hosted server with no Cloud
 from beanie.operators import Set
 
 from src.core.db.db_schemas import UsageRecord
+from src.core.db.usage_aggregations import BACKEND_LLM_USAGE, VOICE_LLM_USAGE
 from src.core.logger import logger
+from src.core.model_support.capabilities import GPT_LIVE_MODELS
 
 # Components that cost money. The SDK also reports eot_usage and interruption_usage, but
 # this deployment runs the turn detector locally (inference.TurnDetector v1-mini), so
@@ -33,6 +35,25 @@ def normalize_provider(name: str) -> str:
     if normalized == "api.openai.com" or normalized.endswith(".openai.com"):
         return "openai"
     return normalized
+
+
+def label_duplex_usage(model_usage: list[dict]) -> list[dict]:
+    """Name the two language models of a duplex call by role instead of both `llm_usage`.
+
+    The SDK reports GPT-Live and its backend model as the same kind of component. Cascade
+    tells its parts apart by type (`llm_usage`, `stt_usage`, `tts_usage`), so duplex does too:
+    `voice_llm_usage` for the GPT-Live model, `backend_llm_usage` for the Responses model it
+    delegates to. Applied to the stored copy after pricing and totalling, which both key on
+    `llm_usage`; the analytics sums accept all three labels.
+    """
+    relabeled = []
+    for entry in model_usage:
+        if entry.get("type") == "llm_usage":
+            is_voice = entry.get("model") in GPT_LIVE_MODELS or bool(entry.get("session_duration"))
+            role = VOICE_LLM_USAGE if is_voice else BACKEND_LLM_USAGE
+            entry = {**entry, "type": role}
+        relabeled.append(entry)
+    return relabeled
 
 
 def _models(entries) -> str | None:

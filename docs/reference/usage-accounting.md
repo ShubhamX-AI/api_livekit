@@ -27,40 +27,23 @@ New records contain `estimated_cost_usd`, `pricing_schema_version`, `pricing_com
 `pricing_complete=false` means at least one billable provider/model has no verified rate or
 the usage dimensions needed to price it; the call still succeeds and the known entries are
 included in the partial total. Unknown pricing is never represented as a misleading zero.
+`pricing_schema_version` is `2` for calls recorded from 1.7.0, which price service tiers; `1` rows
+left any non-default tier unpriced.
 
 An OpenAI `service_tier` of `flex` prices a token-billed entry at half the standard rate, and
 `fast` or `priority` at double. The tier applies to token-billed models only: in `duplex` mode it
 scales the backend model and never the GPT-Live voice model, which is billed per second. An
 unknown tier, or a tier on an OpenAI Realtime API model, leaves that entry unpriced.
 
-### Duplex cost split
+### Cost per model
 
-A `duplex` call bills two models, and `estimated_cost_usd` is their sum. The end-call webhook
-`usage` object adds the two parts, for `duplex` calls only:
-
-| Field | Meaning |
-|---|---|
-| `voice_model` | The GPT-Live voice model, such as `gpt-live-1`. |
-| `backend_model` | The backend model as OpenAI reported it, snapshot date included. |
-| `estimated_cost_voice_usd` | Voice model cost, from session seconds. |
-| `estimated_cost_backend_usd` | Backend model cost, from tokens. `0` with the model listed in `unpriced_model_usage` means it has no rate. |
-
-Every rate is listed on [Pricing](pricing.md). Gemini Live calls are priced too (list price per
-1M tokens, per model). Cartesia and
-Mistral are priced as well, so
-every provider this platform can run now has a rate. Two of those numbers are weaker than the
-rest and say so in the rate table: **Cartesia is derived** from its published plan tiers, since
-it quotes no per-unit price, and **Deepgram is priced at its regular rate** while the page
-shows a lower promotional one — an estimate that is a little high survives the promotion
-ending.
-
-Rates are versioned and static so a stored estimate remains reproducible. USD conversion for
-providers whose source price is not USD uses the fixed conversion snapshot in the rate table;
-only USD is exposed in the API. Historical schema-v1 records have no per-model source data and
-are not backfilled.
-
-`estimated_cost_usd` is also added to each priced `model_usage` entry. Analytics sums those
-entry values by model; it does not attempt to price blended flat totals.
+Every mode reports its cost the same way: one `model_usage` entry per billed model, each with its
+own `estimated_cost_usd`, and `estimated_cost_usd` on the record is their sum. A `cascade` call has
+three entries (`stt_usage`, `llm_usage`, `tts_usage`), a `realtime` call one, and a `duplex` call two:
+the GPT-Live voice model (`voice_llm_usage`, billed by session seconds) and its backend model
+(`backend_llm_usage`, billed by tokens). The worker
+also writes one `Cost by model` log line per call with the same numbers. `0` is never used for a
+model with no rate: that entry has no `estimated_cost_usd` and is listed in `unpriced_model_usage`.
 
 ## Read `model_usage` for pricing
 
@@ -102,7 +85,10 @@ any `*.openai.com` hostname becomes `"openai"`. Other names keep their lowercase
 `"cartesia"`, `"deepgram"`, `"elevenlabs"`, `"sarvam"`, `"gemini"`, and `"vertex ai"` remain
 distinct billing keys. Vertex AI is not folded into Gemini because they can bill separate
 accounts. Existing v2 rows retain their old spellings until the normalization migration runs.
-Entries are limited to the billable components — `llm_usage`, `tts_usage`, `stt_usage`. The
+Entries are limited to the billable components — `llm_usage`, `tts_usage`, `stt_usage`. A
+`duplex` call has two language models, so its entries are `voice_llm_usage` (GPT-Live) and
+`backend_llm_usage` (the backend model) instead of two `llm_usage`; every analytics total counts all
+three as LLM usage. Duplex calls recorded before 1.7.0 keep `llm_usage` on both. The
 SDK also reports `eot_usage` for the turn detector; this deployment runs
 `inference.TurnDetector(version="v1-mini")` locally, so it costs nothing and is not stored.
 
