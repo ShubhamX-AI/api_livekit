@@ -384,7 +384,7 @@ class UsageRecord(Document):
     call_service: Optional[str] = None
 
     # LLM pipeline info
-    mode: Optional[str] = None  # "pipeline" | "realtime" | "cascade"
+    mode: Optional[str] = None  # "pipeline" | "realtime" | "cascade" | "duplex"
     llm_realtime_provider: Optional[str] = None  # LLM vendor "gemini" | "openai" (recorded for all modes)
     llm_model: Optional[str] = None  # e.g. "gpt-4.1-mini", "gpt-realtime-1.5"
 

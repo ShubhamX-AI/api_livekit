@@ -28,8 +28,11 @@ Dates are the day the version was set.
 
 ## 1.7.0 — 2026-10-21
 
-- **Duplex cost split.** The end-call webhook `usage` object carries `voice_model`, `backend_model`,
-  `estimated_cost_voice_usd` and `estimated_cost_backend_usd` for `duplex` calls.
+- **Duplex cost per model.** A `duplex` call's `model_usage` has one priced entry for GPT-Live and
+  one for its backend model, like every other mode, and a `Cost by model` worker log line lists them.
+  The two entries are typed `voice_llm_usage` and `backend_llm_usage` instead of both `llm_usage`
+  (a receiver that matches `type == "llm_usage"` on duplex calls must accept the new names; the
+  analytics totals already do). Calls recorded before this release keep `llm_usage`.
 - **Service tiers are priced.** `flex` is half and `fast`/`priority` double the standard token rate.
   Before, any non-default tier left the whole call unpriced, and in `duplex` that included the voice model.
 - **Breaking: Gemini realtime refuses knobs it ignores.** `reasoning_effort`, `verbosity`, `service_tier`,

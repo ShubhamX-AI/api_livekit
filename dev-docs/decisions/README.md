@@ -12,7 +12,7 @@ set the old one's status to `Superseded by 000N`.
 | [0004](0004-one-rule-table-for-every-mode.md) | Reject impossible mode combinations with one rule table | 2026-08 | `validate_mode_config` is the only rule table, re-run on stored row + PATCH; Gemini only in realtime; `extra="forbid"` everywhere. |
 | [0005](0005-adopt-gemini-3.8-live.md) | Move to livekit-agents 1.8.2 and make Gemini 3.8 Live the default | 2026-09 | New default `gemini-3.8-live`, mid-session guard removed, Vertex-only model refused, Deepgram limited to priced models. |
 | [0006](0006-duplex-mode-gpt-6-and-new-speech-models.md) | Add duplex mode, GPT-6 and new speech models (1.6.0) | 2026-10 | GPT-Live duplex mode, GPT-6, new ElevenLabs/Sarvam models, `gpt-5.1`/`gpt-5.4-nano` removed, ignored TTS settings are a 422. |
-| [0007](0007-price-service_tiers-and-split-duplex-cost.md) | Price service tiers and split the duplex cost | 2026-10 | `flex` 0.5x and `fast`/`priority` 2x on token rates, voice vs backend cost in the webhook, Gemini realtime refuses ignored knobs. |
+| [0007](0007-price-service-tiers-and-cost-per-model.md) | Price service tiers and report cost the same way in every mode | 2026-10 | `flex` 0.5x and `fast`/`priority` 2x on token rates, one cost-per-model format for every mode, Gemini realtime refuses ignored knobs. |
 
 ## Template for a new record
 

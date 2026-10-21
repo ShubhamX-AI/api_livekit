@@ -11,7 +11,9 @@ from decimal import Decimal
 
 from src.core.model_support.capabilities import REASONING_MODELS
 
-PRICING_SCHEMA_VERSION = 1
+# 2: service tiers are priced (flex 0.5x, fast/priority 2x). Version 1 left any non-default
+# tier unpriced, so a stored version-1 estimate for such a call is partial by design.
+PRICING_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)

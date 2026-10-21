@@ -86,8 +86,9 @@ class AssistantLLMConfig(BaseModel):
     backend_instructions: Optional[str] = Field(None, max_length=4000, description="Duplex mode only. Instructions for the backend model, separate from the voice persona (assistant_prompt). Unset means a short built-in instruction: use the tools when needed and answer briefly.")
     api_key: ProviderApiKey = Field(None, min_length=1, max_length=500, description="Provider API key override for the selected provider (openai or gemini).")
 
-    # Generation knobs. These are applied to the cascade LLM (openai.responses.LLM);
-    # they are harmless (ignored) in the realtime/pipeline modes. See
+    # Generation knobs. These are applied to the cascade LLM (openai.responses.LLM) and the
+    # duplex backend; Gemini realtime reads temperature and max_output_tokens and refuses the
+    # rest (GEMINI_UNREAD_KNOBS); OpenAI realtime/pipeline ignore them. See
     # docs/api/assistant/index.md and the OpenAI LLM docs for valid values.
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature (0–2). Higher is more random. Reasoning models (gpt-5.x) reject it, so it is dropped before the call on those; set reasoning_effort instead. Only one of temperature or top_p may be set (responses API uses temperature).")
     max_output_tokens: Optional[int] = Field(None, ge=16, description="Cap on output tokens for the response (responses API `max_output_tokens`). At least 16, the API's own minimum.")

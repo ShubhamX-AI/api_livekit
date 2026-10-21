@@ -4,7 +4,6 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Literal
 
 import httpx
@@ -23,7 +22,6 @@ from src.core.billing import (
 from src.core.config import settings
 from src.core.db.db_schemas import ActivityLog, Assistant, CallRecord, UsageRecord
 from src.core.logger import logger
-from src.core.pricing import duplex_cost_split
 
 PASSTHROUGH_ROOM_PREFIX = "passthrough"
 
@@ -530,14 +528,6 @@ class LiveKitService:
                 "pricing_complete": usage_json.get("pricing_complete", False),
                 "unpriced_model_usage": usage_json.get("unpriced_model_usage", []),
             }
-            if usage_record.mode == "duplex":
-                # Duplex bills two models; the total above hides the backend's share.
-                filtered_data["usage"].update(
-                    {
-                        key: str(value) if isinstance(value, Decimal) else value
-                        for key, value in duplex_cost_split(usage_json.get("model_usage", [])).items()
-                    }
-                )
 
         payload = {
             "success": True,

@@ -58,7 +58,7 @@ from src.core.agents.stt import (
 )
 from src.core.agents.tool_builder import build_tools_from_db
 from src.core.agents.tts import create_tts, maintain_sarvam_connection
-from src.core.agents.usage import summarize_usage, upsert_usage_record
+from src.core.agents.usage import label_duplex_usage, summarize_usage, upsert_usage_record
 from src.core.agents.utils import render_prompt
 from src.core.agents.voice_features import (
     FillerController,
@@ -93,7 +93,7 @@ from src.core.model_support.capabilities import (
     DEFAULT_REALTIME_MODEL,
     realtime_supports_truncation,
 )
-from src.core.pricing import duplex_cost_split, price_model_usage
+from src.core.pricing import price_model_usage
 from src.core.providers.keys import provider_key_or_system
 from src.services.livekit.livekit_svc import TERMINAL_CALL_STATUSES, LiveKitService
 from src.services.storage import s3_audio
@@ -508,6 +508,9 @@ async def entrypoint(ctx: JobContext):
             metered["pricing_schema_version"] = pricing.pricing_schema_version
             metered["pricing_complete"] = pricing.pricing_complete
             metered["unpriced_model_usage"] = pricing.unpriced_model_usage
+            if is_duplex:
+                metered["model_usage"] = label_duplex_usage(metered["model_usage"])
+                metered["unpriced_model_usage"] = label_duplex_usage(metered["unpriced_model_usage"])
             if pricing.unpriced_model_usage and final:
                 # Zero cost for a model reads like a free call, so name what has no rate.
                 logger.warning(
@@ -584,16 +587,19 @@ async def entrypoint(ctx: JobContext):
                 f"(audio={usage.stt_input_audio_tokens}) | "
                 f"estimated_cost_usd={usage.estimated_cost_usd}"
             )
-            if is_duplex:
-                split = duplex_cost_split(usage.model_usage)
-                logger.info(
-                    "Duplex cost | room=%s | voice=%s $%s | backend=%s $%s",
-                    room_name,
-                    split["voice_model"],
-                    split["estimated_cost_voice_usd"],
-                    split["backend_model"],
-                    split["estimated_cost_backend_usd"],
+            # One line per call, same shape in every mode, so a duplex call's backend model
+            # shows next to its voice model the way a cascade call shows STT, LLM and TTS.
+            logger.info(
+                "Cost by model | room=%s | %s",
+                room_name,
+                " | ".join(
+                    f"{e.get('model')}=${e['estimated_cost_usd']:.6f}"
+                    if e.get("estimated_cost_usd") is not None
+                    else f"{e.get('model')}=unpriced"
+                    for e in usage.model_usage
                 )
+                or "no billable usage",
+            )
         except Exception as e:
             logger.error(f"Failed to persist usage record: {e}", exc_info=True)
 

@@ -18,9 +18,10 @@ from pydantic import ValidationError
 from src.api.models.api_schemas import CreateAssistant, UpdateAssistant
 from src.api.routes.assistant import update_assistant
 from src.api.validation import enforce_openai_config, enforce_stored_mode_constraints
+from src.core.agents.usage import label_duplex_usage
 from src.core.db.db_schemas import AssistantInteractionConfig, GreetingAudioConfig
 from src.core.model_support.capabilities import GPT_LIVE_VOICES
-from src.core.pricing import duplex_cost_split, price_model_usage
+from src.core.pricing import price_model_usage
 
 BASE = {
     "assistant_name": "A",
@@ -370,32 +371,26 @@ class TestDuplexServiceTier(unittest.TestCase):
         self.assertFalse(result.pricing_complete)
 
 
-class TestDuplexCostSplit(unittest.TestCase):
-    def test_the_total_is_split_into_voice_and_backend(self):
+class TestDuplexUsageLabels(unittest.TestCase):
+    def test_the_two_language_models_get_their_own_type(self):
         priced = price_model_usage(TestDuplexServiceTier.ENTRIES)
-        split = duplex_cost_split(priced.model_usage)
-        self.assertEqual(split["voice_model"], "gpt-live-1")
-        self.assertEqual(split["backend_model"], "gpt-6-luna-2026-09-30")
-        self.assertEqual(split["estimated_cost_voice_usd"], Decimal("0.10"))
-        self.assertEqual(split["estimated_cost_backend_usd"], Decimal("0.60"))
+        labeled = label_duplex_usage(priced.model_usage)
         self.assertEqual(
-            split["estimated_cost_voice_usd"] + split["estimated_cost_backend_usd"], priced.estimated_cost_usd
+            [(e["model"], e["type"]) for e in labeled],
+            [("gpt-live-1", "voice_llm_usage"), ("gpt-6-luna-2026-09-30", "backend_llm_usage")],
         )
+        # Cost and every other field are untouched, and the input list is not mutated.
+        self.assertEqual([e["estimated_cost_usd"] for e in labeled], [e["estimated_cost_usd"] for e in priced.model_usage])
+        self.assertEqual({e["type"] for e in priced.model_usage}, {"llm_usage"})
 
-    def test_stored_entries_with_string_costs_split_too(self):
-        split = duplex_cost_split(
-            [
-                {"type": "llm_usage", "model": "gpt-live-1", "session_duration": 60, "estimated_cost_usd": "0.05"},
-                {"type": "llm_usage", "model": "gpt-6-sol-2026-09-30", "estimated_cost_usd": "0.2"},
-            ]
-        )
-        self.assertEqual(split["estimated_cost_voice_usd"], Decimal("0.05"))
-        self.assertEqual(split["estimated_cost_backend_usd"], Decimal("0.2"))
+    def test_a_stale_voice_model_name_is_still_the_voice_entry(self):
+        """Billed by session seconds is what makes it the voice model, whatever the name."""
+        labeled = label_duplex_usage([{"type": "llm_usage", "model": "gpt-live-9", "session_duration": 60.0}])
+        self.assertEqual(labeled[0]["type"], "voice_llm_usage")
 
-    def test_an_unpriced_backend_is_named_with_zero_cost(self):
-        split = duplex_cost_split([{"type": "llm_usage", "model": "gpt-6-luna-20261001", "input_tokens": 5}])
-        self.assertEqual(split["backend_model"], "gpt-6-luna-20261001")
-        self.assertEqual(split["estimated_cost_backend_usd"], Decimal(0))
+    def test_other_component_types_are_left_alone(self):
+        entries = [{"type": "stt_usage", "model": "saaras:v3"}, {"type": "tts_usage", "model": "sonic-3"}]
+        self.assertEqual(label_duplex_usage(entries), entries)
 
 
 class TestCreateGPTLive(unittest.TestCase):

@@ -1,0 +1,1008 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Webhook and Mongo payloads</title>
+<style>
+:root{--bg:#fff;--fg:#1c1f24;--mut:#5b6470;--line:#d9dde3;--card:#f6f7f9;--acc:#175cd3}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--fg:#e6e8eb;--mut:#9aa3af;--line:#2d333b;--card:#1b1f26;--acc:#84adff}}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif;max-width:1000px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;border-bottom:1px solid var(--line);padding-bottom:4px;margin-top:30px}
+code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:13px}
+pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow-x:auto;font-size:12px;line-height:1.45;margin:6px 0}
+.mut{color:var(--mut)}.tag{display:inline-block;font-size:12px;font-weight:400;border:1px solid var(--line);border-radius:10px;padding:0 8px;margin-left:6px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;display:block;overflow-x:auto;margin:8px 0}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--card)}
+details{margin:8px 0}summary{cursor:pointer;font-weight:600}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}.box{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:6px 10px;font-size:13px}.arrow{color:var(--mut)}
+nav a{margin-right:12px;color:var(--acc)}
+</style></head><body>
+<h1>End-of-call webhook and Mongo payloads</h1>
+<p class="mut">Version 1.7.0. Every JSON block below was produced by running the real code: the SDK usage collector, <code>summarize_usage</code>, <code>price_model_usage</code> and <code>LiveKitService.send_end_call_webhook</code> with the HTTP client and database stubbed. Only the sample inputs (a 2.5 minute outbound Exotel call, names, ids, numbers) are made up. Cost strings are shown exactly as produced, with all their digits.</p>
+<nav><a href="#flow">Webhook call</a><a href="#cascade">cascade</a><a href="#pipeline">pipeline</a><a href="#realtime">realtime</a><a href="#duplex">duplex</a><a href="#mongo">Mongo</a><a href="#diff">Webhook vs Mongo</a></nav>
+
+<h2 id="flow">1. The webhook call</h2>
+<div class="flow"><span class="box">call ends</span><span class="arrow">→</span><span class="box">read CallRecord + UsageRecord</span><span class="arrow">→</span><span class="box">build one JSON body</span><span class="arrow">→</span><span class="box">POST to the end-call URL</span><span class="arrow">→</span><span class="box">write an activity_logs row</span></div>
+<table>
+<tr><th>Item</th><th>Behaviour</th></tr>
+<tr><td>When</td><td>At the end of the call (<code>end_call</code>), and for outbound calls that never connect (busy, no answer, rejected and similar, from the dispatcher). Nothing is sent if there is no call record or no URL.</td></tr>
+<tr><td>URL</td><td>A <code>webhook_url</code> passed in (passthrough trunks), else the assistant's <code>assistant_end_call_url</code>.</td></tr>
+<tr><td>Request</td><td><code>POST</code>, JSON body, <code>Content-Type: application/json</code>. No authentication header is added.</td></tr>
+<tr><td>Body shape</td><td><code>{"success": true, "message": "Call details fetched successfully", "data": {...call record fields..., "usage": {...}}}</code>. <code>data</code> is the call record without its Mongo <code>id</code>. <code>usage</code> is present only when a usage record exists.</td></tr>
+<tr><td>Timeouts</td><td>Read timeout <code>END_CALL_WEBHOOK_TIMEOUT</code> (default 30 s), connect timeout 10 s. The assistant's <code>assistant_end_call_webhook.timeout_seconds</code> overrides the read timeout.</td></tr>
+<tr><td>Attempts</td><td><code>END_CALL_WEBHOOK_ATTEMPTS</code> (default 3), or the assistant's <code>assistant_end_call_webhook.attempts</code>. Backoff 1 s, 2 s, 4 s.</td></tr>
+<tr><td>Retried</td><td>Timeouts, transport errors, HTTP 429 and 5xx.</td></tr>
+<tr><td>Not retried</td><td>Any other 4xx. A 2xx is success.</td></tr>
+<tr><td>Result</td><td>One <code>activity_logs</code> row per delivery (success or error), with the URL and the receiver's status code and first 500 characters of its reply. The payload itself is not stored there.</td></tr>
+</table>
+<p>Example <code>activity_logs</code> document for a successful delivery (the same shape in every mode; <code>latency_ms</code> is a sample):</p>
+<pre>{
+  &quot;user_email&quot;: &quot;owner@example.com&quot;,
+  &quot;log_type&quot;: &quot;end_call_webhook&quot;,
+  &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+  &quot;room_name&quot;: &quot;room-duplex-7f3a&quot;,
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;request_data&quot;: {
+    &quot;url&quot;: &quot;https://hooks.example.com/call-ended&quot;
+  },
+  &quot;response_data&quot;: {
+    &quot;status_code&quot;: 200,
+    &quot;body&quot;: &quot;{\&quot;received\&quot;: true}&quot;
+  },
+  &quot;latency_ms&quot;: 143,
+  &quot;message&quot;: &quot;Post-call data sent to https://hooks.example.com/call-ended (HTTP 200)&quot;
+}</pre>
+
+<h2 id="std">2. The standard cost format</h2>
+<p>Every mode reports cost the same way: one <code>model_usage</code> entry per billed model, each with its own <code>estimated_cost_usd</code>, and <code>estimated_cost_usd</code> on <code>usage</code> is their sum. There are no mode-specific cost fields. Each part has its own <code>type</code>: <code>stt_usage</code>, <code>llm_usage</code> and <code>tts_usage</code> for cascade and pipeline, <code>llm_usage</code> for realtime, and <code>voice_llm_usage</code> (GPT-Live) with <code>backend_llm_usage</code> (its backend model) for duplex. The worker also writes one log line per call, for example:</p>
+<pre>Cost by model | room=room-duplex-7f3a | gpt-live-1=$0.125000 | gpt-6-luna-2026-09-30=$0.000310</pre>
+<h2 id="cascade">cascade <span class="tag">STT, LLM and TTS stages</span></h2>
+<p>Total <code>estimated_cost_usd</code> <b>0.07206137313432835820895522387</b>, <code>model_usage</code> has 3 entries:</p>
+<table><tr><th>type</th><th>provider</th><th>model</th><th>estimated_cost_usd</th></tr><tr><td><code>llm_usage</code></td><td>openai</td><td>gpt-4.1</td><td>0.0100960</td></tr><tr><td><code>tts_usage</code></td><td>cartesia</td><td>sonic-3</td><td>0.0470400</td></tr><tr><td><code>stt_usage</code></td><td>sarvam</td><td>saaras:v3</td><td>0.01492537313432835820895522387</td></tr></table>
+<details><summary>Webhook request body (POST JSON)</summary><pre>{
+  &quot;success&quot;: true,
+  &quot;message&quot;: &quot;Call details fetched successfully&quot;,
+  &quot;data&quot;: {
+    &quot;room_name&quot;: &quot;room-cascade-7f3a&quot;,
+    &quot;queue_id&quot;: &quot;q_01HZX&quot;,
+    &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+    &quot;assistant_name&quot;: &quot;Support agent&quot;,
+    &quot;is_passthrough&quot;: false,
+    &quot;to_number&quot;: &quot;+919800000000&quot;,
+    &quot;call_status&quot;: &quot;completed&quot;,
+    &quot;call_status_reason&quot;: null,
+    &quot;sip_status_code&quot;: 200,
+    &quot;sip_status_text&quot;: &quot;OK&quot;,
+    &quot;answered_at&quot;: &quot;2026-10-21T09:30:09Z&quot;,
+    &quot;agent_ready_at&quot;: &quot;2026-10-21T09:30:12Z&quot;,
+    &quot;call_end_reason&quot;: &quot;natural&quot;,
+    &quot;recording_path&quot;: &quot;s3://bucket/recordings/room-cascade-7f3a.ogg&quot;,
+    &quot;recording_egress_id&quot;: &quot;EG_abc123&quot;,
+    &quot;transcripts&quot;: [
+      {
+        &quot;speaker&quot;: &quot;assistant&quot;,
+        &quot;text&quot;: &quot;Hello, how can I help?&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:13+00:00&quot;
+      },
+      {
+        &quot;speaker&quot;: &quot;user&quot;,
+        &quot;text&quot;: &quot;I want to check my order.&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:18+00:00&quot;
+      }
+    ],
+    &quot;started_at&quot;: &quot;2026-10-21T09:30:00Z&quot;,
+    &quot;ended_at&quot;: &quot;2026-10-21T09:32:39Z&quot;,
+    &quot;call_duration_minutes&quot;: 2.5,
+    &quot;billable_duration_minutes&quot;: 3,
+    &quot;created_by_email&quot;: &quot;owner@example.com&quot;,
+    &quot;call_type&quot;: &quot;outbound&quot;,
+    &quot;call_service&quot;: &quot;exotel&quot;,
+    &quot;platform_number&quot;: &quot;+918000000000&quot;,
+    &quot;meeting_url&quot;: null,
+    &quot;meeting_connector_status&quot;: null,
+    &quot;meeting_connector_status_reason&quot;: null,
+    &quot;meeting_connector_ready_at&quot;: null,
+    &quot;meeting_connector_ended_at&quot;: null,
+    &quot;usage&quot;: {
+      &quot;mode&quot;: &quot;cascade&quot;,
+      &quot;call_duration_minutes&quot;: 2.5,
+      &quot;call_service&quot;: &quot;exotel&quot;,
+      &quot;tts_provider&quot;: &quot;cartesia&quot;,
+      &quot;llm_realtime_provider&quot;: &quot;openai&quot;,
+      &quot;llm_model&quot;: &quot;gpt-4.1&quot;,
+      &quot;llm_input_tokens&quot;: 9250,
+      &quot;llm_output_tokens&quot;: 1230,
+      &quot;llm_input_audio_tokens&quot;: 0,
+      &quot;llm_input_text_tokens&quot;: 0,
+      &quot;llm_input_image_tokens&quot;: 0,
+      &quot;llm_output_audio_tokens&quot;: 0,
+      &quot;llm_output_text_tokens&quot;: 0,
+      &quot;llm_total_tokens&quot;: 10480,
+      &quot;llm_input_cached_tokens&quot;: 512,
+      &quot;llm_input_cached_audio_tokens&quot;: 0,
+      &quot;llm_input_cached_text_tokens&quot;: 0,
+      &quot;llm_input_cached_image_tokens&quot;: 0,
+      &quot;llm_input_cache_creation_tokens&quot;: 0,
+      &quot;llm_session_duration&quot;: 0,
+      &quot;tts_characters_count&quot;: 1200,
+      &quot;tts_audio_duration&quot;: 80.0,
+      &quot;tts_input_tokens&quot;: 0,
+      &quot;tts_output_tokens&quot;: 0,
+      &quot;stt_provider&quot;: &quot;sarvam&quot;,
+      &quot;stt_model&quot;: &quot;saaras:v3&quot;,
+      &quot;stt_audio_duration&quot;: 150.0,
+      &quot;stt_input_tokens&quot;: 0,
+      &quot;stt_input_audio_tokens&quot;: 0,
+      &quot;stt_input_text_tokens&quot;: 0,
+      &quot;stt_output_tokens&quot;: 0,
+      &quot;usage_schema_version&quot;: 3,
+      &quot;model_usage&quot;: [
+        {
+          &quot;type&quot;: &quot;llm_usage&quot;,
+          &quot;provider&quot;: &quot;openai&quot;,
+          &quot;model&quot;: &quot;gpt-4.1&quot;,
+          &quot;input_tokens&quot;: 9250,
+          &quot;input_cached_tokens&quot;: 512,
+          &quot;input_cache_creation_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 0,
+          &quot;input_cached_audio_tokens&quot;: 0,
+          &quot;input_text_tokens&quot;: 0,
+          &quot;input_cached_text_tokens&quot;: 0,
+          &quot;input_image_tokens&quot;: 0,
+          &quot;input_cached_image_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 1230,
+          &quot;output_audio_tokens&quot;: 0,
+          &quot;output_text_tokens&quot;: 0,
+          &quot;output_reasoning_tokens&quot;: 0,
+          &quot;session_duration&quot;: 0.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.0100960&quot;,
+          &quot;pricing_complete&quot;: true
+        },
+        {
+          &quot;type&quot;: &quot;tts_usage&quot;,
+          &quot;provider&quot;: &quot;cartesia&quot;,
+          &quot;model&quot;: &quot;sonic-3&quot;,
+          &quot;input_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 0,
+          &quot;characters_count&quot;: 1200,
+          &quot;audio_duration&quot;: 80.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.0470400&quot;,
+          &quot;pricing_complete&quot;: true
+        },
+        {
+          &quot;type&quot;: &quot;stt_usage&quot;,
+          &quot;provider&quot;: &quot;sarvam&quot;,
+          &quot;model&quot;: &quot;saaras:v3&quot;,
+          &quot;input_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 0,
+          &quot;audio_duration&quot;: 150.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.01492537313432835820895522387&quot;,
+          &quot;pricing_complete&quot;: true
+        }
+      ],
+      &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+      &quot;usage_finalized&quot;: true,
+      &quot;estimated_cost_usd&quot;: &quot;0.07206137313432835820895522387&quot;,
+      &quot;pricing_schema_version&quot;: 1,
+      &quot;pricing_complete&quot;: true,
+      &quot;unpriced_model_usage&quot;: []
+    }
+  }
+}</pre></details>
+<details><summary>Mongo: usage_records document</summary><pre>{
+  &quot;_id&quot;: {
+    &quot;$oid&quot;: &quot;66f0a1b2c3d4e5f607182931&quot;
+  },
+  &quot;room_name&quot;: &quot;room-cascade-7f3a&quot;,
+  &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+  &quot;user_email&quot;: &quot;owner@example.com&quot;,
+  &quot;tts_provider&quot;: &quot;cartesia&quot;,
+  &quot;call_service&quot;: &quot;exotel&quot;,
+  &quot;mode&quot;: &quot;cascade&quot;,
+  &quot;llm_realtime_provider&quot;: &quot;openai&quot;,
+  &quot;llm_model&quot;: &quot;gpt-4.1&quot;,
+  &quot;llm_input_tokens&quot;: 9250,
+  &quot;llm_output_tokens&quot;: 1230,
+  &quot;llm_input_audio_tokens&quot;: 0,
+  &quot;llm_input_text_tokens&quot;: 0,
+  &quot;llm_input_image_tokens&quot;: 0,
+  &quot;llm_input_cached_tokens&quot;: 512,
+  &quot;llm_input_cached_audio_tokens&quot;: 0,
+  &quot;llm_input_cached_text_tokens&quot;: 0,
+  &quot;llm_input_cached_image_tokens&quot;: 0,
+  &quot;llm_input_cache_creation_tokens&quot;: 0,
+  &quot;llm_output_audio_tokens&quot;: 0,
+  &quot;llm_output_text_tokens&quot;: 0,
+  &quot;llm_total_tokens&quot;: 10480,
+  &quot;llm_session_duration&quot;: 0,
+  &quot;tts_characters_count&quot;: 1200,
+  &quot;tts_audio_duration&quot;: 80.0,
+  &quot;tts_input_tokens&quot;: 0,
+  &quot;tts_output_tokens&quot;: 0,
+  &quot;stt_provider&quot;: &quot;sarvam&quot;,
+  &quot;stt_model&quot;: &quot;saaras:v3&quot;,
+  &quot;stt_audio_duration&quot;: 150.0,
+  &quot;stt_input_tokens&quot;: 0,
+  &quot;stt_input_audio_tokens&quot;: 0,
+  &quot;stt_input_text_tokens&quot;: 0,
+  &quot;stt_output_tokens&quot;: 0,
+  &quot;model_usage&quot;: [
+    {
+      &quot;type&quot;: &quot;llm_usage&quot;,
+      &quot;provider&quot;: &quot;openai&quot;,
+      &quot;model&quot;: &quot;gpt-4.1&quot;,
+      &quot;input_tokens&quot;: 9250,
+      &quot;input_cached_tokens&quot;: 512,
+      &quot;input_cache_creation_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 0,
+      &quot;input_cached_audio_tokens&quot;: 0,
+      &quot;input_text_tokens&quot;: 0,
+      &quot;input_cached_text_tokens&quot;: 0,
+      &quot;input_image_tokens&quot;: 0,
+      &quot;input_cached_image_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 1230,
+      &quot;output_audio_tokens&quot;: 0,
+      &quot;output_text_tokens&quot;: 0,
+      &quot;output_reasoning_tokens&quot;: 0,
+      &quot;session_duration&quot;: 0.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.0100960&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    },
+    {
+      &quot;type&quot;: &quot;tts_usage&quot;,
+      &quot;provider&quot;: &quot;cartesia&quot;,
+      &quot;model&quot;: &quot;sonic-3&quot;,
+      &quot;input_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 0,
+      &quot;characters_count&quot;: 1200,
+      &quot;audio_duration&quot;: 80.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.0470400&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    },
+    {
+      &quot;type&quot;: &quot;stt_usage&quot;,
+      &quot;provider&quot;: &quot;sarvam&quot;,
+      &quot;model&quot;: &quot;saaras:v3&quot;,
+      &quot;input_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 0,
+      &quot;audio_duration&quot;: 150.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.01492537313432835820895522387&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    }
+  ],
+  &quot;estimated_cost_usd&quot;: {
+    &quot;$numberDecimal&quot;: &quot;0.07206137313432835820895522387&quot;
+  },
+  &quot;pricing_schema_version&quot;: 1,
+  &quot;pricing_complete&quot;: true,
+  &quot;unpriced_model_usage&quot;: [],
+  &quot;usage_schema_version&quot;: 3,
+  &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+  &quot;usage_finalized&quot;: true,
+  &quot;call_duration_minutes&quot;: 2.5,
+  &quot;created_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:33:00Z&quot;
+  }
+}</pre></details><h2 id="pipeline">pipeline <span class="tag">OpenAI realtime model + Sarvam STT + ElevenLabs TTS</span></h2>
+<p>Total <code>estimated_cost_usd</code> <b>0.2713253731343283582089552239</b>, <code>model_usage</code> has 3 entries:</p>
+<table><tr><th>type</th><th>provider</th><th>model</th><th>estimated_cost_usd</th></tr><tr><td><code>llm_usage</code></td><td>openai</td><td>gpt-realtime-1.5</td><td>0.2084000</td></tr><tr><td><code>tts_usage</code></td><td>elevenlabs</td><td>eleven_flash_v2_5</td><td>0.04800</td></tr><tr><td><code>stt_usage</code></td><td>sarvam</td><td>saaras:v3</td><td>0.01492537313432835820895522387</td></tr></table>
+<details><summary>Webhook request body (POST JSON)</summary><pre>{
+  &quot;success&quot;: true,
+  &quot;message&quot;: &quot;Call details fetched successfully&quot;,
+  &quot;data&quot;: {
+    &quot;room_name&quot;: &quot;room-pipeline-7f3a&quot;,
+    &quot;queue_id&quot;: &quot;q_01HZX&quot;,
+    &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+    &quot;assistant_name&quot;: &quot;Support agent&quot;,
+    &quot;is_passthrough&quot;: false,
+    &quot;to_number&quot;: &quot;+919800000000&quot;,
+    &quot;call_status&quot;: &quot;completed&quot;,
+    &quot;call_status_reason&quot;: null,
+    &quot;sip_status_code&quot;: 200,
+    &quot;sip_status_text&quot;: &quot;OK&quot;,
+    &quot;answered_at&quot;: &quot;2026-10-21T09:30:09Z&quot;,
+    &quot;agent_ready_at&quot;: &quot;2026-10-21T09:30:12Z&quot;,
+    &quot;call_end_reason&quot;: &quot;natural&quot;,
+    &quot;recording_path&quot;: &quot;s3://bucket/recordings/room-pipeline-7f3a.ogg&quot;,
+    &quot;recording_egress_id&quot;: &quot;EG_abc123&quot;,
+    &quot;transcripts&quot;: [
+      {
+        &quot;speaker&quot;: &quot;assistant&quot;,
+        &quot;text&quot;: &quot;Hello, how can I help?&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:13+00:00&quot;
+      },
+      {
+        &quot;speaker&quot;: &quot;user&quot;,
+        &quot;text&quot;: &quot;I want to check my order.&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:18+00:00&quot;
+      }
+    ],
+    &quot;started_at&quot;: &quot;2026-10-21T09:30:00Z&quot;,
+    &quot;ended_at&quot;: &quot;2026-10-21T09:32:39Z&quot;,
+    &quot;call_duration_minutes&quot;: 2.5,
+    &quot;billable_duration_minutes&quot;: 3,
+    &quot;created_by_email&quot;: &quot;owner@example.com&quot;,
+    &quot;call_type&quot;: &quot;outbound&quot;,
+    &quot;call_service&quot;: &quot;exotel&quot;,
+    &quot;platform_number&quot;: &quot;+918000000000&quot;,
+    &quot;meeting_url&quot;: null,
+    &quot;meeting_connector_status&quot;: null,
+    &quot;meeting_connector_status_reason&quot;: null,
+    &quot;meeting_connector_ready_at&quot;: null,
+    &quot;meeting_connector_ended_at&quot;: null,
+    &quot;usage&quot;: {
+      &quot;mode&quot;: &quot;pipeline&quot;,
+      &quot;call_duration_minutes&quot;: 2.5,
+      &quot;call_service&quot;: &quot;exotel&quot;,
+      &quot;tts_provider&quot;: &quot;elevenlabs&quot;,
+      &quot;llm_realtime_provider&quot;: &quot;openai&quot;,
+      &quot;llm_model&quot;: &quot;gpt-realtime-1.5&quot;,
+      &quot;llm_input_tokens&quot;: 6900,
+      &quot;llm_output_tokens&quot;: 800,
+      &quot;llm_input_audio_tokens&quot;: 6000,
+      &quot;llm_input_text_tokens&quot;: 900,
+      &quot;llm_input_image_tokens&quot;: 0,
+      &quot;llm_output_audio_tokens&quot;: 0,
+      &quot;llm_output_text_tokens&quot;: 800,
+      &quot;llm_total_tokens&quot;: 7700,
+      &quot;llm_input_cached_tokens&quot;: 0,
+      &quot;llm_input_cached_audio_tokens&quot;: 0,
+      &quot;llm_input_cached_text_tokens&quot;: 0,
+      &quot;llm_input_cached_image_tokens&quot;: 0,
+      &quot;llm_input_cache_creation_tokens&quot;: 0,
+      &quot;llm_session_duration&quot;: 0,
+      &quot;tts_characters_count&quot;: 1200,
+      &quot;tts_audio_duration&quot;: 80.0,
+      &quot;tts_input_tokens&quot;: 0,
+      &quot;tts_output_tokens&quot;: 0,
+      &quot;stt_provider&quot;: &quot;sarvam&quot;,
+      &quot;stt_model&quot;: &quot;saaras:v3&quot;,
+      &quot;stt_audio_duration&quot;: 150.0,
+      &quot;stt_input_tokens&quot;: 0,
+      &quot;stt_input_audio_tokens&quot;: 0,
+      &quot;stt_input_text_tokens&quot;: 0,
+      &quot;stt_output_tokens&quot;: 0,
+      &quot;usage_schema_version&quot;: 3,
+      &quot;model_usage&quot;: [
+        {
+          &quot;type&quot;: &quot;llm_usage&quot;,
+          &quot;provider&quot;: &quot;openai&quot;,
+          &quot;model&quot;: &quot;gpt-realtime-1.5&quot;,
+          &quot;input_tokens&quot;: 6900,
+          &quot;input_cached_tokens&quot;: 0,
+          &quot;input_cache_creation_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 6000,
+          &quot;input_cached_audio_tokens&quot;: 0,
+          &quot;input_text_tokens&quot;: 900,
+          &quot;input_cached_text_tokens&quot;: 0,
+          &quot;input_image_tokens&quot;: 0,
+          &quot;input_cached_image_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 800,
+          &quot;output_audio_tokens&quot;: 0,
+          &quot;output_text_tokens&quot;: 800,
+          &quot;output_reasoning_tokens&quot;: 0,
+          &quot;session_duration&quot;: 0.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.2084000&quot;,
+          &quot;pricing_complete&quot;: true
+        },
+        {
+          &quot;type&quot;: &quot;tts_usage&quot;,
+          &quot;provider&quot;: &quot;elevenlabs&quot;,
+          &quot;model&quot;: &quot;eleven_flash_v2_5&quot;,
+          &quot;input_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 0,
+          &quot;characters_count&quot;: 1200,
+          &quot;audio_duration&quot;: 80.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.04800&quot;,
+          &quot;pricing_complete&quot;: true
+        },
+        {
+          &quot;type&quot;: &quot;stt_usage&quot;,
+          &quot;provider&quot;: &quot;sarvam&quot;,
+          &quot;model&quot;: &quot;saaras:v3&quot;,
+          &quot;input_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 0,
+          &quot;audio_duration&quot;: 150.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.01492537313432835820895522387&quot;,
+          &quot;pricing_complete&quot;: true
+        }
+      ],
+      &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+      &quot;usage_finalized&quot;: true,
+      &quot;estimated_cost_usd&quot;: &quot;0.2713253731343283582089552239&quot;,
+      &quot;pricing_schema_version&quot;: 1,
+      &quot;pricing_complete&quot;: true,
+      &quot;unpriced_model_usage&quot;: []
+    }
+  }
+}</pre></details>
+<details><summary>Mongo: usage_records document</summary><pre>{
+  &quot;_id&quot;: {
+    &quot;$oid&quot;: &quot;66f0a1b2c3d4e5f607182931&quot;
+  },
+  &quot;room_name&quot;: &quot;room-pipeline-7f3a&quot;,
+  &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+  &quot;user_email&quot;: &quot;owner@example.com&quot;,
+  &quot;tts_provider&quot;: &quot;elevenlabs&quot;,
+  &quot;call_service&quot;: &quot;exotel&quot;,
+  &quot;mode&quot;: &quot;pipeline&quot;,
+  &quot;llm_realtime_provider&quot;: &quot;openai&quot;,
+  &quot;llm_model&quot;: &quot;gpt-realtime-1.5&quot;,
+  &quot;llm_input_tokens&quot;: 6900,
+  &quot;llm_output_tokens&quot;: 800,
+  &quot;llm_input_audio_tokens&quot;: 6000,
+  &quot;llm_input_text_tokens&quot;: 900,
+  &quot;llm_input_image_tokens&quot;: 0,
+  &quot;llm_input_cached_tokens&quot;: 0,
+  &quot;llm_input_cached_audio_tokens&quot;: 0,
+  &quot;llm_input_cached_text_tokens&quot;: 0,
+  &quot;llm_input_cached_image_tokens&quot;: 0,
+  &quot;llm_input_cache_creation_tokens&quot;: 0,
+  &quot;llm_output_audio_tokens&quot;: 0,
+  &quot;llm_output_text_tokens&quot;: 800,
+  &quot;llm_total_tokens&quot;: 7700,
+  &quot;llm_session_duration&quot;: 0,
+  &quot;tts_characters_count&quot;: 1200,
+  &quot;tts_audio_duration&quot;: 80.0,
+  &quot;tts_input_tokens&quot;: 0,
+  &quot;tts_output_tokens&quot;: 0,
+  &quot;stt_provider&quot;: &quot;sarvam&quot;,
+  &quot;stt_model&quot;: &quot;saaras:v3&quot;,
+  &quot;stt_audio_duration&quot;: 150.0,
+  &quot;stt_input_tokens&quot;: 0,
+  &quot;stt_input_audio_tokens&quot;: 0,
+  &quot;stt_input_text_tokens&quot;: 0,
+  &quot;stt_output_tokens&quot;: 0,
+  &quot;model_usage&quot;: [
+    {
+      &quot;type&quot;: &quot;llm_usage&quot;,
+      &quot;provider&quot;: &quot;openai&quot;,
+      &quot;model&quot;: &quot;gpt-realtime-1.5&quot;,
+      &quot;input_tokens&quot;: 6900,
+      &quot;input_cached_tokens&quot;: 0,
+      &quot;input_cache_creation_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 6000,
+      &quot;input_cached_audio_tokens&quot;: 0,
+      &quot;input_text_tokens&quot;: 900,
+      &quot;input_cached_text_tokens&quot;: 0,
+      &quot;input_image_tokens&quot;: 0,
+      &quot;input_cached_image_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 800,
+      &quot;output_audio_tokens&quot;: 0,
+      &quot;output_text_tokens&quot;: 800,
+      &quot;output_reasoning_tokens&quot;: 0,
+      &quot;session_duration&quot;: 0.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.2084000&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    },
+    {
+      &quot;type&quot;: &quot;tts_usage&quot;,
+      &quot;provider&quot;: &quot;elevenlabs&quot;,
+      &quot;model&quot;: &quot;eleven_flash_v2_5&quot;,
+      &quot;input_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 0,
+      &quot;characters_count&quot;: 1200,
+      &quot;audio_duration&quot;: 80.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.04800&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    },
+    {
+      &quot;type&quot;: &quot;stt_usage&quot;,
+      &quot;provider&quot;: &quot;sarvam&quot;,
+      &quot;model&quot;: &quot;saaras:v3&quot;,
+      &quot;input_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 0,
+      &quot;audio_duration&quot;: 150.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.01492537313432835820895522387&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    }
+  ],
+  &quot;estimated_cost_usd&quot;: {
+    &quot;$numberDecimal&quot;: &quot;0.2713253731343283582089552239&quot;
+  },
+  &quot;pricing_schema_version&quot;: 1,
+  &quot;pricing_complete&quot;: true,
+  &quot;unpriced_model_usage&quot;: [],
+  &quot;usage_schema_version&quot;: 3,
+  &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+  &quot;usage_finalized&quot;: true,
+  &quot;call_duration_minutes&quot;: 2.5,
+  &quot;created_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:33:00Z&quot;
+  }
+}</pre></details><h2 id="realtime">realtime <span class="tag">Gemini, one model</span></h2>
+<p>Total <code>estimated_cost_usd</code> <b>0.07275000</b>, <code>model_usage</code> has 1 entry:</p>
+<table><tr><th>type</th><th>provider</th><th>model</th><th>estimated_cost_usd</th></tr><tr><td><code>llm_usage</code></td><td>gemini</td><td>gemini-3.8-live</td><td>0.07275000</td></tr></table>
+<details><summary>Webhook request body (POST JSON)</summary><pre>{
+  &quot;success&quot;: true,
+  &quot;message&quot;: &quot;Call details fetched successfully&quot;,
+  &quot;data&quot;: {
+    &quot;room_name&quot;: &quot;room-realtime-7f3a&quot;,
+    &quot;queue_id&quot;: &quot;q_01HZX&quot;,
+    &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+    &quot;assistant_name&quot;: &quot;Support agent&quot;,
+    &quot;is_passthrough&quot;: false,
+    &quot;to_number&quot;: &quot;+919800000000&quot;,
+    &quot;call_status&quot;: &quot;completed&quot;,
+    &quot;call_status_reason&quot;: null,
+    &quot;sip_status_code&quot;: 200,
+    &quot;sip_status_text&quot;: &quot;OK&quot;,
+    &quot;answered_at&quot;: &quot;2026-10-21T09:30:09Z&quot;,
+    &quot;agent_ready_at&quot;: &quot;2026-10-21T09:30:12Z&quot;,
+    &quot;call_end_reason&quot;: &quot;natural&quot;,
+    &quot;recording_path&quot;: &quot;s3://bucket/recordings/room-realtime-7f3a.ogg&quot;,
+    &quot;recording_egress_id&quot;: &quot;EG_abc123&quot;,
+    &quot;transcripts&quot;: [
+      {
+        &quot;speaker&quot;: &quot;assistant&quot;,
+        &quot;text&quot;: &quot;Hello, how can I help?&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:13+00:00&quot;
+      },
+      {
+        &quot;speaker&quot;: &quot;user&quot;,
+        &quot;text&quot;: &quot;I want to check my order.&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:18+00:00&quot;
+      }
+    ],
+    &quot;started_at&quot;: &quot;2026-10-21T09:30:00Z&quot;,
+    &quot;ended_at&quot;: &quot;2026-10-21T09:32:39Z&quot;,
+    &quot;call_duration_minutes&quot;: 2.5,
+    &quot;billable_duration_minutes&quot;: 3,
+    &quot;created_by_email&quot;: &quot;owner@example.com&quot;,
+    &quot;call_type&quot;: &quot;outbound&quot;,
+    &quot;call_service&quot;: &quot;exotel&quot;,
+    &quot;platform_number&quot;: &quot;+918000000000&quot;,
+    &quot;meeting_url&quot;: null,
+    &quot;meeting_connector_status&quot;: null,
+    &quot;meeting_connector_status_reason&quot;: null,
+    &quot;meeting_connector_ready_at&quot;: null,
+    &quot;meeting_connector_ended_at&quot;: null,
+    &quot;usage&quot;: {
+      &quot;mode&quot;: &quot;realtime&quot;,
+      &quot;call_duration_minutes&quot;: 2.5,
+      &quot;call_service&quot;: &quot;exotel&quot;,
+      &quot;tts_provider&quot;: null,
+      &quot;llm_realtime_provider&quot;: &quot;gemini&quot;,
+      &quot;llm_model&quot;: &quot;gemini-3.8-live&quot;,
+      &quot;llm_input_tokens&quot;: 8700,
+      &quot;llm_output_tokens&quot;: 4300,
+      &quot;llm_input_audio_tokens&quot;: 7500,
+      &quot;llm_input_text_tokens&quot;: 1200,
+      &quot;llm_input_image_tokens&quot;: 0,
+      &quot;llm_output_audio_tokens&quot;: 4000,
+      &quot;llm_output_text_tokens&quot;: 300,
+      &quot;llm_total_tokens&quot;: 13000,
+      &quot;llm_input_cached_tokens&quot;: 0,
+      &quot;llm_input_cached_audio_tokens&quot;: 0,
+      &quot;llm_input_cached_text_tokens&quot;: 0,
+      &quot;llm_input_cached_image_tokens&quot;: 0,
+      &quot;llm_input_cache_creation_tokens&quot;: 0,
+      &quot;llm_session_duration&quot;: 0,
+      &quot;tts_characters_count&quot;: 0,
+      &quot;tts_audio_duration&quot;: 0,
+      &quot;tts_input_tokens&quot;: 0,
+      &quot;tts_output_tokens&quot;: 0,
+      &quot;stt_provider&quot;: null,
+      &quot;stt_model&quot;: null,
+      &quot;stt_audio_duration&quot;: 0,
+      &quot;stt_input_tokens&quot;: 0,
+      &quot;stt_input_audio_tokens&quot;: 0,
+      &quot;stt_input_text_tokens&quot;: 0,
+      &quot;stt_output_tokens&quot;: 0,
+      &quot;usage_schema_version&quot;: 3,
+      &quot;model_usage&quot;: [
+        {
+          &quot;type&quot;: &quot;llm_usage&quot;,
+          &quot;provider&quot;: &quot;gemini&quot;,
+          &quot;model&quot;: &quot;gemini-3.8-live&quot;,
+          &quot;input_tokens&quot;: 8700,
+          &quot;input_cached_tokens&quot;: 0,
+          &quot;input_cache_creation_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 7500,
+          &quot;input_cached_audio_tokens&quot;: 0,
+          &quot;input_text_tokens&quot;: 1200,
+          &quot;input_cached_text_tokens&quot;: 0,
+          &quot;input_image_tokens&quot;: 0,
+          &quot;input_cached_image_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 4300,
+          &quot;output_audio_tokens&quot;: 4000,
+          &quot;output_text_tokens&quot;: 300,
+          &quot;output_reasoning_tokens&quot;: 0,
+          &quot;session_duration&quot;: 0.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.07275000&quot;,
+          &quot;pricing_complete&quot;: true
+        }
+      ],
+      &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+      &quot;usage_finalized&quot;: true,
+      &quot;estimated_cost_usd&quot;: &quot;0.07275000&quot;,
+      &quot;pricing_schema_version&quot;: 1,
+      &quot;pricing_complete&quot;: true,
+      &quot;unpriced_model_usage&quot;: []
+    }
+  }
+}</pre></details>
+<details><summary>Mongo: usage_records document</summary><pre>{
+  &quot;_id&quot;: {
+    &quot;$oid&quot;: &quot;66f0a1b2c3d4e5f607182931&quot;
+  },
+  &quot;room_name&quot;: &quot;room-realtime-7f3a&quot;,
+  &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+  &quot;user_email&quot;: &quot;owner@example.com&quot;,
+  &quot;tts_provider&quot;: null,
+  &quot;call_service&quot;: &quot;exotel&quot;,
+  &quot;mode&quot;: &quot;realtime&quot;,
+  &quot;llm_realtime_provider&quot;: &quot;gemini&quot;,
+  &quot;llm_model&quot;: &quot;gemini-3.8-live&quot;,
+  &quot;llm_input_tokens&quot;: 8700,
+  &quot;llm_output_tokens&quot;: 4300,
+  &quot;llm_input_audio_tokens&quot;: 7500,
+  &quot;llm_input_text_tokens&quot;: 1200,
+  &quot;llm_input_image_tokens&quot;: 0,
+  &quot;llm_input_cached_tokens&quot;: 0,
+  &quot;llm_input_cached_audio_tokens&quot;: 0,
+  &quot;llm_input_cached_text_tokens&quot;: 0,
+  &quot;llm_input_cached_image_tokens&quot;: 0,
+  &quot;llm_input_cache_creation_tokens&quot;: 0,
+  &quot;llm_output_audio_tokens&quot;: 4000,
+  &quot;llm_output_text_tokens&quot;: 300,
+  &quot;llm_total_tokens&quot;: 13000,
+  &quot;llm_session_duration&quot;: 0,
+  &quot;tts_characters_count&quot;: 0,
+  &quot;tts_audio_duration&quot;: 0,
+  &quot;tts_input_tokens&quot;: 0,
+  &quot;tts_output_tokens&quot;: 0,
+  &quot;stt_provider&quot;: null,
+  &quot;stt_model&quot;: null,
+  &quot;stt_audio_duration&quot;: 0,
+  &quot;stt_input_tokens&quot;: 0,
+  &quot;stt_input_audio_tokens&quot;: 0,
+  &quot;stt_input_text_tokens&quot;: 0,
+  &quot;stt_output_tokens&quot;: 0,
+  &quot;model_usage&quot;: [
+    {
+      &quot;type&quot;: &quot;llm_usage&quot;,
+      &quot;provider&quot;: &quot;gemini&quot;,
+      &quot;model&quot;: &quot;gemini-3.8-live&quot;,
+      &quot;input_tokens&quot;: 8700,
+      &quot;input_cached_tokens&quot;: 0,
+      &quot;input_cache_creation_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 7500,
+      &quot;input_cached_audio_tokens&quot;: 0,
+      &quot;input_text_tokens&quot;: 1200,
+      &quot;input_cached_text_tokens&quot;: 0,
+      &quot;input_image_tokens&quot;: 0,
+      &quot;input_cached_image_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 4300,
+      &quot;output_audio_tokens&quot;: 4000,
+      &quot;output_text_tokens&quot;: 300,
+      &quot;output_reasoning_tokens&quot;: 0,
+      &quot;session_duration&quot;: 0.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.07275000&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    }
+  ],
+  &quot;estimated_cost_usd&quot;: {
+    &quot;$numberDecimal&quot;: &quot;0.07275000&quot;
+  },
+  &quot;pricing_schema_version&quot;: 1,
+  &quot;pricing_complete&quot;: true,
+  &quot;unpriced_model_usage&quot;: [],
+  &quot;usage_schema_version&quot;: 3,
+  &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+  &quot;usage_finalized&quot;: true,
+  &quot;call_duration_minutes&quot;: 2.5,
+  &quot;created_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:33:00Z&quot;
+  }
+}</pre></details><h2 id="duplex">duplex <span class="tag">GPT-Live voice + backend model</span></h2>
+<p>Total <code>estimated_cost_usd</code> <b>0.1253100000000000000000000000</b>, <code>model_usage</code> has 2 entries:</p>
+<table><tr><th>type</th><th>provider</th><th>model</th><th>estimated_cost_usd</th></tr><tr><td><code>voice_llm_usage</code></td><td>openai</td><td>gpt-live-1</td><td>0.1250000000000000000000000000</td></tr><tr><td><code>backend_llm_usage</code></td><td>openai</td><td>gpt-6-luna-2026-09-30</td><td>0.00031000</td></tr></table>
+<details open><summary>Webhook request body (POST JSON)</summary><pre>{
+  &quot;success&quot;: true,
+  &quot;message&quot;: &quot;Call details fetched successfully&quot;,
+  &quot;data&quot;: {
+    &quot;room_name&quot;: &quot;room-duplex-7f3a&quot;,
+    &quot;queue_id&quot;: &quot;q_01HZX&quot;,
+    &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+    &quot;assistant_name&quot;: &quot;Support agent&quot;,
+    &quot;is_passthrough&quot;: false,
+    &quot;to_number&quot;: &quot;+919800000000&quot;,
+    &quot;call_status&quot;: &quot;completed&quot;,
+    &quot;call_status_reason&quot;: null,
+    &quot;sip_status_code&quot;: 200,
+    &quot;sip_status_text&quot;: &quot;OK&quot;,
+    &quot;answered_at&quot;: &quot;2026-10-21T09:30:09Z&quot;,
+    &quot;agent_ready_at&quot;: &quot;2026-10-21T09:30:12Z&quot;,
+    &quot;call_end_reason&quot;: &quot;natural&quot;,
+    &quot;recording_path&quot;: &quot;s3://bucket/recordings/room-duplex-7f3a.ogg&quot;,
+    &quot;recording_egress_id&quot;: &quot;EG_abc123&quot;,
+    &quot;transcripts&quot;: [
+      {
+        &quot;speaker&quot;: &quot;assistant&quot;,
+        &quot;text&quot;: &quot;Hello, how can I help?&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:13+00:00&quot;
+      },
+      {
+        &quot;speaker&quot;: &quot;user&quot;,
+        &quot;text&quot;: &quot;I want to check my order.&quot;,
+        &quot;timestamp&quot;: &quot;2026-10-21T09:30:18+00:00&quot;
+      }
+    ],
+    &quot;started_at&quot;: &quot;2026-10-21T09:30:00Z&quot;,
+    &quot;ended_at&quot;: &quot;2026-10-21T09:32:39Z&quot;,
+    &quot;call_duration_minutes&quot;: 2.5,
+    &quot;billable_duration_minutes&quot;: 3,
+    &quot;created_by_email&quot;: &quot;owner@example.com&quot;,
+    &quot;call_type&quot;: &quot;outbound&quot;,
+    &quot;call_service&quot;: &quot;exotel&quot;,
+    &quot;platform_number&quot;: &quot;+918000000000&quot;,
+    &quot;meeting_url&quot;: null,
+    &quot;meeting_connector_status&quot;: null,
+    &quot;meeting_connector_status_reason&quot;: null,
+    &quot;meeting_connector_ready_at&quot;: null,
+    &quot;meeting_connector_ended_at&quot;: null,
+    &quot;usage&quot;: {
+      &quot;mode&quot;: &quot;duplex&quot;,
+      &quot;call_duration_minutes&quot;: 2.5,
+      &quot;call_service&quot;: &quot;exotel&quot;,
+      &quot;tts_provider&quot;: null,
+      &quot;llm_realtime_provider&quot;: &quot;openai&quot;,
+      &quot;llm_model&quot;: &quot;gpt-live-1, gpt-6-luna-2026-09-30&quot;,
+      &quot;llm_input_tokens&quot;: 4200,
+      &quot;llm_output_tokens&quot;: 600,
+      &quot;llm_input_audio_tokens&quot;: 0,
+      &quot;llm_input_text_tokens&quot;: 0,
+      &quot;llm_input_image_tokens&quot;: 0,
+      &quot;llm_output_audio_tokens&quot;: 0,
+      &quot;llm_output_text_tokens&quot;: 0,
+      &quot;llm_total_tokens&quot;: 4800,
+      &quot;llm_input_cached_tokens&quot;: 1000,
+      &quot;llm_input_cached_audio_tokens&quot;: 0,
+      &quot;llm_input_cached_text_tokens&quot;: 0,
+      &quot;llm_input_cached_image_tokens&quot;: 0,
+      &quot;llm_input_cache_creation_tokens&quot;: 0,
+      &quot;llm_session_duration&quot;: 150.0,
+      &quot;tts_characters_count&quot;: 0,
+      &quot;tts_audio_duration&quot;: 0,
+      &quot;tts_input_tokens&quot;: 0,
+      &quot;tts_output_tokens&quot;: 0,
+      &quot;stt_provider&quot;: null,
+      &quot;stt_model&quot;: null,
+      &quot;stt_audio_duration&quot;: 0,
+      &quot;stt_input_tokens&quot;: 0,
+      &quot;stt_input_audio_tokens&quot;: 0,
+      &quot;stt_input_text_tokens&quot;: 0,
+      &quot;stt_output_tokens&quot;: 0,
+      &quot;usage_schema_version&quot;: 3,
+      &quot;model_usage&quot;: [
+        {
+          &quot;type&quot;: &quot;voice_llm_usage&quot;,
+          &quot;provider&quot;: &quot;openai&quot;,
+          &quot;model&quot;: &quot;gpt-live-1&quot;,
+          &quot;input_tokens&quot;: 0,
+          &quot;input_cached_tokens&quot;: 0,
+          &quot;input_cache_creation_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 0,
+          &quot;input_cached_audio_tokens&quot;: 0,
+          &quot;input_text_tokens&quot;: 0,
+          &quot;input_cached_text_tokens&quot;: 0,
+          &quot;input_image_tokens&quot;: 0,
+          &quot;input_cached_image_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 0,
+          &quot;output_audio_tokens&quot;: 0,
+          &quot;output_text_tokens&quot;: 0,
+          &quot;output_reasoning_tokens&quot;: 0,
+          &quot;session_duration&quot;: 150.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.1250000000000000000000000000&quot;,
+          &quot;pricing_complete&quot;: true
+        },
+        {
+          &quot;type&quot;: &quot;backend_llm_usage&quot;,
+          &quot;provider&quot;: &quot;openai&quot;,
+          &quot;model&quot;: &quot;gpt-6-luna-2026-09-30&quot;,
+          &quot;input_tokens&quot;: 4200,
+          &quot;input_cached_tokens&quot;: 1000,
+          &quot;input_cache_creation_tokens&quot;: 0,
+          &quot;input_audio_tokens&quot;: 0,
+          &quot;input_cached_audio_tokens&quot;: 0,
+          &quot;input_text_tokens&quot;: 0,
+          &quot;input_cached_text_tokens&quot;: 0,
+          &quot;input_image_tokens&quot;: 0,
+          &quot;input_cached_image_tokens&quot;: 0,
+          &quot;output_tokens&quot;: 600,
+          &quot;output_audio_tokens&quot;: 0,
+          &quot;output_text_tokens&quot;: 0,
+          &quot;output_reasoning_tokens&quot;: 0,
+          &quot;session_duration&quot;: 0.0,
+          &quot;estimated_cost_usd&quot;: &quot;0.00031000&quot;,
+          &quot;pricing_complete&quot;: true
+        }
+      ],
+      &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+      &quot;usage_finalized&quot;: true,
+      &quot;estimated_cost_usd&quot;: &quot;0.1253100000000000000000000000&quot;,
+      &quot;pricing_schema_version&quot;: 1,
+      &quot;pricing_complete&quot;: true,
+      &quot;unpriced_model_usage&quot;: []
+    }
+  }
+}</pre></details>
+<details><summary>Mongo: usage_records document</summary><pre>{
+  &quot;_id&quot;: {
+    &quot;$oid&quot;: &quot;66f0a1b2c3d4e5f607182931&quot;
+  },
+  &quot;room_name&quot;: &quot;room-duplex-7f3a&quot;,
+  &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+  &quot;user_email&quot;: &quot;owner@example.com&quot;,
+  &quot;tts_provider&quot;: null,
+  &quot;call_service&quot;: &quot;exotel&quot;,
+  &quot;mode&quot;: &quot;duplex&quot;,
+  &quot;llm_realtime_provider&quot;: &quot;openai&quot;,
+  &quot;llm_model&quot;: &quot;gpt-live-1, gpt-6-luna-2026-09-30&quot;,
+  &quot;llm_input_tokens&quot;: 4200,
+  &quot;llm_output_tokens&quot;: 600,
+  &quot;llm_input_audio_tokens&quot;: 0,
+  &quot;llm_input_text_tokens&quot;: 0,
+  &quot;llm_input_image_tokens&quot;: 0,
+  &quot;llm_input_cached_tokens&quot;: 1000,
+  &quot;llm_input_cached_audio_tokens&quot;: 0,
+  &quot;llm_input_cached_text_tokens&quot;: 0,
+  &quot;llm_input_cached_image_tokens&quot;: 0,
+  &quot;llm_input_cache_creation_tokens&quot;: 0,
+  &quot;llm_output_audio_tokens&quot;: 0,
+  &quot;llm_output_text_tokens&quot;: 0,
+  &quot;llm_total_tokens&quot;: 4800,
+  &quot;llm_session_duration&quot;: 150.0,
+  &quot;tts_characters_count&quot;: 0,
+  &quot;tts_audio_duration&quot;: 0,
+  &quot;tts_input_tokens&quot;: 0,
+  &quot;tts_output_tokens&quot;: 0,
+  &quot;stt_provider&quot;: null,
+  &quot;stt_model&quot;: null,
+  &quot;stt_audio_duration&quot;: 0,
+  &quot;stt_input_tokens&quot;: 0,
+  &quot;stt_input_audio_tokens&quot;: 0,
+  &quot;stt_input_text_tokens&quot;: 0,
+  &quot;stt_output_tokens&quot;: 0,
+  &quot;model_usage&quot;: [
+    {
+      &quot;type&quot;: &quot;voice_llm_usage&quot;,
+      &quot;provider&quot;: &quot;openai&quot;,
+      &quot;model&quot;: &quot;gpt-live-1&quot;,
+      &quot;input_tokens&quot;: 0,
+      &quot;input_cached_tokens&quot;: 0,
+      &quot;input_cache_creation_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 0,
+      &quot;input_cached_audio_tokens&quot;: 0,
+      &quot;input_text_tokens&quot;: 0,
+      &quot;input_cached_text_tokens&quot;: 0,
+      &quot;input_image_tokens&quot;: 0,
+      &quot;input_cached_image_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 0,
+      &quot;output_audio_tokens&quot;: 0,
+      &quot;output_text_tokens&quot;: 0,
+      &quot;output_reasoning_tokens&quot;: 0,
+      &quot;session_duration&quot;: 150.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.1250000000000000000000000000&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    },
+    {
+      &quot;type&quot;: &quot;backend_llm_usage&quot;,
+      &quot;provider&quot;: &quot;openai&quot;,
+      &quot;model&quot;: &quot;gpt-6-luna-2026-09-30&quot;,
+      &quot;input_tokens&quot;: 4200,
+      &quot;input_cached_tokens&quot;: 1000,
+      &quot;input_cache_creation_tokens&quot;: 0,
+      &quot;input_audio_tokens&quot;: 0,
+      &quot;input_cached_audio_tokens&quot;: 0,
+      &quot;input_text_tokens&quot;: 0,
+      &quot;input_cached_text_tokens&quot;: 0,
+      &quot;input_image_tokens&quot;: 0,
+      &quot;input_cached_image_tokens&quot;: 0,
+      &quot;output_tokens&quot;: 600,
+      &quot;output_audio_tokens&quot;: 0,
+      &quot;output_text_tokens&quot;: 0,
+      &quot;output_reasoning_tokens&quot;: 0,
+      &quot;session_duration&quot;: 0.0,
+      &quot;estimated_cost_usd&quot;: {
+        &quot;$numberDecimal&quot;: &quot;0.00031000&quot;
+      },
+      &quot;pricing_complete&quot;: true
+    }
+  ],
+  &quot;estimated_cost_usd&quot;: {
+    &quot;$numberDecimal&quot;: &quot;0.1253100000000000000000000000&quot;
+  },
+  &quot;pricing_schema_version&quot;: 1,
+  &quot;pricing_complete&quot;: true,
+  &quot;unpriced_model_usage&quot;: [],
+  &quot;usage_schema_version&quot;: 3,
+  &quot;sdk_version&quot;: &quot;1.8.8&quot;,
+  &quot;usage_finalized&quot;: true,
+  &quot;call_duration_minutes&quot;: 2.5,
+  &quot;created_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:33:00Z&quot;
+  }
+}</pre></details>
+
+<h2 id="mongo">3. What Mongo stores</h2>
+<p>Three collections hold a call. <code>call_records</code> is the call itself and is the same shape in every mode. <code>usage_records</code> is the metering and cost (shown per mode above, under each mode). <code>activity_logs</code> is the delivery row from section 1. Money is stored as <code>Decimal128</code> (shown as <code>$numberDecimal</code>), dates as <code>$date</code>.</p>
+<details open><summary>Mongo: call_records document (cascade call; same shape in every mode)</summary><pre>{
+  &quot;_id&quot;: {
+    &quot;$oid&quot;: &quot;66f0a1b2c3d4e5f607182930&quot;
+  },
+  &quot;room_name&quot;: &quot;room-cascade-7f3a&quot;,
+  &quot;queue_id&quot;: &quot;q_01HZX&quot;,
+  &quot;assistant_id&quot;: &quot;a7242fb5-3fae-44d1-942a-a21368fcf3c8&quot;,
+  &quot;assistant_name&quot;: &quot;Support agent&quot;,
+  &quot;is_passthrough&quot;: false,
+  &quot;to_number&quot;: &quot;+919800000000&quot;,
+  &quot;call_status&quot;: &quot;completed&quot;,
+  &quot;call_status_reason&quot;: null,
+  &quot;sip_status_code&quot;: 200,
+  &quot;sip_status_text&quot;: &quot;OK&quot;,
+  &quot;answered_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:30:09Z&quot;
+  },
+  &quot;agent_ready_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:30:12Z&quot;
+  },
+  &quot;call_end_reason&quot;: &quot;natural&quot;,
+  &quot;recording_path&quot;: &quot;s3://bucket/recordings/room-cascade-7f3a.ogg&quot;,
+  &quot;recording_egress_id&quot;: &quot;EG_abc123&quot;,
+  &quot;transcripts&quot;: [
+    {
+      &quot;speaker&quot;: &quot;assistant&quot;,
+      &quot;text&quot;: &quot;Hello, how can I help?&quot;,
+      &quot;timestamp&quot;: &quot;2026-10-21T09:30:13+00:00&quot;
+    },
+    {
+      &quot;speaker&quot;: &quot;user&quot;,
+      &quot;text&quot;: &quot;I want to check my order.&quot;,
+      &quot;timestamp&quot;: &quot;2026-10-21T09:30:18+00:00&quot;
+    }
+  ],
+  &quot;started_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:30:00Z&quot;
+  },
+  &quot;ended_at&quot;: {
+    &quot;$date&quot;: &quot;2026-10-21T09:32:39Z&quot;
+  },
+  &quot;call_duration_minutes&quot;: 2.5,
+  &quot;billable_duration_minutes&quot;: 3,
+  &quot;created_by_email&quot;: &quot;owner@example.com&quot;,
+  &quot;call_type&quot;: &quot;outbound&quot;,
+  &quot;call_service&quot;: &quot;exotel&quot;,
+  &quot;platform_number&quot;: &quot;+918000000000&quot;,
+  &quot;meeting_url&quot;: null,
+  &quot;meeting_connector_status&quot;: null,
+  &quot;meeting_connector_status_reason&quot;: null,
+  &quot;meeting_connector_ready_at&quot;: null,
+  &quot;meeting_connector_ended_at&quot;: null
+}</pre></details>
+
+<h2 id="diff">4. Webhook compared with Mongo</h2>
+<p><b>call fields:</b> the webhook <code>data</code> carries the whole <code>call_records</code> document except <code>_id</code>, so the two match field for field. Dates are ISO strings in the webhook.</p>
+<p><b>usage fields:</b> the webhook <code>usage</code> object is a hand-picked list of fields from the <code>usage_records</code> document, not the whole document. These Mongo fields are <b>not</b> in the webhook:</p>
+<pre>_id, assistant_id, created_at, room_name, user_email</pre>
+<p>The assistant call logs endpoint (<code>GET /assistant/.../logs</code>, field <code>data.logs[].usage</code>) and <code>GET /call/records/{room_name}/usage</code> return the whole <code>usage_records</code> document, so they include those fields.</p>
+<p><b>Cost fields:</b> in all four places (webhook, Mongo, call logs, usage endpoint) the cost is in <code>model_usage</code> and the total in <code>estimated_cost_usd</code>. For an entry with no rate, <code>estimated_cost_usd</code> is absent on that entry, <code>pricing_complete</code> is <code>false</code> and the entry is also in <code>unpriced_model_usage</code>.</p>
+</body></html>
