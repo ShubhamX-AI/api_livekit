@@ -99,6 +99,33 @@ Content-Type: application/json
 }
 ```
 
+### `duplex` calls
+
+A `duplex` call is billed for two models: GPT-Live by session seconds and its backend model by
+tokens. `estimated_cost_usd` is their sum, and the `usage` object adds the split. Each
+`model_usage` entry also carries its own `estimated_cost_usd`.
+
+```json
+"usage": {
+  "mode": "duplex",
+  "llm_model": "gpt-live-1, gpt-6-luna-2026-09-30",
+  "llm_session_duration": 120.0,
+  "model_usage": [
+    {"type": "llm_usage", "provider": "openai", "model": "gpt-live-1", "session_duration": 120.0, "estimated_cost_usd": "0.1000", "pricing_complete": true},
+    {"type": "llm_usage", "provider": "openai", "model": "gpt-6-luna-2026-09-30", "input_tokens": 1000, "output_tokens": 300, "estimated_cost_usd": "0.000152", "pricing_complete": true}
+  ],
+  "estimated_cost_usd": "0.100152",
+  "pricing_complete": true,
+  "voice_model": "gpt-live-1",
+  "backend_model": "gpt-6-luna-2026-09-30",
+  "estimated_cost_voice_usd": "0.1000",
+  "estimated_cost_backend_usd": "0.000152"
+}
+```
+
+`estimated_cost_backend_usd` of `"0"` next to a backend model name means that model has no rate:
+look for it in `unpriced_model_usage`.
+
 ### Webhook Payload Schema
 
 | Field                          | Type    | Description                                |
@@ -138,12 +165,14 @@ Content-Type: application/json
 | `data.meeting_connector_ready_at` | string | Timestamp when the connector became ready; `null` if it never became ready. |
 | `data.meeting_connector_ended_at` | string | Timestamp when the connector entered `failed` or `ended`; `null` for an active connector. |
 | `data.usage`                   | object  | Per-component usage metrics and estimated AI-provider cost (if available). |
-| `data.usage.mode`                   | string | Runtime mode for this call: `pipeline`, `realtime` or `cascade`. See [Models & Providers](../../reference/models.md). |
+| `data.usage.mode`                   | string | Runtime mode for this call: `pipeline`, `realtime`, `cascade` or `duplex`. See [Models & Providers](../../reference/models.md). |
 | `data.usage.call_duration_minutes` | number | Usage record's copied call duration in minutes. |
 | `data.usage.call_service` | string | Telephony service copied onto the usage record. |
 | `data.usage.tts_provider` | string | TTS provider configured for the call. |
 | `data.usage.llm_realtime_provider` | string | Realtime LLM provider, when applicable. |
 | `data.usage.llm_model`              | string | LLM model(s) used, comma-separated if more than one. |
+| `data.usage.voice_model`, `data.usage.backend_model` | string | `duplex` calls only: the GPT-Live voice model and the backend model. |
+| `data.usage.estimated_cost_voice_usd`, `data.usage.estimated_cost_backend_usd` | string | `duplex` calls only: estimated cost of each model; they sum to `estimated_cost_usd`. |
 | `data.usage.llm_input_tokens` | number | Total LLM input tokens. |
 | `data.usage.llm_output_tokens` | number | Total LLM output tokens. |
 | `data.usage.llm_input_audio_tokens` | number | LLM audio input tokens (`0` in cascade — the LLM receives text). |
@@ -173,6 +202,10 @@ Content-Type: application/json
 | `data.usage.usage_schema_version`   | number | `3` for newly recorded calls. `2` has legacy provider spellings. `1` marks an older partial record; treat missing fields as unknown, not as zero. |
 | `data.usage.sdk_version` | string | `livekit-agents` version that produced the numbers. |
 | `data.usage.usage_finalized`        | boolean | `true` when the counts come from the write the worker makes at teardown. `false` means the worker did not get that far — the record is the last mid-call snapshot, so the counts are a floor rather than the final total. |
+| `data.usage.estimated_cost_usd` | string | Estimated AI-provider cost of the whole call in USD, as a decimal string, from public pay-as-you-go rates. Partial when `pricing_complete` is `false`. |
+| `data.usage.pricing_schema_version` | number | Version of the rate table that produced the estimate. |
+| `data.usage.pricing_complete` | boolean | `false` when at least one entry has no rate, so `estimated_cost_usd` leaves it out. The entries are in `unpriced_model_usage`. |
+| `data.usage.unpriced_model_usage` | array | `model_usage` entries that could not be priced. Empty when `pricing_complete` is `true`. |
 
 !!! warning "Cached token counts are subsets"
     `llm_input_cached_tokens` is part of `llm_total_tokens` already, and each cached

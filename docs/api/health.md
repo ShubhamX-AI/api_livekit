@@ -68,7 +68,7 @@ Healthy:
   "message": "ok",
   "data": {
     "status": "ok",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "uptime_s": 5321.4,
     "checks": {
       "mongodb": { "ok": true, "latency_ms": 1.8 },
@@ -86,7 +86,7 @@ Degraded:
   "message": "degraded",
   "data": {
     "status": "degraded",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "uptime_s": 5340.1,
     "checks": {
       "mongodb": { "ok": true, "latency_ms": 2.0 },

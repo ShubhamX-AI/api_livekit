@@ -13,6 +13,7 @@ Given how this platform is used, that includes anything that changes **what a ca
 
 | Version      | Date              | What changed                                                                                                                                                                                           |
 | ------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [1.7.0](#170) | 2026-10-21        | Service tiers are priced; duplex cost split into voice and backend; Gemini realtime refuses settings it ignores. |
 | [1.6.0](#160) | 2026-10-17        | `livekit-agents` 1.8.8. New `duplex` mode (GPT-Live), GPT-6, `gpt-realtime-2.1`, ElevenLabs v4, Sarvam `bulbul:v4-flash`. `gpt-5.1` and `gpt-5.4-nano` removed. ElevenLabs prices updated. |
 | [1.5.0](#150) | 2026-09-22        | Gemini 3.8 Live and a new Gemini default. Every provider priced; some Deepgram models dropped.                                                                                                         |
 | [1.4.0](#140) | 2026-09-20        | Meeting-call docs; a failed meeting setup is now reported.                                                                                                                                             |
@@ -24,6 +25,16 @@ Given how this platform is used, that includes anything that changes **what a ca
 Dates are the day the version was set.
 
 ---
+
+## 1.7.0 — 2026-10-21
+
+- **Duplex cost split.** The end-call webhook `usage` object carries `voice_model`, `backend_model`,
+  `estimated_cost_voice_usd` and `estimated_cost_backend_usd` for `duplex` calls.
+- **Service tiers are priced.** `flex` is half and `fast`/`priority` double the standard token rate.
+  Before, any non-default tier left the whole call unpriced, and in `duplex` that included the voice model.
+- **Breaking: Gemini realtime refuses knobs it ignores.** `reasoning_effort`, `verbosity`, `service_tier`,
+  `tool_choice` and `parallel_tool_calls` are a `422` with provider `gemini`. `temperature` and
+  `max_output_tokens` are now sent to Gemini. Remove the refused fields from affected assistants.
 
 ## 1.6.0 — 2026-10-17
 

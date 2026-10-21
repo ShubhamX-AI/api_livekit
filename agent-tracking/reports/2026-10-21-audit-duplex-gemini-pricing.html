@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit: duplex backend pricing and Gemini Live</title>
+<style>
+:root{--bg:#fff;--fg:#1c1f24;--mut:#5b6470;--line:#d9dde3;--card:#f6f7f9;--hi:#b42318;--med:#b54708;--low:#175cd3;--info:#475467;--ok:#067647}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--fg:#e6e8eb;--mut:#9aa3af;--line:#2d333b;--card:#1b1f26;--hi:#f97066;--med:#fdb022;--low:#84adff;--info:#98a2b3;--ok:#47cd89}}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif;margin:0;padding:24px 16px;max-width:980px;margin-inline:auto}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.mut{color:var(--mut)}code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:13px}
+.tiles{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.tile{flex:1 1 110px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.tile b{font-size:24px;display:block}
+.hi{color:var(--hi)}.med{color:var(--med)}.low{color:var(--low)}.info{color:var(--info)}.ok{color:var(--ok)}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:6px 0 14px}.bar span{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:12px 14px;margin:12px 0}
+.card.hi{border-left-color:var(--hi)}.card.med{border-left-color:var(--med)}.card.low{border-left-color:var(--low)}.card.info{border-left-color:var(--info)}
+.card h3{font-size:15px;margin:0 0 6px;color:var(--fg)}.card p{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px;display:block;overflow-x:auto}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--card)}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}.box{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:6px 10px;font-size:13px}.box.bad{border-color:var(--hi);color:var(--hi)}.arrow{color:var(--mut)}
+</style>
+</head>
+<body>
+<h1>Audit: duplex backend pricing and Gemini Live</h1>
+<p class="mut">Task <code>2026-10-21-audit-duplex-gemini-pricing</code> · audit, deep, report-only · commits <code>cd144d9</code> (duplex) and <code>8d16332</code> (Gemini 3.8 + pricing) · 2026-10-21</p>
+
+<h2>Summary</h2>
+<p><b>Duplex pricing:</b> with the default tier, the backend model <em>is</em> priced and added to the GPT-Live voice seconds (simulated end to end, below). Backend cost goes missing in three cases: any non-default <code>service_tier</code>, a backend snapshot name the code does not recognise, and in the display, because the cost is only a total with no labelled backend line.</p>
+<p><b>Gemini:</b> models, voices and rates match the plugin, the LiveKit docs and Google's pricing page. Two real defects: settings that Gemini ignores are accepted without error, and thinking tokens are never counted, so extended-thinking calls are under-priced. I could not reproduce a Gemini <em>error</em> offline; I need a log line to pin it (see Gemini error).</p>
+<div class="tiles">
+<div class="tile"><b class="hi">2</b>High</div><div class="tile"><b class="med">5</b>Medium</div><div class="tile"><b class="low">2</b>Low</div><div class="tile"><b class="info">3</b>Info</div>
+</div>
+<div class="bar"><span style="flex:2;background:var(--hi)"></span><span style="flex:5;background:var(--med)"></span><span style="flex:2;background:var(--low)"></span><span style="flex:3;background:var(--info)"></span></div>
+<p><b>Fix first:</b> (1) D-01 tier makes the whole duplex call unpriced; (2) G-01 Gemini accepts knobs it never sends; (3) D-03 show the backend cost as its own line in the end-call webhook and log.</p>
+
+<h2>Scope and method</h2>
+<p>Duplex and Gemini code from the two commits plus the usage, pricing and webhook paths they feed. Out of scope: pipeline and cascade modes, Exotel SIP, docs wording. No DB, no live calls, no code changed. Method: read the installed SDK and plugin source (<code>livekit-agents</code> 1.8.8, <code>livekit-plugins-google</code> 1.8.8), compared options with the LiveKit docs MCP pages for GPT-Live and Gemini Live, simulated usage folding and pricing offline, checked rates on the OpenAI and Google pricing pages (fetched today). Files: <code>agent-tracking/plans/2026-10-21-audit-duplex-gemini-pricing/</code> (scope, plan, progress) and <code>research/2026-10-21-audit-duplex-gemini-pricing.md</code>.</p>
+
+<h2>Your questions, answered</h2>
+<table>
+<tr><th>Question</th><th>Answer</th><th>Evidence</th></tr>
+<tr><td>Are duplex settings checked against LiveKit docs, and does the backend take them?</td><td>Yes. Every <code>responses_options</code> key the docs list is forwarded to the backend: <code>model</code>, <code>instructions</code>, <code>reasoning</code>, <code>text.verbosity</code>, <code>service_tier</code>, <code>tool_choice</code>, <code>parallel_tool_calls</code>, <code>max_output_tokens</code>. Each is dropped first if the backend model rejects it. <code>temperature</code> is refused, correctly. Not exposed: voice-level <code>service_tier</code> header and <code>max_session_duration</code> (optional).</td><td><code>src/core/agents/llm/factory.py:205-233</code>; LiveKit docs "Backend model options"</td></tr>
+<tr><td>Is the backend model priced and added to GPT-Live?</td><td>Yes with default tier. SDK emits backend tokens as one usage entry and voice seconds as another; both priced and summed into <code>estimated_cost_usd</code>. Simulated: backend 1000 in / 300 out = $0.000152, voice 120 s = $0.10, total $0.100152, <code>pricing_complete</code> true. Fails in D-01 and D-02.</td><td><code>gpt_live.py:917-940, 993-1015</code>; <code>session.py:501-510</code>; <code>calculator.py:64-92</code></td></tr>
+<tr><td>Gemini priced, configured and error-free?</td><td>Rates match Google's page today. Configuration is thin (G-01). Thinking tokens are missed (G-02). No error found offline.</td><td><code>rates.py:182-190</code></td></tr>
+</table>
+
+<h2>Current → Target: duplex cost</h2>
+<div class="flow"><span class="box">GPT-Live voice: <code>session_duration</code> s</span><span class="arrow">+</span><span class="box">Backend: tokens under <code>gpt-6-luna-&lt;date&gt;</code></span><span class="arrow">→</span><span class="box">price_model_usage</span><span class="arrow">→</span><span class="box bad">one total, tier set = 0</span></div>
+<div class="flow"><span class="box">same two entries</span><span class="arrow">→</span><span class="box">tier multiplier on the backend entry only</span><span class="arrow">→</span><span class="box">total + labelled <code>voice</code> and <code>backend</code> lines</span></div>
+
+<h2>Findings</h2>
+
+<div class="card hi"><h3>D-01 · High · Bug: wrong scope for the tier guard · <code>src/core/pricing/calculator.py:73-75</code>, <code>src/core/agents/session.py:502-505</code></h3>
+<p>Any <code>service_tier</code> other than <code>auto</code>/<code>default</code> sets the rate to <code>None</code> for <em>every</em> OpenAI <code>llm_usage</code> entry. In duplex the tier belongs to the backend only (<code>responses_options</code>), yet the voice entry <code>gpt-live-1</code> is unpriced too. Reproduced: tier <code>fast</code>, <code>flex</code> or <code>priority</code> gives cost 0, <code>pricing_complete</code> false, both models in <code>unpriced_model_usage</code>.</p>
+<p><b>Why it matters:</b> a duplex assistant with a tier shows no cost at all, which is what "backend pricing missing" looks like. The tiers are priceable: OpenAI's page today lists flex at 0.5x and fast (formerly priority) at 2x for gpt-6-luna, gpt-6-sol and gpt-5.6-luna.</p>
+<p><b>Fix:</b> apply the tier only to the backend entry, never to a <code>session_second</code> rate, and price it with a per-tier multiplier (flex 0.5, fast/priority 2.0) instead of dropping to unpriced. Add a test: duplex + <code>flex</code> still prices the voice entry.</p></div>
+
+<div class="card hi"><h3>G-01 · High · Silent no-op settings (guardrail violated) · <code>src/core/agents/session.py:870-877</code>, <code>src/api/models/api_schemas/config/llm_config.py:322-335</code></h3>
+<p>Gemini realtime is built from <code>model</code>, <code>voice</code>, <code>modalities</code>, <code>instructions</code>, <code>api_key</code> only. The mode table checks model and voice, nothing else. Probe: <code>temperature</code>, <code>max_output_tokens</code>, <code>reasoning_effort</code>, <code>verbosity</code>, <code>service_tier</code>, <code>tool_choice</code> all pass <code>validate_mode_config("realtime", gemini)</code> and none reach Gemini.</p>
+<p><b>Why it matters:</b> AGENTS.md guardrail says knobs a model ignores are a 422. Here the operator believes they set a temperature or a reasoning effort and nothing happens. The plugin does accept <code>temperature</code>, <code>max_output_tokens</code>, <code>top_p</code> and <code>thinking_config</code>; the docs say <code>gemini-3.8-live-extended-thinking</code> takes <code>thinking_level</code> low/medium/high (default low) and <code>gemini-3.8-live</code> takes none.</p>
+<p><b>Fix:</b> in the realtime/gemini branch, 422 the OpenAI-only knobs; forward <code>temperature</code> and <code>max_output_tokens</code>; add a Gemini <code>thinking_level</code> accepted only on the extended-thinking model. Update <code>docs/reference/compatibility.md</code>.</p></div>
+
+<div class="card med"><h3>G-02 · Medium · Thinking tokens never metered, estimate silently low · <code>.venv/.../google/realtime/realtime_api.py:1648-1650</code>, <code>src/core/pricing/rates.py:177-181</code></h3>
+<p>The plugin reports <code>response_token_count</code> as output. google-genai's <code>UsageMetadata</code> has <code>thoughts_token_count</code> and <code>tool_use_prompt_token_count</code>; the plugin never reads them. Google's page prices output "including thinking tokens". The rate-table comment says thinking needs no separate rate, which is true for the rate but hides that the count never arrives. <code>pricing_complete</code> stays true.</p>
+<p><b>Why it matters:</b> <code>gemini-3.8-live-extended-thinking</code> calls report a cost below the real bill, with no flag. Suspected from source; confirming needs one live call (already an open question in the earlier Gemini plan).</p>
+<p><b>Fix:</b> wrap or subclass the realtime session to add <code>thoughts_token_count</code> to output tokens; until then mark extended-thinking cost as a floor (<code>pricing_complete=False</code> or a note field) so it is not read as exact.</p></div>
+
+<div class="card med"><h3>D-03 · Medium · Backend cost not shown as its own line · <code>src/core/agents/session.py:575</code>, <code>src/services/livekit/livekit_svc.py:521-526</code></h3>
+<p>The end-call webhook sends <code>estimated_cost_usd</code> (one total) and a <code>model_usage</code> array in which each entry has its own cost. The flat <code>llm_input_tokens</code>/<code>llm_output_tokens</code> hold backend tokens while <code>llm_session_duration</code> holds voice seconds. Nothing labels which entry is the backend, and the "Usage persisted" log line prints only the total.</p>
+<p><b>Why it matters:</b> this is the gap you describe: the backend price is inside the data but a reader of the log or webhook cannot see it.</p>
+<p><b>Fix:</b> in duplex add <code>llm_backend_model</code> plus <code>estimated_cost_voice_usd</code> and <code>estimated_cost_backend_usd</code> to the webhook <code>usage</code> block, and print both in the log line. Derive them from <code>model_usage</code>; no new storage is required.</p></div>
+
+<div class="card med"><h3>D-02 · Medium · Snapshot fallback matches one name shape only · <code>src/core/pricing/rates.py:212-213, 235-237</code></h3>
+<p>OpenAI reports the backend under the snapshot that served it. Only <code>&lt;alias&gt;-YYYY-MM-DD</code> falls back to the alias rate. <code>gpt-6-luna-20261001</code> and <code>gpt-6-luna-2026-10-01-preview</code> come back unpriced (reproduced); <code>gpt-6-sol-2026-10-01</code> prices.</p>
+<p><b>Why it matters:</b> one unexpected snapshot spelling zeroes the backend cost. It is visible only as <code>pricing_complete: false</code>.</p>
+<p><b>Fix:</b> log a WARNING with the unmatched model name at persist time, and accept a compact <code>-YYYYMMDD</code> form. Do not widen further, as the existing comment explains.</p></div>
+
+<div class="card med"><h3>G-03 · Medium · Greeting through a private method, no guard · <code>src/core/agents/session.py:1754-1760</code></h3>
+<p>The Gemini greeting calls <code>agent_instance.realtime_llm_session</code> and <code>rt_session._send_client_event(...)</code> directly. <code>realtime_llm_session</code> raises <code>RuntimeError("no realtime LLM session")</code> if the activity is not ready, and the Gemini branch has no <code>try</code>, unlike the duplex and OpenAI branches. It also skips <code>allow_interruptions</code> and the speech handle. The LiveKit docs say <code>generate_reply()</code> works on 3.1/3.8 with plugin 1.8.2 or later (pinned 1.8.8).</p>
+<p><b>Why it matters:</b> a failure here ends the greeting with a traceback; it is the one place in the Gemini path I found that can raise at call start. Suspected, not reproduced.</p>
+<p><b>Fix:</b> use <code>session.generate_reply(instructions=...)</code> like the other modes, or wrap the call and log. Test on a live Gemini call before removing the workaround.</p></div>
+
+<div class="card med"><h3>G-04 · Medium · Extended thinking and tools unverified · <code>src/core/agents/session.py:870</code></h3>
+<p>No <code>thinking_config</code> is set, so <code>gemini-3.8-live-extended-thinking</code> runs at the plugin default (low). The earlier plan left open whether that model accepts tools without an explicit tool behavior; the plugin defaults non-blocking for any "3.8" model name. Unverified without a live call.</p>
+<p><b>Fix:</b> run one live call with a tool on each 3.8 model before advertising extended thinking.</p></div>
+
+<div class="card low"><h3>G-05 · Low · Stale comment · <code>src/core/model_support/capabilities.py:197</code></h3>
+<p>Says the list is from livekit-agents 1.8.2; the pin is 1.8.8. Update the comment.</p></div>
+
+<div class="card low"><h3>Q-01 · Low · Lint · <code>src/core/agents/llm/factory.py:10</code></h3>
+<p>Ruff I001 (import order) plus six BLE001 in <code>factory.py</code>, <code>usage.py</code>, <code>openai_live.py</code>. The BLE001 handlers are deliberate never-raise paths; only I001 needs a fix.</p></div>
+
+<div class="card info"><h3>I-01 · Info · Rates verified today</h3>
+<p>Google: 3.x Live 0.75 text in, 3.00 audio in, 1.00 image, 4.50 text out, 12.00 audio out; 2.5 native audio 0.50/3.00/2.00/12.00. OpenAI: gpt-live-1 $0.05 per minute per second; gpt-6-luna 0.10/0.01/0.50; gpt-6-sol 2.00/0.20/10.00. All match <code>rates.py</code>. Google lists no cache price, so cached input at the full rate is a safe high estimate.</p></div>
+
+<div class="card info"><h3>I-02 · Info · <code>fast</code> tier spelled differently by LiveKit</h3>
+<p>The LiveKit docs list <code>service_tier</code> as auto/default/flex/priority; this API accepts <code>fast</code> too (OpenAI renamed priority to Fast on 2026-07-30). Gate 4 should catch a rejection, but <code>fast</code> on the duplex backend is not covered by a test I found.</p></div>
+
+<div class="card info"><h3>I-03 · Info · Not a defect</h3>
+<p>Model ids equal the plugin's <code>LiveAPIModels</code>, Vertex-only id refused, 30 voices closed set, 3.8 <code>thinking_level</code> rule matches the docs, GPT-Live greeting and <code>say()</code> limits match the docs.</p></div>
+
+<h2>Gemini error: what I need</h2>
+<p>You said "some is causing an error". I found no error in tests (670 pass) or by reading the plugin. Ranked candidates: G-03 greeting call, G-04 extended-thinking with tools, a 2.5 or 3.1 model id on a stored row. Send the worker log line (the <code>ERROR</code> or <code>WARNING</code> text), plus the assistant id and model, and I will pin it.</p>
+
+<h2>Automated results</h2>
+<table><tr><th>Check</th><th>Result</th></tr>
+<tr><td><code>uv run python -m unittest discover -s tests</code></td><td class="ok">670 tests OK</td></tr>
+<tr><td><code>uvx ruff check</code> on audited paths</td><td>7 findings (1 I001, 6 BLE001), pre-existing</td></tr>
+<tr><td>Type check, coverage, pip-audit</td><td>not run (no mypy config in repo; out of this audit's focus)</td></tr></table>
+
+<h2>Structure conformance</h2>
+<p>Matches the recorded layers: model rules in <code>core/model_support</code>, factories in <code>core/agents/llm</code>, rates in <code>core/pricing</code>. No violation found. One drift: the Gemini realtime build sits inline in <code>session.py</code>, while cascade and duplex have factories; the fix for G-01 is a good moment to add <code>create_gemini_live</code> in <code>llm/factory.py</code>.</p>
+
+<h2>Recommended follow-up tasks</h2>
+<table><tr><th>Task</th><th>Covers</th></tr>
+<tr><td>core-be-build-feature: duplex cost breakdown + tier-aware pricing (<code>calculator.py</code>, <code>rates.py</code>, <code>session.py</code> log, <code>livekit_svc.py</code> webhook, docs <code>usage-accounting.md</code>, <code>pricing.md</code>)</td><td>D-01, D-02, D-03</td></tr>
+<tr><td>core-be-build-feature: Gemini config guard + forwarded knobs + <code>create_gemini_live</code> factory</td><td>G-01, G-04, G-05</td></tr>
+<tr><td>core-be-debug: Gemini greeting and thinking-token metering, with one live call each</td><td>G-02, G-03</td></tr></table>
+
+<h2>Not reviewed</h2>
+<p>Live calls, stored assistant rows and usage rows in MongoDB, Vertex AI, pipeline/cascade pricing, Exotel paths, the admin analytics aggregations, test coverage numbers.</p>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duplex pricing and Gemini knobs</title>
+<style>:root{--bg:#fff;--fg:#1c1f24;--mut:#5b6470;--line:#d9dde3;--card:#f6f7f9;--bad:#b42318;--ok:#067647}@media (prefers-color-scheme:dark){:root{--bg:#14171c;--fg:#e6e8eb;--mut:#9aa3af;--line:#2d333b;--card:#1b1f26;--bad:#f97066;--ok:#47cd89}}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px 16px}h1{font-size:22px}h2{font-size:17px;border-bottom:1px solid var(--line);padding-bottom:4px;margin-top:26px}
+code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:13px}table{border-collapse:collapse;width:100%;font-size:13.5px;display:block;overflow-x:auto}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--card)}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.box{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:6px 10px;font-size:13px}.bad{border-color:var(--bad);color:var(--bad)}.ok{border-color:var(--ok);color:var(--ok)}.mut{color:var(--mut)}</style></head><body>
+<h1>Duplex pricing and Gemini knobs</h1>
+<p class="mut">Task <code>2026-10-21-feature-duplex-pricing-gemini-knobs</code> · fixes D-01, D-02, D-03, G-01, G-05 from the audit <code>2026-10-21-audit-duplex-gemini-pricing</code> · not committed</p>
+<h2>Summary</h2>
+<p>A service tier no longer zeroes a duplex call. The webhook and log now show voice and backend cost separately. Gemini realtime refuses settings it cannot read and sends the two it can. 681 tests pass (670 before).</p>
+<h2>Current → Target</h2>
+<div class="flow"><span class="box">duplex + <code>flex</code></span><span>→</span><span class="box bad">voice and backend unpriced, cost 0</span></div>
+<div class="flow"><span class="box">duplex + <code>flex</code></span><span>→</span><span class="box ok">voice at 1x + backend at 0.5x, <code>pricing_complete</code> true</span></div>
+<div class="flow"><span class="box">Gemini + <code>reasoning_effort</code></span><span>→</span><span class="box bad">stored, never sent</span><span>⇒</span><span class="box ok"><code>422</code> naming the field</span></div>
+<h2>Changes</h2>
+<table><tr><th>ID</th><th>Change</th><th>Where</th></tr>
+<tr><td>D-01</td><td>flex 0.5x, fast/priority 2x on token rates; per-second voice rate and Realtime-API models never scaled; unknown tier stays unpriced</td><td><code>pricing/rates.py</code>, <code>pricing/calculator.py</code></td></tr>
+<tr><td>D-02</td><td>WARNING naming each unpriced provider/model at final persist</td><td><code>agents/session.py</code></td></tr>
+<tr><td>D-03</td><td><code>duplex_cost_split</code>; webhook <code>usage</code> gains <code>voice_model</code>, <code>backend_model</code>, <code>estimated_cost_voice_usd</code>, <code>estimated_cost_backend_usd</code> (duplex only, additive); <code>Duplex cost</code> log line</td><td><code>pricing/calculator.py</code>, <code>livekit_svc.py</code>, <code>session.py</code></td></tr>
+<tr><td>G-01</td><td><code>GEMINI_UNREAD_KNOBS</code> refused with 422; <code>temperature</code> and <code>max_output_tokens</code> forwarded when set</td><td><code>llm_config.py</code>, <code>session.py</code></td></tr>
+<tr><td>G-05</td><td>stale 1.8.2 comment corrected</td><td><code>capabilities.py</code></td></tr></table>
+<h2>Verification</h2>
+<table><tr><th>Command</th><th>Result</th></tr>
+<tr><td><code>uv run python -m unittest discover -s tests</code></td><td>681 OK (was 670); 11 new tests</td></tr>
+<tr><td><code>uv run mkdocs build --strict</code></td><td>builds</td></tr>
+<tr><td><code>uv run python scripts/check_mermaid.py</code></td><td>39 diagrams, 0 broken</td></tr>
+<tr><td><code>uvx ruff check</code> on touched files</td><td>no new findings; the remaining BLE001 and similar were already there</td></tr></table>
+<h2>Out-of-scope observations and next tasks</h2>
+<ul><li><b>Breaking:</b> an assistant already storing a refused Gemini knob gets a 422 on its next update. The audit script cannot list them (it checks model ids), and I did not read the database.</li>
+<li>OpenAI <code>realtime</code> and <code>pipeline</code> still store and ignore the Responses knobs: same silent no-op, follow-up.</li>
+<li>Still open, need a live Gemini call: G-02 thinking tokens unmetered, G-03 greeting uses a private method, G-04 extended thinking with tools.</li>
+<li>The suite prints an exit-time <code>AssertionError</code> from <code>livekit/rtc/_ffi_client.py</code> about 1 run in 3, with and without these changes.</li></ul>
+<h2>Docs updated</h2>
+<p>usage-accounting, pricing, compatibility, assistant index and update, calls/webhook, changelog (Unreleased), dev-docs usage-and-pricing, ADR 0007 and its README row. Trace: <code>agent-tracking/plans/2026-10-21-feature-duplex-pricing-gemini-knobs/</code>.</p>
+</body></html>

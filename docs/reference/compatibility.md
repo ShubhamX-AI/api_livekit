@@ -327,6 +327,14 @@ there is accepted (it is kept for the day you switch modes) but changes nothing 
 
 ---
 
+## Gemini realtime reads two knobs
+
+In `realtime` mode with provider `gemini`, only `temperature` and `max_output_tokens` reach the
+model. `reasoning_effort`, `verbosity`, `service_tier`, `tool_choice` and `parallel_tool_calls` are
+a `422` that names the field, because Gemini Live has no counterpart and the value would be stored
+and ignored. An assistant that already holds one of them gets the `422` on its next update, until
+the field is removed. OpenAI `realtime` and `pipeline` are unchanged and still ignore them.
+
 ## Config keys ignored per mode
 
 Accepted by validation, stored on the assistant, and read by nobody in that mode. None of these are

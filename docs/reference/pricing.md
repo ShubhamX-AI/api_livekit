@@ -58,10 +58,16 @@ Per 1M tokens. Same source, checked 2026-09-06; the `2.1` models checked 2026-10
 The backend model's tokens are billed on top, at its rate in the text-model table. Checked
 2026-10-17.
 
+## Service tiers
+
+`service_tier` scales an OpenAI token rate: `flex` is 0.5x, `fast` and `priority` are 2x
+([source](https://developers.openai.com/api/docs/pricing), checked 2026-10-21). GPT-Live's per-second
+voice rate is not scaled.
+
 ## Gemini Live (`realtime`)
 
 Per 1M tokens, paid tier. [Source](https://ai.google.dev/gemini-api/docs/pricing), checked
-2026-09-22. Thinking tokens bill as output text. Google publishes no Live API cache discount, so
+2026-09-22. Thinking tokens bill as output text, but the Gemini plugin does not report them, so an extended-thinking call is estimated low. Google publishes no Live API cache discount, so
 cached input is estimated at the full rate.
 
 | Model | Text in | Audio in | Image/video in | Text out | Audio out |

@@ -79,8 +79,13 @@ the entry list.
 
 - An entry with no rate is kept and marked `pricing_complete: false`, never priced as free. The
   record's `pricing_complete` is false when any entry is unpriced.
-- An OpenAI LLM entry on a `service_tier` other than `auto`/`default` is left unpriced, because the
-  table holds standard-tier rates only.
+- An OpenAI LLM entry on a `service_tier` other than `auto`/`default` is scaled by
+  `SERVICE_TIER_MULTIPLIER` (`pricing/rates.py`): flex 0.5, fast and priority 2. `_tier_multiplier`
+  in `pricing/calculator.py` skips per-second rates (GPT-Live's voice model; the tier is the
+  backend's) and leaves Realtime-API models and unknown tiers unpriced. See
+  [decision 0007](../decisions/0007-price-service_tiers-and-split-duplex-cost.md).
+- `duplex_cost_split` derives the voice and backend cost from `model_usage`; the webhook and the
+  `Duplex cost` log line use it, so nothing new is stored.
 - A dated snapshot name (`gpt-5.6-luna-2026-04-23`) falls back to its alias's rate only for
   reasoning models plus the two retired in 1.6.0, because older snapshots can carry a different
   price.

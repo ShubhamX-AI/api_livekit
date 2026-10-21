@@ -222,6 +222,17 @@ def _validate_duplex(llm_config, *, has_tools: bool, greeting_audio: bool, fille
         )
 
 
+# Responses-API knobs the Gemini Live plugin has no counterpart for. Gemini realtime reads
+# `temperature` and `max_output_tokens` (session.py forwards them) and nothing else here.
+GEMINI_UNREAD_KNOBS = (
+    "reasoning_effort",
+    "verbosity",
+    "service_tier",
+    "tool_choice",
+    "parallel_tool_calls",
+)
+
+
 def validate_mode_config(
     mode,
     llm_config,
@@ -311,6 +322,13 @@ def validate_mode_config(
         # Gemini id is not refused by the plugin — it opens a socket the API closes, and the
         # job ends with no audio and nothing that names the cause.
         if provider == "gemini" or provider is None:
+            for knob in GEMINI_UNREAD_KNOBS:
+                if getattr(llm_config, knob, None) is not None:
+                    raise ValueError(
+                        f"assistant_llm_config.{knob} has no effect on Gemini Live — only "
+                        "temperature and max_output_tokens are sent to it. Remove it, or use "
+                        "an OpenAI mode (cascade or duplex) where it applies."
+                    )
             if model and model in GEMINI_VERTEX_ONLY_MODELS:
                 raise ValueError(
                     f"assistant_llm_config.model '{model}' runs on Vertex AI only, and this "
